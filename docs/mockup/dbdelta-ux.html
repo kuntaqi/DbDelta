@@ -1,0 +1,1167 @@
+<title>DbDelta Screen Walkthrough</title>
+<style>
+  :root {
+    --ground:#F6F8FA; --surface:#FFFFFF; --surface-2:#EEF2F6; --surface-3:#E4EAF0;
+    --line:#D7DEE6; --line-strong:#BCC7D2;
+    --ink:#1A2430; --ink-2:#53616E; --ink-3:#84939F;
+    --accent:#2F6F8F; --accent-ink:#1F4E66; --accent-soft:#E2EDF3; --accent-on:#FFFFFF;
+    --add:#1F7A4D; --add-soft:#E2F1E8; --add-line:#B6DCC6;
+    --del:#B3261E; --del-soft:#FBE6E4; --del-line:#EFC0BB;
+    --chg:#8E6109; --chg-soft:#FAF0DA; --chg-line:#E6CE92;
+    --shadow:0 1px 2px rgba(26,36,48,.06), 0 8px 24px -12px rgba(26,36,48,.18);
+    --sans:"Segoe UI Variable Text","Segoe UI",ui-sans-serif,system-ui,sans-serif;
+    --mono:"Cascadia Code",Consolas,ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#11161C; --surface:#171E25; --surface-2:#1E2731; --surface-3:#26313C;
+      --line:#2B3743; --line-strong:#3C4A57;
+      --ink:#E3EAF1; --ink-2:#9DACBA; --ink-3:#6C7C8A;
+      --accent:#6FB4D8; --accent-ink:#A8D3E9; --accent-soft:#152F3B; --accent-on:#0C1318;
+      --add:#5FD19A; --add-soft:#122A20; --add-line:#255C42;
+      --del:#F28C82; --del-soft:#2D1817; --del-line:#63302C;
+      --chg:#E2B85C; --chg-soft:#2A2213; --chg-line:#5C4A20;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#11161C; --surface:#171E25; --surface-2:#1E2731; --surface-3:#26313C;
+    --line:#2B3743; --line-strong:#3C4A57;
+    --ink:#E3EAF1; --ink-2:#9DACBA; --ink-3:#6C7C8A;
+    --accent:#6FB4D8; --accent-ink:#A8D3E9; --accent-soft:#152F3B; --accent-on:#0C1318;
+    --add:#5FD19A; --add-soft:#122A20; --add-line:#255C42;
+    --del:#F28C82; --del-soft:#2D1817; --del-line:#63302C;
+    --chg:#E2B85C; --chg-soft:#2A2213; --chg-line:#5C4A20;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 24px 96px; }
+
+  /* page chrome */
+  .topbar {
+    position:sticky; top:0; z-index:20; background:var(--ground);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-in { max-width:1180px; margin:0 auto; padding:10px 24px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+  .brand { font-weight:700; letter-spacing:-.01em; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .brand-mark {
+    width:20px; height:20px; border-radius:5px; background:var(--accent);
+    display:grid; place-items:center; color:var(--accent-on); font-family:var(--mono); font-size:11px; font-weight:700;
+  }
+  .jump { display:flex; gap:2px; flex-wrap:wrap; margin-left:auto; }
+  .jump a {
+    font-size:12.5px; color:var(--ink-2); text-decoration:none; padding:4px 9px; border-radius:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .jump a:hover { background:var(--surface-2); color:var(--ink); }
+  .jump a:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  header.hero { padding:64px 0 12px; max-width:70ch; }
+  .eyebrow {
+    font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--accent);
+    margin:0 0 14px;
+  }
+  h1 { font-size:40px; line-height:1.1; letter-spacing:-.025em; margin:0 0 16px; text-wrap:balance; font-weight:700; }
+  .lede { font-size:17px; color:var(--ink-2); margin:0; }
+
+  .decisions {
+    margin:36px 0 8px; border:1px solid var(--line); border-radius:10px; background:var(--surface);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  .decisions h2 { margin:0; padding:14px 18px; font-size:13px; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--ink-2); border-bottom:1px solid var(--line); background:var(--surface-2); font-weight:600; }
+  .decisions ol { margin:0; padding:14px 18px 16px 38px; display:flex; flex-direction:column; gap:8px; }
+  .decisions li { color:var(--ink-2); }
+  .decisions strong { color:var(--ink); font-weight:600; }
+
+  /* screen sections */
+  section.screen { padding-top:64px; }
+  .screen-head { display:flex; gap:16px; align-items:baseline; margin-bottom:6px; }
+  .screen-num {
+    font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent);
+    border:1px solid var(--accent); border-radius:5px; padding:1px 7px; flex:none;
+    font-variant-numeric:tabular-nums;
+  }
+  .screen-head h2 { margin:0; font-size:25px; letter-spacing:-.02em; font-weight:700; }
+  .screen-note { color:var(--ink-2); margin:0 0 6px; max-width:74ch; }
+  .ask {
+    margin:12px 0 20px; padding:10px 14px; border-left:3px solid var(--chg); background:var(--chg-soft);
+    border-radius:0 7px 7px 0; font-size:14px; color:var(--ink); max-width:78ch;
+  }
+  .ask b { font-weight:600; }
+
+  /* app window */
+  .app {
+    border:1px solid var(--line-strong); border-radius:11px; overflow:hidden;
+    background:var(--surface); box-shadow:var(--shadow);
+  }
+  .app-bar {
+    display:flex; align-items:center; gap:10px; padding:9px 14px; flex-wrap:wrap;
+    background:var(--surface-2); border-bottom:1px solid var(--line);
+    font-size:12.5px; color:var(--ink-2);
+  }
+  .dots { display:flex; gap:5px; }
+  .dots i { width:9px; height:9px; border-radius:50%; background:var(--line-strong); display:block; }
+  .app-path { font-family:var(--mono); font-size:11.5px; color:var(--ink-3); }
+  .app-body { padding:18px; }
+
+  /* generic bits */
+  .row { display:flex; gap:10px; align-items:center; }
+  .mono { font-family:var(--mono); font-size:12.5px; }
+  .muted { color:var(--ink-2); }
+  .dim { color:var(--ink-3); }
+  .lbl {
+    font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3);
+    display:block; margin-bottom:5px;
+  }
+  .field {
+    border:1px solid var(--line); border-radius:7px; background:var(--surface); padding:7px 10px;
+    font-family:var(--mono); font-size:12.5px; color:var(--ink); display:flex; align-items:center; gap:8px;
+  }
+  .field.sel::after { content:"\25BE"; margin-left:auto; color:var(--ink-3); font-family:var(--sans); }
+  .btn {
+    border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+    border-radius:7px; padding:7px 13px; font:inherit; font-size:13px; font-weight:500; cursor:default;
+  }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--accent-on); font-weight:600; }
+  .btn.danger { border-color:var(--del-line); color:var(--del); }
+  .btn[aria-disabled="true"] { opacity:.45; }
+  .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  .badge {
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; padding:2px 8px; border-radius:20px; border:1px solid transparent; white-space:nowrap;
+  }
+  .badge.dev { background:var(--add-soft); color:var(--add); border-color:var(--add-line); }
+  .badge.uat { background:var(--chg-soft); color:var(--chg); border-color:var(--chg-line); }
+  .badge.prod { background:var(--del-soft); color:var(--del); border-color:var(--del-line); }
+  .badge.neutral { background:var(--surface-3); color:var(--ink-2); border-color:var(--line); }
+
+  .chip {
+    display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:3px 10px; border-radius:20px;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink-2); white-space:nowrap;
+  }
+  .chip.on { background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  .chip .n { font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums; }
+  .chip .sub { font-family:var(--sans); font-size:11px; }
+
+  /* diff glyphs */
+  .g { font-family:var(--mono); font-weight:700; width:1.1em; display:inline-block; text-align:center; flex:none; }
+  .g.add { color:var(--add); } .g.del { color:var(--del); } .g.chg { color:var(--chg); } .g.same { color:var(--ink-3); }
+
+  /* connection cards */
+  .conn { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--surface); }
+  .conn .band { height:4px; display:block; }
+  .conn.dev .band { background:var(--add); }
+  .conn.uat .band { background:var(--chg); }
+  .conn-in { padding:14px; display:flex; flex-direction:column; gap:12px; }
+  .conn-hd { display:flex; align-items:center; gap:9px; }
+  .conn-hd h3 { margin:0; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600; }
+
+  .warnline {
+    display:flex; gap:9px; align-items:flex-start; font-size:12.5px; padding:8px 11px; border-radius:7px;
+    background:var(--del-soft); color:var(--del); border:1px solid var(--del-line);
+  }
+  .warnline.info { background:var(--accent-soft); color:var(--accent-ink); border-color:var(--accent); }
+  .warnline.ok { background:var(--add-soft); color:var(--add); border-color:var(--add-line); }
+
+  /* tiles */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:10px; }
+  .tile { border:1px solid var(--line); border-radius:8px; padding:11px 13px; background:var(--surface-2); }
+  .tile .k { font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); font-weight:600; }
+  .tile .v { font-size:23px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.25; }
+  .tile .s { font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+  .tile.add .v { color:var(--add); } .tile.del .v { color:var(--del); } .tile.chg .v { color:var(--chg); }
+
+  /* split panes */
+  .split { display:grid; grid-template-columns:300px 1fr; }
+  .split > * { min-width:0; }
+  .pane-l { border-right:1px solid var(--line); background:var(--surface-2); }
+  .pane-hd {
+    padding:9px 14px; border-bottom:1px solid var(--line); font-size:10.5px; font-weight:600;
+    letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); display:flex; align-items:center; gap:8px;
+  }
+  .pane-hd .plain { font-family:var(--mono); text-transform:none; letter-spacing:0; font-size:12px; }
+  .pane-hd .rt { margin-left:auto; }
+
+  /* tree rows */
+  .tree { margin:0; padding:0; list-style:none; }
+  .tree .grp {
+    padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--ink-2); background:var(--surface-2); border-bottom:1px solid var(--line); border-top:1px solid var(--line);
+    display:flex; gap:8px; align-items:center;
+  }
+  .tree .grp .cnt { font-family:var(--mono); font-weight:600; letter-spacing:0; color:var(--ink-3); text-transform:none; }
+  .tree .it {
+    display:flex; gap:10px; align-items:center; padding:7px 14px; border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .tree .it.indent { padding-left:22px; }
+  .tree .it.stack { display:grid; grid-template-columns:auto 1fr; column-gap:10px; row-gap:3px; align-items:center; }
+  .tree .it.stack .l1 { display:flex; align-items:center; gap:8px; min-width:0; }
+  .tree .it.stack .l2 { grid-column:2; display:flex; align-items:center; gap:8px; }
+  .tree .it:hover { background:var(--surface-2); }
+  .tree .it.on { background:var(--accent-soft); }
+  .tree .it .nm { font-family:var(--mono); font-size:12.5px; }
+  .tree .it .why { margin-left:auto; font-size:12px; color:var(--ink-2); text-align:right; display:flex; align-items:center; gap:6px; }
+  .cb {
+    width:14px; height:14px; border:1px solid var(--line-strong); border-radius:3px; flex:none; display:inline-grid;
+    place-items:center; background:var(--surface); font-size:10px; color:transparent; line-height:1;
+  }
+  .cb.on { background:var(--accent); border-color:var(--accent); color:var(--accent-on); font-weight:700; }
+
+  /* code */
+  .codewrap { overflow-x:auto; }
+  pre.code { margin:0; font-family:var(--mono); font-size:12px; line-height:1.65; color:var(--ink); background:var(--surface); }
+  .cl { display:flex; }
+  .cl .ln {
+    flex:none; width:44px; text-align:right; padding:0 10px 0 0; color:var(--ink-3);
+    font-variant-numeric:tabular-nums; user-select:none; border-right:1px solid var(--line);
+  }
+  .cl .cd { padding:0 12px; white-space:pre; }
+  .cl.add { background:var(--add-soft); }
+  .cl.del { background:var(--del-soft); }
+  .cl.chg { background:var(--chg-soft); }
+  .kw { color:var(--accent); font-weight:600; }
+  .st { color:var(--add); }
+  .cm { color:var(--ink-3); font-style:italic; }
+
+  /* data grid */
+  .gridwrap { overflow-x:auto; }
+  table.grid { border-collapse:collapse; width:100%; font-size:12.5px; }
+  table.grid th {
+    text-align:left; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+    font-weight:600; padding:8px 12px; border-bottom:1px solid var(--line-strong); background:var(--surface-2);
+    white-space:nowrap;
+  }
+  table.grid td { padding:7px 12px; border-bottom:1px solid var(--line); font-family:var(--mono); vertical-align:top; }
+  table.grid td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.grid td.txt { font-family:var(--sans); }
+  .was { color:var(--del); text-decoration:line-through; text-decoration-thickness:1px; }
+  .now { color:var(--add); }
+  .arrow { color:var(--ink-3); padding:0 5px; }
+  .collapsed { font-family:var(--sans); font-size:11.5px; color:var(--ink-3); }
+  .rowfail td { background:var(--del-soft); }
+  .errmsg { font-family:var(--mono); font-size:11.5px; color:var(--del); background:var(--del-soft); }
+
+  /* tabs, no JS */
+  .tabs input { position:absolute; opacity:0; width:0; height:0; }
+  .tablist { display:flex; gap:2px; padding:9px 14px 0; border-bottom:1px solid var(--line); background:var(--surface-2); }
+  .tablist label {
+    font-size:13px; padding:6px 13px; border:1px solid transparent; border-bottom:none; border-radius:7px 7px 0 0;
+    color:var(--ink-2); cursor:default; display:flex; gap:7px; align-items:center; margin-bottom:-1px;
+  }
+  .tablist label .n { font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums; }
+  .tabpanel { display:none; }
+  #t-ins:checked ~ .tablist label[for="t-ins"],
+  #t-upd:checked ~ .tablist label[for="t-upd"],
+  #t-del:checked ~ .tablist label[for="t-del"] {
+    background:var(--surface); border-color:var(--line); color:var(--ink); font-weight:600;
+  }
+  #t-ins:checked ~ .panels .p-ins,
+  #t-upd:checked ~ .panels .p-upd,
+  #t-del:checked ~ .panels .p-del { display:block; }
+  .tabs input:focus-visible + input + input + .tablist label,
+  .tablist label:hover { color:var(--ink); }
+
+  /* action bar */
+  .actionbar {
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 16px;
+    border-top:1px solid var(--line); background:var(--surface-2);
+  }
+  .guard { font-size:12px; color:var(--ink-2); display:flex; align-items:center; gap:7px; }
+  .push { margin-left:auto; }
+
+  /* persistent plan cart, visible on every screen */
+  .cart {
+    display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:3px 10px 3px 8px;
+    border-radius:20px; border:1px solid var(--accent); background:var(--accent-soft);
+    color:var(--accent-ink); font-weight:600; white-space:nowrap;
+  }
+  .cart .n { font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums; }
+  .cart .auto { font-weight:400; color:var(--accent); font-size:11px; }
+  .autoadd {
+    font-size:11.5px; color:var(--accent-ink); background:var(--accent-soft); border:1px solid var(--accent);
+    border-radius:5px; padding:2px 7px; display:inline-flex; align-items:center; gap:5px; font-family:var(--sans);
+  }
+
+  /* scope escalation bar */
+  .scopebar {
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 16px;
+    border-bottom:1px solid var(--line); background:var(--surface);
+  }
+  .seg { display:flex; border:1px solid var(--line-strong); border-radius:8px; overflow:hidden; }
+  .seg span {
+    font-size:12.5px; padding:6px 13px; color:var(--ink-2); border-right:1px solid var(--line);
+    display:flex; align-items:center; gap:7px;
+  }
+  .seg span:last-child { border-right:none; }
+  .seg span.on { background:var(--accent); color:var(--accent-on); font-weight:600; }
+  .seg span .n { font-family:var(--mono); font-size:11px; font-variant-numeric:tabular-nums; }
+  .kept {
+    border:1px solid var(--chg-line); background:var(--chg-soft); border-radius:8px; padding:10px 13px;
+    display:flex; flex-direction:column; gap:7px; font-size:12.5px; flex:1 1 360px; min-width:0;
+  }
+  .kept .hd { font-weight:600; color:var(--chg); display:flex; align-items:center; gap:7px; }
+  .kept ul { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:5px; }
+  .kept li { display:flex; align-items:center; gap:9px; color:var(--ink-2); }
+  .kept li .nm { font-family:var(--mono); font-size:12px; color:var(--ink); }
+  .kept li .rv { margin-left:auto; font-size:11.5px; color:var(--accent-ink); }
+
+  /* size readouts */
+  .sizebox {
+    display:flex; gap:0; border:1px solid var(--line); border-radius:7px; overflow:hidden;
+    background:var(--surface-2);
+  }
+  .sizebox > div {
+    flex:1; padding:7px 10px; border-right:1px solid var(--line); display:flex; flex-direction:column; gap:1px;
+  }
+  .sizebox > div:last-child { border-right:none; }
+  .sizebox .k { font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); font-weight:600; }
+  .sizebox .v { font-family:var(--mono); font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }
+
+  .sz { font-family:var(--mono); font-size:11.5px; font-variant-numeric:tabular-nums; color:var(--ink-3); }
+  .sz.big { color:var(--chg); }
+  .sz.huge { color:var(--del); font-weight:600; }
+
+  /* transfer callout: the consequence number */
+  .transfer {
+    display:flex; align-items:baseline; gap:8px; padding:8px 12px; border-radius:7px;
+    border:1px solid var(--accent); background:var(--accent-soft); color:var(--accent-ink);
+  }
+  .transfer .n { font-family:var(--mono); font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .transfer .l { font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-weight:600; }
+  .transfer .of { font-size:12px; color:var(--ink-2); }
+
+  .modebadge {
+    font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; padding:1px 6px;
+    border-radius:4px; border:1px solid var(--line-strong); color:var(--ink-2); background:var(--surface);
+    white-space:nowrap;
+  }
+  .modebadge.seed { border-color:var(--accent); color:var(--accent-ink); background:var(--accent-soft); }
+  .modebadge.schema { border-color:var(--line-strong); color:var(--ink-3); }
+
+  /* modal mock */
+  .modal-scrim {
+    margin-top:14px; border-radius:9px; border:1px dashed var(--line-strong); padding:22px;
+    background:var(--surface-2); display:grid; place-items:center;
+  }
+  .modal {
+    width:100%; max-width:440px; background:var(--surface); border:1px solid var(--line-strong);
+    border-radius:10px; box-shadow:var(--shadow); overflow:hidden;
+  }
+  /* FK neighbourhood diagram */
+  .diagram { overflow-x:auto; padding:18px 16px 6px; }
+  .diagram figure svg { max-width:100%; height:auto; display:block; margin:0 auto; min-width:700px; }
+  .nd { fill:var(--surface-2); stroke:var(--line-strong); stroke-width:1.5; rx:7; }
+  .nd-plan { fill:var(--accent-soft); stroke:var(--accent); stroke-width:2; }
+  .nd-req  { fill:var(--accent-soft); stroke:var(--accent); stroke-width:2; stroke-dasharray:5 3; }
+  .nd-dim  { fill:var(--surface); stroke:var(--line); stroke-dasharray:4 4; }
+  .nd-brk  { fill:var(--del-soft); stroke:var(--del); stroke-width:2; }
+  .nd-focus{ fill:var(--surface); stroke:var(--ink); stroke-width:2.5; }
+  .nl { font-family:var(--mono); font-size:12.5px; fill:var(--ink); text-anchor:middle; }
+  .ns { font-family:var(--sans); font-size:10.5px; fill:var(--ink-3); text-anchor:middle; }
+  .ns-brk { fill:var(--del); font-weight:600; }
+  .ns-req { fill:var(--accent-ink); font-weight:600; }
+  .eg { stroke:var(--ink-3); stroke-width:1.6; fill:none; }
+  .eg-req { stroke:var(--accent); stroke-width:2; fill:none; }
+  .eg-opt { stroke:var(--ink-3); stroke-width:1.6; fill:none; stroke-dasharray:5 4; }
+  .eg-brk { stroke:var(--del); stroke-width:2.2; fill:none; }
+  .el { font-family:var(--mono); font-size:10.5px; fill:var(--ink-2); text-anchor:middle; }
+  .el-brk { fill:var(--del); font-weight:700; }
+  .band-lbl { font-family:var(--sans); font-size:10px; font-weight:600; fill:var(--ink-3); letter-spacing:.09em; }
+  figure { margin:0; }
+  figcaption { font-size:12px; color:var(--ink-3); text-align:center; margin-top:10px; font-style:italic; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; padding:10px 16px 14px; border-top:1px solid var(--line); }
+  .legend div { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--ink-2); }
+  .legend svg { flex:none; }
+
+  .modal.wide { max-width:640px; }
+  .modal h4 { margin:0; padding:13px 16px; font-size:14px; border-bottom:1px solid var(--line); font-weight:600; }
+  .precheck { display:flex; flex-direction:column; gap:6px; }
+  .precheck li { display:flex; gap:9px; align-items:flex-start; font-size:12.5px; }
+  .precheck ul { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .modal .mb { padding:15px 16px; display:flex; flex-direction:column; gap:12px; font-size:13.5px; color:var(--ink-2); }
+  .modal .mb p { margin:0; }
+  .modal .mf { padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:9px; justify-content:flex-end; background:var(--surface-2); }
+  .caption { font-size:12px; color:var(--ink-3); text-align:center; margin:10px 0 0; font-style:italic; }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .conns { display:grid; grid-template-columns:1fr 52px 1fr; gap:14px; align-items:start; }
+  .arrowcol { display:grid; place-items:center; gap:8px; padding-top:118px; }
+  .flat { gap:0; }
+  .flat > .codewrap:first-child { border-right:1px solid var(--line); }
+  .scrolly { max-height:420px; overflow-y:auto; }
+
+  @media (max-width:900px) {
+    .split { grid-template-columns:1fr; }
+    .pane-l { border-right:none; border-bottom:1px solid var(--line); }
+    .two, .conns { grid-template-columns:1fr; }
+    .arrowcol { padding-top:0; }
+    h1 { font-size:31px; }
+    .jump { display:none; }
+  }
+</style>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <span class="brand"><span class="brand-mark">&#916;</span>DbDelta</span>
+    <nav class="jump">
+      <a href="#s1">1 Connections</a>
+      <a href="#s2">2 Overview</a>
+      <a href="#s3">3 Schema</a>
+      <a href="#s4">4 Data</a>
+      <a href="#s5">5 Sync plan</a>
+      <a href="#s6">6 Run log</a>
+      <a href="#s7">7 FK map</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">Mockup untuk sign-off &middot; sebelum coding</p>
+    <h1>Tujuh layar, satu alur: bandingkan lalu sync satu arah</h1>
+    <p class="lede">React + TypeScript, SQL Server dulu. Setiap layar di bawah ini dirender langsung dengan
+      HTML/CSS, bukan gambar &mdash; jadi spacing dan hierarki yang kamu lihat memang yang akan jadi. Label UI
+      sengaja bahasa Inggris supaya nyambung dengan codebase.</p>
+  </header>
+
+  <div class="decisions">
+    <h2>Yang perlu kamu putuskan di mockup ini</h2>
+    <ol>
+      <li><strong>Layar 1</strong> &mdash; pita warna environment plus arah sync ditulis sebagai kalimat. Cukup untuk mencegah salah target?</li>
+      <li><strong>Layar 2</strong> &mdash; satu pohon berisi semua tipe objek dengan checkbox di baris, bukan tab per tipe.</li>
+      <li><strong>Layar 4</strong> &mdash; kolom yang di-exclude ditampilkan terbuka, dan update ditampilkan per sel sebagai <span class="mono">lama &rarr; baru</span>.</li>
+      <li><strong>Layar 5</strong> &mdash; pilihan dari layar 2 dan 4 menumpuk jadi satu cart, lalu keluar sebagai
+        <em>satu</em> script berurutan. Cart-nya menarik prasyarat sendiri, jadi isinya bisa lebih banyak dari yang kamu klik.</li>
+      <li><strong>Layar 5, scope</strong> &mdash; naik ke seluruh database meruntuhkan pilihan yang lebih sempit
+        (sekali kerja, tidak dobel), tapi <em>exclusion</em>-mu bertahan. Ini yang paling perlu kamu setujui.</li>
+      <li><strong>Layar 1 &amp; 4, ukuran</strong> &mdash; <em>footprint</em> (besar objeknya) dipisah dari <em>transfer</em>
+        (yang benar-benar pindah). Yang menempel di tombol selalu transfer, karena itu yang jadi konsekuensi.</li>
+      <li><strong>Layar 4, mode data</strong> &mdash; per tabel: All rows / Top N / Filter / Schema only. Mode terbatas
+        <em>mematikan DELETE</em>, dan tabel yang di-seed menarik parent row-nya. Ini bagian yang paling perlu kamu setujui.</li>
+      <li><strong>Layar 1, target kosong</strong> &mdash; dideteksi dan default-nya berbalik: semua tabel jadi
+        Schema only, data harus dipilih sendiri. Tool tidak akan membuat database-nya sendiri.</li>
+      <li><strong>Layar 6</strong> &mdash; run log menyimpan script yang dipakai, jadi run gagal bisa dijalankan ulang apa adanya.</li>
+      <li><strong>Layar 7, FK map</strong> &mdash; diagram bertetangga (bukan ER seluruh skema) yang <em>tahu isi cart</em>,
+        lengkap dengan nullability FK. Ini yang bikin kasus seed tak terpenuhi bisa dijelaskan, bukan cuma ditolak.</li>
+    </ol>
+  </div>
+
+  <!-- 1 -->
+  <section class="screen" id="s1">
+    <div class="screen-head"><span class="screen-num">01</span><h2>Connections</h2></div>
+    <p class="screen-note">Dua sisi berdampingan, masing-masing dengan pita warna environment. Arah sync ditulis
+      sebagai kalimat, bukan cuma panah, dan tombol swap ada di antaranya.</p>
+    <div class="ask"><b>Konfirmasi:</b> environment dideteksi dari nama server lewat config, bukan diisi manual &mdash;
+      jadi Prod tidak bisa &ldquo;lupa&rdquo; ditandai. Setuju?</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span><span class="app-path">localhost:5199/connections</span></div>
+      <div class="app-body">
+        <div class="conns">
+
+          <div class="conn dev">
+            <span class="band"></span>
+            <div class="conn-in">
+              <div class="conn-hd"><h3>Source</h3><span class="badge dev">Dev</span>
+                <span class="dim mono push">read</span></div>
+              <div><span class="lbl">Saved profile</span><div class="field sel">App &mdash; Dev</div></div>
+              <div><span class="lbl">Server</span><div class="field">DBSERVER-DEV</div></div>
+              <div><span class="lbl">Database</span><div class="field sel">AppDev</div></div>
+              <div><span class="lbl">Authentication</span><div class="field sel">Windows Integrated</div></div>
+              <div class="row"><button class="btn">Test connection</button>
+                <span class="guard"><span class="g add">&#10003;</span>142 tables &middot; 38 views</span></div>
+              <div class="sizebox">
+                <div><span class="k">Data</span><span class="v">41.6 GB</span></div>
+                <div><span class="k">Log</span><span class="v">2.1 GB</span></div>
+                <div><span class="k">Rows</span><span class="v">184.2 M</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="arrowcol">
+            <span class="mono dim" style="font-size:20px;">&rarr;</span>
+            <button class="btn" title="Swap source and target" style="padding:5px 8px;">&#8646;</button>
+          </div>
+
+          <div class="conn uat">
+            <span class="band"></span>
+            <div class="conn-in">
+              <div class="conn-hd"><h3>Target</h3><span class="badge uat">UAT</span>
+                <span class="dim mono push">write &middot; confirm</span></div>
+              <div><span class="lbl">Saved profile</span><div class="field sel">App &mdash; UAT</div></div>
+              <div><span class="lbl">Server</span><div class="field">DBSERVER-UAT</div></div>
+              <div><span class="lbl">Database</span><div class="field sel">AppUat</div></div>
+              <div><span class="lbl">Authentication</span><div class="field sel">Windows Integrated</div></div>
+              <div class="row"><button class="btn">Test connection</button>
+                <span class="guard"><span class="g add">&#10003;</span>141 tables &middot; 37 views</span></div>
+              <div class="sizebox">
+                <div><span class="k">Data</span><span class="v">38.9 GB</span></div>
+                <div><span class="k">Log</span><span class="v">1.4 GB</span></div>
+                <div><span class="k">Rows</span><span class="v">179.8 M</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;" class="warnline info">
+          <span class="g">&rarr;</span>
+          <div>Changes will be written to <b>AppUat</b> on <b>DBSERVER-UAT</b>. Nothing is ever written to the source.</div>
+        </div>
+      </div>
+      <div class="actionbar">
+        <span class="guard"><span class="g same">&#9671;</span>Compare scope</span>
+        <span class="chip on">Schema</span><span class="chip on">Data</span>
+        <span class="push"></span>
+        <button class="btn">Save as profile</button>
+        <button class="btn primary">Compare</button>
+      </div>
+    </div>
+
+    <div class="modal-scrim">
+      <div class="modal">
+        <h4>Target is a read-only server</h4>
+        <div class="mb">
+          <div class="warnline"><span class="g">!</span><div><b>DBSERVER-PROD</b> is on the read-only list.
+            You can compare and download a script, but Apply stays disabled.</div></div>
+          <p>Ubah daftarnya di <span class="mono">appsettings.json</span> &rarr; <span class="mono">Safety:ReadOnlyServers</span>.</p>
+        </div>
+        <div class="mf"><button class="btn">Change target</button><button class="btn primary">Compare read-only</button></div>
+      </div>
+    </div>
+    <p class="caption">Kalau target-nya Prod: compare tetap jalan, Apply mati permanen.</p>
+
+    <div class="modal-scrim">
+      <div class="modal wide">
+        <h4>Target database is empty</h4>
+        <div class="mb">
+          <div class="sizebox">
+            <div><span class="k">Target objects</span><span class="v">0</span></div>
+            <div><span class="k">Source objects</span><span class="v">297</span></div>
+            <div><span class="k">Full copy would move</span><span class="v" style="color:var(--del);">41.6 GB</span></div>
+          </div>
+          <p>Every source object is a create, so this is a provisioning run rather than a diff.
+            Data is <b>off by default</b> &mdash; opt in per table.</p>
+          <div class="precheck">
+            <span class="lbl" style="margin:0;">Applied and checked</span>
+            <ul>
+              <li><span class="g add">&#10003;</span><div>All 142 tables set to <b>Schema only</b>. A full copy would need
+                bulk mode and a script no one can review.</div></li>
+              <li><span class="g add">&#10003;</span><div>Collation matches source
+                (<span class="mono">SQL_Latin1_General_CP1_CI_AS</span>) &mdash; row hashes will compare correctly.</div></li>
+              <li><span class="g chg">i</span><div>Tables created bare, then all 188 foreign keys added afterwards,
+                so FK cycles are not an issue.</div></li>
+              <li><span class="g chg">i</span><div>38 views and 117 routines ordered by
+                <span class="mono">sys.sql_expression_dependencies</span>, wrapped in
+                <span class="mono">EXEC sp_executesql</span> so they can share one transaction.</div></li>
+              <li><span class="g chg">i</span><div><span class="mono">DBCC CHECKIDENT … RESEED</span> appended for every
+                seeded identity table, otherwise the app's next insert collides with a seeded key.</div></li>
+            </ul>
+          </div>
+        </div>
+        <div class="mf"><button class="btn">Pick tables to seed</button><button class="btn primary">Review provisioning plan</button></div>
+      </div>
+    </div>
+    <p class="caption">Target kosong: default berbalik jadi schema-only, data harus dipilih sendiri.</p>
+  </section>
+
+  <!-- 2 -->
+  <section class="screen" id="s2">
+    <div class="screen-head"><span class="screen-num">02</span><h2>Overview</h2></div>
+    <p class="screen-note">Ringkasan dulu, detail kemudian. Kartu angka di atas, filter sebagai chip, lalu satu pohon
+      berisi semua tipe objek. Checkbox di setiap baris langsung mengisi sync plan &mdash; tidak ada langkah
+      &ldquo;tambah ke plan&rdquo; terpisah.</p>
+    <div class="ask"><b>Konfirmasi:</b> baris <span class="mono">Same</span> disembunyikan secara default karena
+      784 objek identik cuma jadi kebisingan &mdash; tapi jumlahnya tetap ditampilkan supaya kamu tahu totalnya benar.</div>
+
+    <div class="app">
+      <div class="app-bar">
+        <span class="dots"><i></i><i></i><i></i></span>
+        <span class="mono">AppDev</span><span class="badge dev">Dev</span>
+        <span class="dim">&rarr;</span>
+        <span class="mono">AppUat</span><span class="badge uat">UAT</span>
+        <span class="dim mono push">compared 14:02:11 &middot; 6.4s</span>
+        <span class="cart">Plan <span class="n">7</span> <span class="auto">+2 required</span></span>
+      </div>
+
+      <div class="app-body" style="display:flex; flex-direction:column; gap:14px;">
+        <div class="tiles">
+          <div class="tile chg"><div class="k">Tables</div><div class="v">4</div><div class="s">of 142 differ</div></div>
+          <div class="tile chg"><div class="k">Views</div><div class="v">1</div><div class="s">of 38 differ</div></div>
+          <div class="tile chg"><div class="k">Procedures</div><div class="v">3</div><div class="s">of 96 differ</div></div>
+          <div class="tile"><div class="k">Functions</div><div class="v">0</div><div class="s">of 21 differ</div></div>
+          <div class="tile chg"><div class="k">Indexes</div><div class="v">2</div><div class="s">of 310 differ</div></div>
+          <div class="tile chg"><div class="k">Foreign keys</div><div class="v">1</div><div class="s">of 188 differ</div></div>
+        </div>
+
+        <div class="row" style="flex-wrap:wrap;">
+          <span class="chip on">Different <span class="n">7</span></span>
+          <span class="chip on">Source only <span class="n">3</span></span>
+          <span class="chip on">Target only <span class="n">1</span></span>
+          <span class="chip">Same <span class="n">784</span></span>
+          <span class="push"></span>
+          <div class="field" style="width:210px;"><span class="dim">&#8981;</span><span class="dim">filter by name&hellip;</span></div>
+        </div>
+      </div>
+
+      <ul class="tree">
+        <li class="grp"><span class="cb on">&#10003;</span>Tables <span class="cnt">4</span></li>
+        <li class="it indent on"><span class="cb on">&#10003;</span><span class="g chg">~</span>
+          <span class="nm">dbo.Company</span><span class="why">2 columns differ &middot; 1 index missing on target</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
+          <span class="nm">dbo.CompanyRating</span><span class="why">source only &middot; 4 columns, 1 FK</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
+          <span class="nm">dbo.Site</span><span class="why">column <span class="mono">Category</span> nullability</span></li>
+        <li class="it indent"><span class="cb"></span><span class="g del">&minus;</span>
+          <span class="nm">dbo.SegmentLegacy</span><span class="why">target only &middot; <span class="mono">DROP</span> not selected</span></li>
+
+        <li class="grp"><span class="cb on">&#10003;</span>Views <span class="cnt">1</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
+          <span class="nm">sales.vCompanySegment</span><span class="why">body differs &middot; 12 lines</span></li>
+
+        <li class="grp"><span class="cb on">&#10003;</span>Stored procedures <span class="cnt">3</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
+          <span class="nm">dbo.usp_RebuildCompanyRating</span><span class="why">source only</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
+          <span class="nm">dbo.usp_GetCompanySummary</span><span class="why">body differs &middot; 3 lines</span></li>
+        <li class="it indent"><span class="cb"></span><span class="g chg">~</span>
+          <span class="nm">dbo.usp_NightlyRollup</span><span class="why">whitespace only &middot; <span class="dim">ignored by rule</span></span></li>
+      </ul>
+
+      <div class="actionbar">
+        <span class="guard"><span class="cb on">&#10003;</span>7 objects picked</span>
+        <span class="autoadd"><span class="g">+</span>2 pulled in as prerequisites</span>
+        <span class="guard dim">&middot;</span>
+        <span class="guard">1 drop excluded</span>
+        <span class="push"></span>
+        <button class="btn">Compare data &rarr;</button>
+        <button class="btn primary">Review sync plan</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section class="screen" id="s3">
+    <div class="screen-head"><span class="screen-num">03</span><h2>Schema detail</h2></div>
+    <p class="screen-note">DDL berdampingan dengan diff per baris. Yang penting bukan cuma <em>apa</em> yang beda,
+      tapi DDL apa yang akan dijalankan &mdash; jadi ada blok ketiga di bawah: perintah yang benar-benar dikirim ke target.</p>
+    <div class="ask"><b>Konfirmasi:</b> untuk perubahan kolom, tool memilih <span class="mono">ALTER COLUMN</span>
+      kalau aman dan jatuh ke pola tabel-bayangan hanya kalau tidak bisa. Keputusan itu ditampilkan terbuka di panel
+      <em>Strategy</em>, tidak disembunyikan.</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
+        <span class="g chg">~</span><span class="mono">dbo.Company</span>
+        <span class="badge neutral">Table</span>
+        <span class="dim mono push">3 of 7 objects</span></div>
+
+      <div class="split">
+        <div class="pane-l">
+          <div class="pane-hd">Difference summary</div>
+          <ul class="tree" style="font-size:13px;">
+            <li class="it"><span class="g add">+</span>
+              <span class="nm">RatingBand</span><span class="why dim">new column</span></li>
+            <li class="it"><span class="g chg">~</span>
+              <span class="nm">Segment</span><span class="why dim">len 20 &rarr; 40</span></li>
+            <li class="it"><span class="g add">+</span>
+              <span class="nm">IX_Company_Rating</span><span class="why dim">new index</span></li>
+          </ul>
+          <div class="pane-hd">Strategy</div>
+          <div style="padding:12px 14px;">
+            <div class="warnline ok" style="font-size:12px;"><span class="g">&#10003;</span>
+              <div>In-place <span class="mono">ALTER</span> is safe &mdash; widening only, no data loss, no rebuild.</div></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="pane-hd">
+            <span class="plain">Source &middot; AppDev</span>
+            <span class="plain rt">Target &middot; AppUat</span>
+          </div>
+          <div class="two flat">
+            <div class="codewrap">
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">  CompanyId      <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">3</span><span class="cd">  CompanyName    <span class="kw">NVARCHAR</span>(200) <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">  Segment      <span class="kw">NVARCHAR</span>(40)  <span class="kw">NULL</span>,</span></div><div class="cl add"><span class="ln">5</span><span class="cd">  RatingBand     <span class="kw">TINYINT</span>      <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">6</span><span class="cd">  ModifiedUtc    <span class="kw">DATETIME2</span>(3) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">7</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_Company <span class="kw">PRIMARY KEY</span> (CompanyId)</span></div><div class="cl"><span class="ln">8</span><span class="cd">);</span></div><div class="cl"><span class="ln">9</span><span class="cd"> </span></div><div class="cl add"><span class="ln">10</span><span class="cd"><span class="kw">CREATE INDEX</span> IX_Company_Rating</span></div><div class="cl add"><span class="ln">11</span><span class="cd">  <span class="kw">ON</span> dbo.Company (RatingBand);</span></div></pre>
+            </div>
+            <div class="codewrap">
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">  CompanyId      <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">3</span><span class="cd">  CompanyName    <span class="kw">NVARCHAR</span>(200) <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">  Segment      <span class="kw">NVARCHAR</span>(20)  <span class="kw">NULL</span>,</span></div><div class="cl del"><span class="ln">5</span><span class="cd"><span class="cm">  -- RatingBand is missing</span></span></div><div class="cl"><span class="ln">6</span><span class="cd">  ModifiedUtc    <span class="kw">DATETIME2</span>(3) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">7</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_Company <span class="kw">PRIMARY KEY</span> (CompanyId)</span></div><div class="cl"><span class="ln">8</span><span class="cd">);</span></div><div class="cl"><span class="ln">9</span><span class="cd"> </span></div><div class="cl del"><span class="ln">10</span><span class="cd"><span class="cm">-- IX_Company_Rating is missing</span></span></div><div class="cl"><span class="ln">11</span><span class="cd"> </span></div></pre>
+            </div>
+          </div>
+
+          <div class="pane-hd" style="border-top:1px solid var(--line);">Will run on target</div>
+          <div class="codewrap" style="padding:10px 0 14px;">
+            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ALTER COLUMN</span> Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ADD</span> RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">CREATE INDEX</span> IX_Company_Rating <span class="kw">ON</span> dbo.Company (RatingBand);</span></div></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="screen" id="s4">
+    <div class="screen-head"><span class="screen-num">04</span><h2>Data compare</h2></div>
+    <p class="screen-note">Kiri: daftar tabel dengan <em>footprint</em>-nya (ukuran &amp; jumlah baris) plus mode data
+      yang sedang aktif. Kanan: tabel terpilih &mdash; mode data, angka <em>transfer</em>, key yang dipakai, kolom
+      yang di-exclude, lalu grid per kategori. Update ditampilkan per sel <span class="mono">lama &rarr; baru</span>.</p>
+    <div class="ask"><b>Konfirmasi &mdash; dua hal:</b><br>
+      <b>1. Ukuran.</b> <span class="mono">dbo.SiteReading</span> 21.4 GB jelas tidak mau kamu copy, jadi dia
+      <em>Schema only</em>; <span class="mono">dbo.Contact</span> 1.9 GB cukup di-seed <em>Top 100</em>. Footprint
+      di kiri adalah konteks, tapi angka yang menempel di tombol selalu <em>transfer</em> &mdash; 23.4 GB terpilih,
+      1.4 MB yang benar-benar pindah.<br>
+      <b>2. Mode terbatas mematikan DELETE.</b> Ini bukan preferensi tapi aturan kebenaran: kalau row set dibatasi,
+      baris yang tidak ada di source belum tentu terhapus &mdash; bisa jadi cuma di luar Top 100. Kalau delete tetap
+      jalan, &ldquo;seeding&rdquo; justru menghapus isi target.<br>
+      Konsekuensinya: tabel yang di-seed ikut menarik <em>parent row</em> yang direferensikan FK-nya, kalau tidak
+      100 baris <span class="mono">dbo.Contact</span> itu akan yatim.</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
+        <span class="mono">Data compare</span>
+        <span class="dim mono push">3 of 142 tables selected</span>
+        <span class="cart">Plan <span class="n">13</span> <span class="auto">+2 required</span></span></div>
+
+      <div class="split">
+        <div class="pane-l">
+          <div class="pane-hd"><span class="cb on">&#10003;</span>Tables <span class="plain rt">142</span></div>
+          <ul class="tree" style="font-size:13px;">
+            <li class="it stack on"><span class="cb on">&#10003;</span>
+              <span class="l1"><span class="nm">dbo.Company</span><span class="why"><span class="mono" style="color:var(--chg);">130</span></span></span>
+              <span class="l2"><span class="sz">12.4 MB &middot; 12.5K rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="cb on">&#10003;</span>
+              <span class="l1"><span class="nm">dbo.Site</span><span class="why"><span class="mono" style="color:var(--chg);">18</span></span></span>
+              <span class="l2"><span class="sz">88.1 MB &middot; 96.3K rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="cb on">&#10003;</span>
+              <span class="l1"><span class="nm">dbo.Category</span><span class="why"><span class="mono" style="color:var(--chg);">2</span></span></span>
+              <span class="l2"><span class="sz">72 KB &middot; 418 rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="cb on">&#10003;</span>
+              <span class="l1"><span class="nm">dbo.Contact</span><span class="why"><span class="mono" style="color:var(--chg);">100</span></span></span>
+              <span class="l2"><span class="sz big">1.9 GB &middot; 4.1M rows</span><span class="push"></span><span class="modebadge seed">Top 100</span></span></li>
+            <li class="it stack"><span class="cb on">&#10003;</span>
+              <span class="l1"><span class="nm">dbo.SiteReading</span><span class="why dim">&mdash;</span></span>
+              <span class="l2"><span class="sz huge">21.4 GB &middot; 48.2M rows</span><span class="push"></span><span class="modebadge schema">Schema only</span></span></li>
+            <li class="it stack"><span class="cb"></span>
+              <span class="l1"><span class="nm dim">dbo.AuditTrail</span><span class="why"><span class="g del">!</span><span class="dim">no key</span></span></span>
+              <span class="l2"><span class="sz big">6.2 GB &middot; 31.7M rows</span></span></li>
+            <li class="it stack"><span class="cb"></span>
+              <span class="l1"><span class="nm dim">dbo.Invoice</span><span class="why dim mono">0</span></span>
+              <span class="l2"><span class="sz">204 MB &middot; 812K rows</span></span></li>
+          </ul>
+          <div style="padding:12px 14px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:9px;">
+            <div class="warnline" style="font-size:12px;"><span class="g">!</span>
+              <div><b>dbo.AuditTrail</b> has no primary key. Pick key columns to compare it.</div></div>
+            <div class="sizebox">
+              <div><span class="k">Footprint</span><span class="v">23.4 GB</span></div>
+              <div><span class="k">Transfer</span><span class="v" style="color:var(--accent);">1.4 MB</span></div>
+            </div>
+            <p class="dim" style="margin:0; font-size:11.5px;">Selected tables hold 23.4 GB, but this plan moves 1.4 MB.</p>
+          </div>
+        </div>
+
+        <div>
+          <div style="padding:14px 16px; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid var(--line);">
+            <div class="row" style="flex-wrap:wrap;">
+              <span class="mono" style="font-size:15px; font-weight:600;">dbo.Company</span>
+              <span class="badge neutral">src 12,480</span><span class="badge neutral">tgt 12,391</span>
+              <span class="push"></span>
+              <span class="lbl" style="margin:0;">Key</span>
+              <span class="chip on mono">CompanyId</span><span class="dim" style="font-size:12px;">from PK</span>
+            </div>
+            <div class="row" style="flex-wrap:wrap;">
+              <span class="lbl" style="margin:0;">Data mode</span>
+              <div class="seg">
+                <span class="on">All rows</span>
+                <span>Top <span class="n">100</span></span>
+                <span>Filter</span>
+                <span>Schema only</span>
+              </div>
+              <span class="push"></span>
+              <div class="transfer"><span class="l">Transfer</span><span class="n">1.2 MB</span>
+                <span class="of">of 12.4 MB footprint</span></div>
+            </div>
+            <div class="warnline info" style="font-size:12px;"><span class="g">i</span>
+              <div>Switching to <b>Top N</b> or <b>Filter</b> suppresses deletes for this table &mdash; a limited
+                row set cannot tell you a row was deleted, only that it fell outside the limit.</div></div>
+
+            <div class="row" style="flex-wrap:wrap; gap:7px;">
+              <span class="lbl" style="margin:0;">Compared</span>
+              <span class="chip">24 of 26 columns</span>
+              <span class="chip mono dim">RowVersion <span class="sub">&middot; not comparable</span></span>
+              <span class="chip mono dim">ModifiedUtc <span class="sub">&middot; excluded by rule</span></span>
+            </div>
+            <div class="tiles">
+              <div class="tile add"><div class="k">Insert</div><div class="v">94</div><div class="s">missing on target</div></div>
+              <div class="tile chg"><div class="k">Update</div><div class="v">31</div><div class="s">values differ</div></div>
+              <div class="tile del"><div class="k">Delete</div><div class="v">5</div><div class="s">target only</div></div>
+              <div class="tile"><div class="k">Same</div><div class="v">12,350</div><div class="s">no action</div></div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <input type="radio" name="dtab" id="t-ins"><input type="radio" name="dtab" id="t-upd" checked><input type="radio" name="dtab" id="t-del">
+            <div class="tablist">
+              <label for="t-ins"><span class="g add">+</span>Inserts <span class="n">94</span></label>
+              <label for="t-upd"><span class="g chg">~</span>Updates <span class="n">31</span></label>
+              <label for="t-del"><span class="g del">&minus;</span>Deletes <span class="n">5</span></label>
+            </div>
+            <div class="panels">
+              <div class="tabpanel p-ins">
+                <div class="gridwrap">
+                  <table class="grid">
+                    <thead><tr><th style="width:34px;"><span class="cb on">&#10003;</span></th><th>CompanyId</th><th>CompanyName</th><th>Segment</th><th>RatingBand</th></tr></thead>
+                    <tbody>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14902</td><td>Acme Industrial</td><td>Retail North</td><td class="num">2</td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14903</td><td>Brightwater Ltd</td><td>Wholesale</td><td class="num">1</td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14904</td><td>Cedar Point Co</td><td>Logistics</td><td class="num">3</td></tr>
+                      <tr><td colspan="5" class="collapsed" style="text-align:center;">91 more rows &middot; virtualized</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="tabpanel p-upd">
+                <div class="gridwrap">
+                  <table class="grid">
+                    <thead><tr><th style="width:34px;"><span class="cb on">&#10003;</span></th><th>CompanyId</th><th>Changed cells</th></tr></thead>
+                    <tbody>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1044</td>
+                        <td><div>Segment <span class="was">Retail</span><span class="arrow">&rarr;</span><span class="now">Retail North</span></div>
+                            <div>RatingBand <span class="was">NULL</span><span class="arrow">&rarr;</span><span class="now">2</span></div>
+                            <div class="collapsed">+ 22 unchanged columns</div></td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">2187</td>
+                        <td><div>CompanyName <span class="was">Delta Manufacturing</span><span class="arrow">&rarr;</span><span class="now">Delta Manufacturing Pty Ltd</span></div>
+                            <div class="collapsed">+ 23 unchanged columns</div></td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">3512</td>
+                        <td><div>Segment <span class="was">Energy</span><span class="arrow">&rarr;</span><span class="now">Energy Grid</span></div>
+                            <div class="collapsed">+ 23 unchanged columns</div></td></tr>
+                      <tr><td colspan="3" class="collapsed" style="text-align:center;">28 more rows &middot; virtualized</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="tabpanel p-del">
+                <div class="gridwrap">
+                  <table class="grid">
+                    <thead><tr><th style="width:34px;"><span class="cb"></span></th><th>CompanyId</th><th>CompanyName</th><th>Referenced by</th></tr></thead>
+                    <tbody>
+                      <tr><td><span class="cb"></span></td><td class="num">908</td><td>Old Holdings Ltd</td><td><span class="g del">!</span>12 rows in dbo.Site</td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1220</td><td>Test Company A</td><td class="dim">none</td></tr>
+                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1221</td><td>Test Company B</td><td class="dim">none</td></tr>
+                      <tr><td colspan="4" class="collapsed" style="text-align:center;">2 more rows</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actionbar">
+            <span class="guard"><span class="cb on">&#10003;</span>128 of 130 rows picked</span>
+            <span class="guard"><span class="g del">!</span>1 delete skipped &mdash; FK references</span>
+            <span class="autoadd"><span class="g">+</span>dbo.Category pulled in first</span>
+            <span class="push"></span>
+            <button class="btn primary">Review sync plan &rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="screen" id="s5">
+    <div class="screen-head"><span class="screen-num">05</span><h2>Sync plan</h2></div>
+    <p class="screen-note">Isi cart dari layar 2 dan 4 keluar di sini sebagai <em>satu</em> script berurutan &mdash;
+      skema dulu, lalu data, diurutkan mengikuti dependensi FK. Baris bertanda <span class="autoadd">required</span>
+      adalah yang ditarik tool sendiri sebagai prasyarat, bukan yang kamu klik &mdash; ditandai supaya cart yang
+      membesar tidak jadi kejutan.</p>
+    <div class="ask"><b>Konfirmasi:</b> Download selalu tersedia; Apply butuh mengetik nama database target.
+      Dua guard dihitung <em>sebelum</em> kamu klik: blast radius, dan drift check &mdash; target di-verifikasi
+      masih sama dengan yang di-compare, kalau sudah digeser orang lain, apply ditolak.<br><br>
+      Baris <b>Scope</b> di bawah ini menjawab &ldquo;sekalian DB nya aja deh&rdquo;: naik ke seluruh database
+      meruntuhkan pilihan per-tabel dan per-baris yang tadi &mdash; jadi tetap sekali kerja, tidak dobel &mdash;
+      tapi <em>exclusion</em>-mu dipertahankan dan ditampilkan, bukan diam-diam ditelan.</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
+        <span class="mono">sync plan</span>
+        <span class="dim">&rarr;</span><span class="mono">AppUat</span><span class="badge uat">UAT</span>
+        <span class="dim mono push">FK-dependency ordered</span></div>
+
+      <div class="scopebar">
+        <span class="lbl" style="margin:0;">Scope</span>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div class="seg">
+            <span class="on">Picked items <span class="n">13</span></span>
+            <span>Entire database <span class="n">14</span></span>
+          </div>
+          <div class="sz big" style="display:flex; align-items:center; gap:6px;">
+            <span class="g chg">!</span>Entire database = 8.9 GB transfer, script over 100 MB &rarr; bulk mode
+          </div>
+        </div>
+        <div class="kept">
+          <div class="hd"><span class="g">!</span>3 exclusions kept if you escalate to the whole database</div>
+          <ul>
+            <li><span class="g del">&minus;</span><span class="nm">DROP dbo.SegmentLegacy</span>
+              <span class="dim">you left this out</span><span class="rv">revoke</span></li>
+            <li><span class="g del">&minus;</span><span class="nm">dbo.Company &middot; CompanyId 908</span>
+              <span class="dim">12 rows in dbo.Site reference it</span><span class="rv">revoke</span></li>
+            <li><span class="g del">&minus;</span><span class="nm">dbo.Company &middot; 2 of 130 rows</span>
+              <span class="dim">skipped by you</span><span class="rv">revoke</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="pane-l">
+          <div class="pane-hd">Plan <span class="plain rt">13 steps</span></div>
+          <ul class="tree" style="font-size:13px;">
+            <li class="grp">Schema <span class="cnt">7</span></li>
+            <li class="it"><span class="g chg">~</span><span class="nm">dbo.Company</span><span class="why dim">alter &times;2</span></li>
+            <li class="it"><span class="g add">+</span><span class="nm">dbo.CompanyRating</span><span class="why dim">create</span></li>
+            <li class="it"><span class="g chg">~</span><span class="nm">dbo.Site</span><span class="why dim">alter</span></li>
+            <li class="it"><span class="g chg">~</span><span class="nm">sales.vCompanySegment</span><span class="why dim">alter view</span></li>
+            <li class="it"><span class="g add">+</span><span class="nm">usp_RebuildCompanyRating</span><span class="why dim">create</span></li>
+            <li class="grp">Data <span class="cnt">5 tables &middot; 249 rows &middot; 1.4 MB</span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.Category</span><span class="why"><span class="autoadd">required</span><span class="dim mono">2</span></span></span>
+              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.Company</span><span class="why dim mono">127</span></span>
+              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.Site</span><span class="why dim mono">18</span></span>
+              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.Contact</span><span class="why dim mono">100</span></span>
+              <span class="l2" style="grid-column:1;"><span class="modebadge seed">Top 100</span><span class="sz">no deletes</span></span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.ContactType</span><span class="why"><span class="autoadd">required</span><span class="dim mono">2</span></span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz">parent rows for the seed</span></span></li>
+            <li class="grp">Schema only <span class="cnt">1 table &middot; no data</span></li>
+            <li class="it stack"><span class="l1"><span class="nm">dbo.SiteReading</span><span class="why dim">21.4 GB skipped</span></span>
+              <span class="l2" style="grid-column:1;"><span class="modebadge schema">Schema only</span></span></li>
+          </ul>
+          <div style="padding:12px 14px; border-top:1px solid var(--line);">
+            <div class="warnline info" style="font-size:12px;"><span class="g">i</span>
+              <div><b>dbo.Category</b> runs before <b>dbo.Company</b> &mdash; FK <span class="mono">FK_Company_Category</span>.</div></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="pane-hd">Generated script
+            <span class="plain rt">sync_AppUat_20260821_1402.sql &middot; 214 lines</span></div>
+          <div class="codewrap scrolly">
+            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="cm">-- DbDelta &middot; AppDev (DBSERVER-DEV) -&gt; AppUat (DBSERVER-UAT)</span></span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="cm">-- 7 schema changes, 147 data rows across 3 tables</span></span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">SET</span> XACT_ABORT <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">4</span><span class="cd"><span class="kw">SET</span> NOCOUNT <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">5</span><span class="cd"><span class="kw">BEGIN TRANSACTION</span>;</span></div><div class="cl"><span class="ln">6</span><span class="cd"> </span></div><div class="cl"><span class="ln">7</span><span class="cd"><span class="cm">-- 1/10  schema: dbo.Company</span></span></div><div class="cl"><span class="ln">8</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ALTER COLUMN</span> Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">9</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ADD</span> RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">10</span><span class="cd"> </span></div><div class="cl"><span class="ln">11</span><span class="cd"><span class="cm">-- 2/10  schema: dbo.CompanyRating (new)</span></span></div><div class="cl"><span class="ln">12</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.CompanyRating (</span></div><div class="cl"><span class="ln">13</span><span class="cd">  CompanyRatingId <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">14</span><span class="cd">  CompanyId       <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">15</span><span class="cd">  Band            <span class="kw">TINYINT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">16</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_CompanyRating <span class="kw">PRIMARY KEY</span> (CompanyRatingId)</span></div><div class="cl"><span class="ln">17</span><span class="cd">);</span></div><div class="cl"><span class="ln">18</span><span class="cd"> </span></div><div class="cl"><span class="ln">19</span><span class="cd"><span class="cm">-- 8/10  data: dbo.Company &middot; 94 insert, 31 update, 2 delete</span></span></div><div class="cl"><span class="ln">20</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT dbo.Company <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">21</span><span class="cd"><span class="kw">INSERT INTO</span> dbo.Company (CompanyId, CompanyName, Segment, RatingBand)</span></div><div class="cl"><span class="ln">22</span><span class="cd"><span class="kw">VALUES</span> (14902, <span class="st">N'Acme Industrial'</span>, <span class="st">N'Retail North'</span>, 2),</span></div><div class="cl"><span class="ln">23</span><span class="cd">       (14903, <span class="st">N'Brightwater Ltd'</span>,      <span class="st">N'Wholesale'</span>,   1);</span></div><div class="cl"><span class="ln">24</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT dbo.Company <span class="kw">OFF</span>;</span></div><div class="cl"><span class="ln">25</span><span class="cd"> </span></div><div class="cl"><span class="ln">26</span><span class="cd"><span class="kw">UPDATE</span> t <span class="kw">SET</span> t.Segment = <span class="st">N'Retail North'</span>, t.RatingBand = 2</span></div><div class="cl"><span class="ln">27</span><span class="cd">  <span class="kw">FROM</span> dbo.Company t <span class="kw">WHERE</span> t.CompanyId = 1044;</span></div><div class="cl"><span class="ln">28</span><span class="cd"> </span></div><div class="cl"><span class="ln">29</span><span class="cd"><span class="kw">DELETE</span> <span class="kw">FROM</span> dbo.Company <span class="kw">WHERE</span> CompanyId <span class="kw">IN</span> (1220, 1221);</span></div><div class="cl"><span class="ln">30</span><span class="cd"> </span></div><div class="cl"><span class="ln">31</span><span class="cd"><span class="cm">-- 10/10  commit</span></span></div><div class="cl"><span class="ln">32</span><span class="cd"><span class="kw">COMMIT TRANSACTION</span>;</span></div></pre>
+          </div>
+
+          <div class="actionbar">
+            <span class="guard"><span class="g add">&#10003;</span>Transfer 1.4 MB &middot; script 2.1 MB</span>
+            <span class="guard"><span class="g add">&#10003;</span>Deletes 2 of 12,391 rows &middot; 0.02% (limit 5%)</span>
+            <span class="guard"><span class="g add">&#10003;</span>Single transaction &middot; rolls back whole</span>
+            <span class="guard"><span class="g add">&#10003;</span>Target unchanged since 14:02</span>
+            <span class="push"></span>
+            <button class="btn">Copy</button>
+            <button class="btn primary">Download .sql</button>
+            <button class="btn danger">Apply to AppUat&hellip;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-scrim">
+      <div class="modal">
+        <h4>Apply 13 steps to AppUat?</h4>
+        <div class="mb">
+          <div class="row" style="gap:8px;"><span class="badge uat">UAT</span><span class="mono">DBSERVER-UAT</span></div>
+          <p>Runs as one transaction. 7 schema changes and 249 rows across 5 tables, including <b>2 deletes</b>. Transfer 1.4 MB.</p>
+          <div><span class="lbl">Type the target database name to confirm</span>
+            <div class="field"><span class="dim">AppUat</span></div></div>
+        </div>
+        <div class="mf"><button class="btn">Cancel</button><button class="btn danger" aria-disabled="true">Apply</button></div>
+      </div>
+    </div>
+    <p class="caption">Apply tetap mati sampai nama database diketik benar.</p>
+
+    <div class="modal-scrim">
+      <div class="modal">
+        <h4>Target changed since the compare</h4>
+        <div class="mb">
+          <div class="warnline"><span class="g">!</span><div>2 of the 13 planned steps no longer match
+            <b>AppUat</b>. Applying this script would act on a database it no longer describes.</div></div>
+          <ul style="margin:0; padding-left:20px; display:flex; flex-direction:column; gap:4px;">
+            <li><span class="mono">dbo.Site</span> &mdash; column added by someone else</li>
+            <li><span class="mono">dbo.Company</span> &mdash; 4 planned rows already updated</li>
+          </ul>
+          <p>Cart-nya disimpan. Compare ulang akan mempertahankan pilihanmu dan hanya membuang langkah yang sudah tidak berlaku.</p>
+        </div>
+        <div class="mf"><button class="btn">Download anyway</button><button class="btn primary">Re-compare</button></div>
+      </div>
+    </div>
+    <p class="caption">Kalau target sudah bergeser: apply ditolak, cart tetap utuh.</p>
+  </section>
+
+  <!-- 6 -->
+  <section class="screen" id="s6">
+    <div class="screen-head"><span class="screen-num">06</span><h2>Run log</h2></div>
+    <p class="screen-note">Setiap compare dan setiap apply tercatat lengkap dengan script yang dipakai &mdash;
+      jadi run yang gagal bisa dibaca, diperbaiki, dan dijalankan ulang tanpa mengulang compare dari nol.</p>
+    <div class="ask"><b>Konfirmasi:</b> log disimpan lokal di <span class="mono">%APPDATA%\DbDelta\runs\</span>,
+      bukan di database mana pun &mdash; tool ini tidak pernah membuat tabel apa pun di DB kamu.</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span><span class="app-path">localhost:5199/runs</span>
+        <span class="dim mono push">18 runs &middot; 30 days</span></div>
+      <div class="gridwrap">
+        <table class="grid">
+          <thead><tr><th>When</th><th>Route</th><th>Action</th><th>Scope</th><th>Result</th><th>Took</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="txt">21 Aug 14:06</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">10 steps</td>
+              <td><span class="badge dev">Committed</span></td><td class="num">3.1s</td><td class="collapsed">script &#9662;</td></tr>
+            <tr><td class="txt">21 Aug 14:02</td><td>AppDev &rarr; AppUat</td><td class="txt">Compare</td><td class="num">142 tables</td>
+              <td><span class="badge neutral">11 differ</span></td><td class="num">6.4s</td><td class="collapsed">script &#9662;</td></tr>
+            <tr class="rowfail"><td class="txt">20 Aug 17:41</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">4 steps</td>
+              <td><span class="badge prod">Rolled back</span></td><td class="num">0.9s</td><td class="collapsed">script &#9662;</td></tr>
+            <tr><td colspan="7" class="errmsg">Msg 547 &middot; The ALTER TABLE statement conflicted with the FOREIGN KEY constraint "FK_Site_Company".<br>
+              <span class="dim">Step 3/4 &middot; no changes were kept &middot; full script retained</span></td></tr>
+            <tr><td class="txt">20 Aug 16:20</td><td>AppUat &rarr; <span style="color:var(--del);">AppProd</span></td><td class="txt">Download</td><td class="num">6 steps</td>
+              <td><span class="badge uat">Script only</span></td><td class="num">&mdash;</td><td class="collapsed">script &#9662;</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="actionbar">
+        <span class="guard"><span class="g add">&#10003;</span>1 committed</span>
+        <span class="guard"><span class="g del">!</span>1 rolled back</span>
+        <span class="guard"><span class="g same">&#9671;</span>1 script only</span>
+        <span class="push"></span>
+        <button class="btn">Re-run failed script</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section class="screen" id="s7">
+    <div class="screen-head"><span class="screen-num">07</span><h2>FK map</h2></div>
+    <p class="screen-note">Bukan ER diagram seluruh skema &mdash; 142 tabel jadi spageti tak terbaca. Ini diagram
+      <em>bertetangga</em>: pilih satu tabel, lihat lingkungan FK-nya sedalam 1&ndash;2 hop, dengan status sync plan
+      ditumpangkan di atasnya. Bisa dibuka dari baris mana pun di layar 2, 4, dan 5.</p>
+    <div class="ask"><b>Konfirmasi:</b> yang membedakan diagram ini dari tool ER biasa adalah dia
+      <em>tahu isi cart</em>. Jadi pertanyaan yang dijawab bukan &ldquo;apa relasi tabel ini&rdquo;, tapi
+      &ldquo;kalau tabel ini kusync dengan mode sekarang, apa yang ikut terbawa dan apa yang jebol&rdquo;.
+      Nullability FK ditampilkan karena itu yang menentukan orphan bisa ditolerir atau tidak.</div>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
+        <span class="mono">FK map</span><span class="dim">&middot;</span>
+        <span class="mono">dbo.Contact</span><span class="modebadge seed">Top 100</span>
+        <span class="dim mono push">2 parents required &middot; 1 child breaking</span></div>
+
+      <div class="scopebar">
+        <span class="lbl" style="margin:0;">Focus</span>
+        <div class="field sel" style="width:170px;">dbo.Contact</div>
+        <span class="lbl" style="margin:0;">Depth</span>
+        <div class="seg"><span class="on">1</span><span>2</span><span>All reachable</span></div>
+        <span class="lbl" style="margin:0;">Direction</span>
+        <div class="seg"><span class="on">Both</span><span>Parents</span><span>Children</span></div>
+      </div>
+
+      <div class="diagram">
+        <figure>
+          <svg viewBox="0 0 880 430" role="img"
+               aria-label="Foreign key neighbourhood of dbo.Contact seeded to its top 100 rows: parents dbo.ContactType and dbo.Company must exist first and are in the plan, nullable parent dbo.Country is left out, child dbo.ContactNote is schema only and stays empty, and child dbo.SiteContact is in the plan with 3.9 million rows referencing contacts outside the seed, so it will break.">
+            <defs>
+              <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <polygon points="0,0 10,5 0,10" style="fill:var(--ink-3)"></polygon>
+              </marker>
+              <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <polygon points="0,0 10,5 0,10" style="fill:var(--accent)"></polygon>
+              </marker>
+              <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <polygon points="0,0 10,5 0,10" style="fill:var(--del)"></polygon>
+              </marker>
+            </defs>
+
+            <text class="band-lbl" x="8" y="12">PARENTS &middot; MUST EXIST FIRST</text>
+
+            <rect class="nd nd-req"  x="20"  y="26" width="180" height="52" rx="7"></rect>
+            <text class="nl" x="110" y="48">dbo.ContactType</text>
+            <text class="ns ns-req" x="110" y="65">pulled in as parent</text>
+
+            <rect class="nd nd-plan" x="350" y="26" width="180" height="52" rx="7"></rect>
+            <text class="nl" x="440" y="48">dbo.Company</text>
+            <text class="ns ns-req" x="440" y="65">in plan &middot; All rows</text>
+
+            <rect class="nd nd-dim"  x="680" y="26" width="180" height="52" rx="7"></rect>
+            <text class="nl" x="770" y="48">dbo.Country</text>
+            <text class="ns" x="770" y="65">nullable &middot; left out</text>
+
+            <line class="eg-req" x1="385" y1="186" x2="125" y2="80" marker-end="url(#ar-a)"></line>
+            <text class="el" x="245" y="124">ContactTypeId &middot; NOT NULL</text>
+
+            <line class="eg-req" x1="440" y1="186" x2="440" y2="80" marker-end="url(#ar-a)"></line>
+            <text class="el" x="450" y="136" text-anchor="start">CompanyId &middot; NOT NULL</text>
+
+            <line class="eg-opt" x1="495" y1="186" x2="755" y2="80" marker-end="url(#ar)"></line>
+            <text class="el" x="638" y="124">CountryId &middot; NULL</text>
+
+            <rect class="nd nd-focus" x="350" y="186" width="180" height="58" rx="7"></rect>
+            <text class="nl" x="440" y="210">dbo.Contact</text>
+            <text class="ns" x="440" y="228">Top 100 &middot; 1.9 GB footprint</text>
+
+            <line class="eg-brk" x1="240" y1="350" x2="395" y2="246" marker-end="url(#ar-d)"></line>
+            <text class="el el-brk" x="300" y="292" text-anchor="end">ContactId &middot; NOT NULL</text>
+            <text class="el el-brk" x="300" y="306" text-anchor="end">3.9M rows point outside the seed</text>
+
+            <line class="eg" x1="640" y1="350" x2="485" y2="246" marker-end="url(#ar)"></line>
+            <text class="el" x="580" y="300" text-anchor="start">ContactId &middot; NOT NULL</text>
+
+            <text class="band-lbl" x="8" y="334">CHILDREN &middot; BREAK IF REFERENCED ROWS ARE MISSING</text>
+
+            <rect class="nd nd-brk" x="140" y="350" width="180" height="52" rx="7"></rect>
+            <text class="nl" x="230" y="372">dbo.SiteContact</text>
+            <text class="ns ns-brk" x="230" y="389">in plan &middot; WILL BREAK</text>
+
+            <rect class="nd nd-dim" x="560" y="350" width="180" height="52" rx="7"></rect>
+            <text class="nl" x="650" y="372">dbo.ContactNote</text>
+            <text class="ns" x="650" y="389">Schema only &middot; stays empty</text>
+          </svg>
+          <figcaption>Seeding dbo.Contact to 100 rows satisfies both required parents, but dbo.SiteContact is
+            in the plan at full scope and 3.9M of its rows reference contacts the seed will not create.</figcaption>
+        </figure>
+      </div>
+
+      <div class="legend">
+        <div><svg width="30" height="10" role="img" aria-label="solid line with arrowhead"><line class="eg" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>NOT NULL &mdash; parent row is mandatory</div>
+        <div><svg width="30" height="10" role="img" aria-label="dashed line with arrowhead"><line class="eg-opt" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>Nullable &mdash; orphan tolerable</div>
+        <div><svg width="16" height="12" role="img" aria-label="accent filled box"><rect class="nd nd-plan" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>In plan</div>
+        <div><svg width="16" height="12" role="img" aria-label="dashed accent box"><rect class="nd nd-req" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Pulled in as prerequisite</div>
+        <div><svg width="16" height="12" role="img" aria-label="dashed grey box"><rect class="nd nd-dim" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Schema only or excluded</div>
+        <div><svg width="16" height="12" role="img" aria-label="red box"><rect class="nd nd-brk" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Will break</div>
+      </div>
+
+      <div style="padding:14px 16px; border-top:1px solid var(--line);">
+        <div class="warnline"><span class="g">!</span>
+          <div><b>dbo.SiteContact</b> cannot be satisfied by a 100-row seed of <b>dbo.Contact</b>. Three ways out,
+            none of them guessed for you:
+            <ul style="margin:7px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:3px;">
+              <li>Set <span class="mono">dbo.SiteContact</span> to <b>Schema only</b> &mdash; structure without rows.</li>
+              <li>Seed it with a matching <b>Filter</b> so it only takes rows whose contact is in the seed.</li>
+              <li>Raise the <span class="mono">dbo.Contact</span> limit until it covers what SiteContact needs.</li>
+            </ul>
+          </div></div>
+      </div>
+
+      <div class="actionbar">
+        <span class="guard"><span class="g add">&#10003;</span>2 required parents satisfied</span>
+        <span class="guard"><span class="g del">!</span>1 child unsatisfiable</span>
+        <span class="guard"><span class="g same">&#9671;</span>No FK cycles in this neighbourhood</span>
+        <span class="push"></span>
+        <button class="btn">Export PNG</button>
+        <button class="btn primary">Fix in data compare &rarr;</button>
+      </div>
+    </div>
+  </section>
+
+</div>
