@@ -30,6 +30,7 @@ var api = app.MapGroup("/api");
 
 api.MapPost("/probe", async (
     ConnectionRequest request,
+    ConnectionFactory connections,
     CompareService service,
     CancellationToken cancellationToken) =>
 {
@@ -37,15 +38,20 @@ api.MapPost("/probe", async (
     {
         return Results.Ok(await service.ProbeAsync(request, cancellationToken));
     }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
+    }
     catch (SqlException ex)
     {
-        var (title, detail) = ConnectionProblem.Describe(ex, request.Server, request.Database);
+        var (title, detail) = Explain(ex, request, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
     }
 });
 
 api.MapPost("/compare", async (
     CompareRequest request,
+    ConnectionFactory connections,
     CompareService service,
     CancellationToken cancellationToken) =>
 {
@@ -53,12 +59,16 @@ api.MapPost("/compare", async (
     {
         return Results.Ok(await service.CompareAsync(request, cancellationToken));
     }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
+    }
     catch (SqlException ex)
     {
-        var failing = ex.Number == 4060 && ex.Message.Contains(request.Target.Database, StringComparison.OrdinalIgnoreCase)
-            ? request.Target
-            : request.Source;
-        var (title, detail) = ConnectionProblem.Describe(ex, failing.Server, failing.Database);
+        // Which side failed is worth naming: "cannot open database" against the target reads very
+        // differently from the same error against the source.
+        var side = Blames(ex, request.Target, connections) ? request.Target : request.Source;
+        var (title, detail) = Explain(ex, side, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
     }
 });
@@ -180,5 +190,38 @@ api.MapGet("/runs/{runId}", async (string runId, ApplyService service, Cancellat
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+static (string Title, string Detail) Explain(
+    SqlException exception,
+    ConnectionRequest request,
+    ConnectionFactory connections)
+{
+    try
+    {
+        var resolved = connections.Resolve(request);
+        return ConnectionProblem.Describe(exception, resolved.Server, resolved.Database);
+    }
+    catch (InvalidOperationException)
+    {
+        return ("Cannot reach that database", exception.Message);
+    }
+}
+
+static bool Blames(SqlException exception, ConnectionRequest candidate, ConnectionFactory connections)
+{
+    if (exception.Number != 4060)
+    {
+        return false;
+    }
+
+    try
+    {
+        return exception.Message.Contains(connections.Resolve(candidate).Database, StringComparison.OrdinalIgnoreCase);
+    }
+    catch (InvalidOperationException)
+    {
+        return false;
+    }
+}
 
 public partial class Program;

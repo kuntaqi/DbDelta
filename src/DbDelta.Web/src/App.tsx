@@ -54,6 +54,9 @@ function ConnectionCard({
   onTest: () => void
 }) {
   const environment = probe?.environment ?? 0
+  const pasted = value.connectionString !== undefined && value.connectionString !== null
+  const sqlLogin = value.authentication === 'SqlLogin'
+
   return (
     <div className={`conn ${envClass(environment)}`}>
       <span className="band" />
@@ -63,24 +66,130 @@ function ConnectionCard({
           {probe && <EnvBadge environment={probe.environment} />}
           <span className="dim mono push">{role === 'Source' ? 'read' : probe?.readOnly ? 'blocked' : 'write'}</span>
         </div>
-        <div>
-          <label className="lbl" htmlFor={`${role}-server`}>Server</label>
-          <input
-            id={`${role}-server`}
-            className="field"
-            value={value.server}
-            onChange={(e) => onChange({ ...value, server: e.target.value })}
-          />
+
+        <div className="row" style={{ gap: 6 }}>
+          <button
+            type="button"
+            className={`chip ${pasted ? '' : 'on'}`}
+            onClick={() => onChange({ ...value, connectionString: null })}
+          >
+            Enter details
+          </button>
+          <button
+            type="button"
+            className={`chip ${pasted ? 'on' : ''}`}
+            onClick={() => onChange({ ...value, connectionString: value.connectionString ?? '' })}
+          >
+            Connection string
+          </button>
         </div>
-        <div>
-          <label className="lbl" htmlFor={`${role}-database`}>Database</label>
-          <input
-            id={`${role}-database`}
-            className="field"
-            value={value.database}
-            onChange={(e) => onChange({ ...value, database: e.target.value })}
-          />
-        </div>
+
+        {pasted ? (
+          <div>
+            <label className="lbl" htmlFor={`${role}-cs`}>Connection string</label>
+            <textarea
+              id={`${role}-cs`}
+              className="field"
+              rows={4}
+              spellCheck={false}
+              placeholder="Server=HOST,1433;Database=MyDb;Integrated Security=true;TrustServerCertificate=true"
+              value={value.connectionString ?? ''}
+              onChange={(e) => onChange({ ...value, connectionString: e.target.value })}
+              style={{ resize: 'vertical', fontFamily: 'var(--mono)' }}
+            />
+            <p className="dim" style={{ margin: '6px 0 0', fontSize: 11.5 }}>
+              Used as given. The server name is still read back out of it, so a read-only server stays
+              blocked either way.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>
+              <div>
+                <label className="lbl" htmlFor={`${role}-server`}>Server</label>
+                <input
+                  id={`${role}-server`}
+                  className="field"
+                  value={value.server ?? ''}
+                  onChange={(e) => onChange({ ...value, server: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="lbl" htmlFor={`${role}-port`}>Port</label>
+                <input
+                  id={`${role}-port`}
+                  className="field"
+                  type="number"
+                  placeholder="1433"
+                  value={value.port ?? ''}
+                  onChange={(e) => onChange({ ...value, port: e.target.value ? Number(e.target.value) : null })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="lbl" htmlFor={`${role}-database`}>Database</label>
+              <input
+                id={`${role}-database`}
+                className="field"
+                value={value.database ?? ''}
+                onChange={(e) => onChange({ ...value, database: e.target.value })}
+              />
+            </div>
+            <div>
+              <span className="lbl">Authentication</span>
+              <div className="row" style={{ gap: 6 }}>
+                <button
+                  type="button"
+                  className={`chip ${sqlLogin ? '' : 'on'}`}
+                  onClick={() => onChange({ ...value, authentication: 'Windows' })}
+                >
+                  Windows
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${sqlLogin ? 'on' : ''}`}
+                  onClick={() => onChange({ ...value, authentication: 'SqlLogin' })}
+                >
+                  SQL login
+                </button>
+              </div>
+            </div>
+            {sqlLogin && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="lbl" htmlFor={`${role}-user`}>Login</label>
+                  <input
+                    id={`${role}-user`}
+                    className="field"
+                    autoComplete="off"
+                    value={value.username ?? ''}
+                    onChange={(e) => onChange({ ...value, username: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="lbl" htmlFor={`${role}-pass`}>Password</label>
+                  <input
+                    id={`${role}-pass`}
+                    className="field"
+                    type="password"
+                    autoComplete="off"
+                    value={value.password ?? ''}
+                    onChange={(e) => onChange({ ...value, password: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+            <label className="dim" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
+              <input
+                type="checkbox"
+                checked={value.trustServerCertificate ?? true}
+                onChange={(e) => onChange({ ...value, trustServerCertificate: e.target.checked })}
+              />
+              Trust the server certificate (needed for most internal servers)
+            </label>
+          </>
+        )}
+
         <div className="row">
           <button type="button" className="btn" onClick={onTest} disabled={busy}>
             Test connection
@@ -294,8 +403,7 @@ export default function App() {
               <div className="warnline info" style={{ marginTop: 16 }}>
                 <span className="g">&rarr;</span>
                 <div>
-                  Changes would be written to <b>{target.database}</b> on <b>{target.server}</b>. Nothing is ever
-                  written to the source.
+                  Changes would be written to the <b>target</b> connection. Nothing is ever written to the source.
                 </div>
               </div>
             </div>

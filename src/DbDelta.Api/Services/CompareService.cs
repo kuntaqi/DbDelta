@@ -32,18 +32,18 @@ public sealed class CompareService
 
     public async Task<ProbeResponse> ProbeAsync(ConnectionRequest request, CancellationToken cancellationToken)
     {
-        var connectionString = _connections.Build(request);
-        var info = await _provider.ProbeAsync(connectionString, cancellationToken).ConfigureAwait(false);
-        var schema = await _provider.CreateSchemaReader(connectionString).ReadAsync(cancellationToken).ConfigureAwait(false);
+        var resolved = _connections.Resolve(request);
+        var info = await _provider.ProbeAsync(resolved.ConnectionString, cancellationToken).ConfigureAwait(false);
+        var schema = await _provider.CreateSchemaReader(resolved.ConnectionString).ReadAsync(cancellationToken).ConfigureAwait(false);
 
         return new ProbeResponse(
-            request.Server,
+            resolved.Server,
             info.DatabaseName,
             info.ProductVersion,
             info.Edition,
             info.Collation,
-            _classifier.Classify(request.Server),
-            _classifier.IsReadOnly(request.Server),
+            _classifier.Classify(resolved.Server),
+            _classifier.IsReadOnly(resolved.Server),
             schema.Tables.Count,
             schema.Views.Count,
             schema.Routines.Count,
@@ -54,8 +54,10 @@ public sealed class CompareService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var sourceConnection = _connections.Build(request.Source);
-        var targetConnection = _connections.Build(request.Target);
+        var source_ = _connections.Resolve(request.Source);
+        var target_ = _connections.Resolve(request.Target);
+        var sourceConnection = source_.ConnectionString;
+        var targetConnection = target_.ConnectionString;
 
         var stopwatch = Stopwatch.StartNew();
         var source = await _provider.CreateSchemaReader(sourceConnection).ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -69,8 +71,8 @@ public sealed class CompareService
             Source = source,
             Target = target,
             Diff = diff,
-            SourceServer = request.Source.Server,
-            TargetServer = request.Target.Server,
+            SourceServer = source_.Server,
+            TargetServer = target_.Server,
             SourceConnectionString = sourceConnection,
             TargetConnectionString = targetConnection,
             DurationMs = stopwatch.ElapsedMilliseconds,

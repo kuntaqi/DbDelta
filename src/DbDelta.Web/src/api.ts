@@ -2,9 +2,17 @@ export type EnvironmentClass = 0 | 1 | 2 | 3
 
 export const environmentName = ['Unknown', 'Dev', 'UAT', 'Prod'] as const
 
+export type AuthMode = 'Windows' | 'SqlLogin'
+
 export interface ConnectionRequest {
-  server: string
-  database: string
+  connectionString?: string | null
+  server?: string | null
+  port?: number | null
+  database?: string | null
+  authentication?: AuthMode | null
+  username?: string | null
+  password?: string | null
+  trustServerCertificate?: boolean
 }
 
 export interface ProbeResponse {

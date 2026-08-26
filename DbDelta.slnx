@@ -5,6 +5,7 @@
     <Project Path="src/DbDelta.SqlServer/DbDelta.SqlServer.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/DbDelta.Api.Tests/DbDelta.Api.Tests.csproj" />
     <Project Path="tests/DbDelta.Core.Tests/DbDelta.Core.Tests.csproj" />
     <Project Path="tests/DbDelta.SqlServer.Tests/DbDelta.SqlServer.Tests.csproj" />
   </Folder>
