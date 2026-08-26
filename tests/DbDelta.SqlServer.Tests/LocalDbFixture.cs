@@ -163,6 +163,18 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE VIEW sales.vCompanySegment AS
             SELECT CompanyId, Segment FROM dbo.Company;
         GO
+        SET IDENTITY_INSERT dbo.Category ON;
+        INSERT INTO dbo.Category (CategoryId, Name) VALUES (1, N'Retail'), (2, N'Wholesale'), (3, N'Energy');
+        SET IDENTITY_INSERT dbo.Category OFF;
+        GO
+        CREATE TABLE dbo.Digest (
+            DigestId    INT NOT NULL CONSTRAINT PK_Digest PRIMARY KEY,
+            A           NVARCHAR(10) NULL,
+            B           NVARCHAR(10) NULL
+        );
+        GO
+        INSERT INTO dbo.Digest (DigestId, A, B) VALUES (1, NULL, N'x'), (2, N'x', NULL), (3, N'', N'x');
+        GO
         CREATE PROCEDURE dbo.usp_GetCompany @Id INT AS
             SELECT * FROM dbo.Company WHERE CompanyId = @Id;
         GO
@@ -193,6 +205,18 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         CREATE PROCEDURE dbo.usp_GetCompany @Id INT AS
             SELECT * FROM dbo.Company WHERE CompanyId = @Id;
+        GO
+        SET IDENTITY_INSERT dbo.Category ON;
+        INSERT INTO dbo.Category (CategoryId, Name) VALUES (1, N'Retail'), (2, N'Wholesale Ltd'), (4, N'Obsolete');
+        SET IDENTITY_INSERT dbo.Category OFF;
+        GO
+        CREATE TABLE dbo.Digest (
+            DigestId    INT NOT NULL CONSTRAINT PK_Digest PRIMARY KEY,
+            A           NVARCHAR(10) NULL,
+            B           NVARCHAR(10) NULL
+        );
+        GO
+        INSERT INTO dbo.Digest (DigestId, A, B) VALUES (1, NULL, N'x'), (2, N'x', NULL), (3, N'', N'x');
         GO
         CREATE TABLE dbo.SegmentLegacy (
             Id INT NOT NULL CONSTRAINT PK_SegmentLegacy PRIMARY KEY
