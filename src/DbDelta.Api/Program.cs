@@ -4,6 +4,7 @@ using DbDelta.Core.Apply;
 using DbDelta.Core.Providers;
 using DbDelta.SqlServer;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -107,6 +108,33 @@ api.MapPost("/compare/{id}/script", async (
     return session is null
         ? Results.NotFound()
         : Results.Ok(await service.ScriptAsync(session, request.Include, data, cancellationToken));
+});
+
+api.MapPost("/compare/{id}/data/scan", async (
+    string id,
+    long? maxTableBytes,
+    DataCompareService service,
+    CompareSessionStore sessions,
+    IOptions<SafetyOptions> safety,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    return session is null
+        ? Results.NotFound()
+        : Results.Ok(await service.ScanAsync(
+            session, maxTableBytes ?? safety.Value.MaxScanTableBytes, cancellationToken));
+});
+
+api.MapGet("/compare/{id}/data/scan", (string id, CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    var cached = DataCompareService.CachedScan(session);
+    return cached is null ? Results.NoContent() : Results.Ok(cached);
 });
 
 api.MapPost("/compare/{id}/data/select", (

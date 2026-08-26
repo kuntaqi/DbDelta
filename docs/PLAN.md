@@ -288,3 +288,28 @@ state overlay, no interaction, poor layout on graphs.
   via Windows DPAPI, never in the repo.
 - Resolved: whole-DB ordering is a topological sort with tables created bare and FKs added afterwards,
   so `NOCHECK` bracketing is no longer needed for cycles. See *Empty target*.
+
+### The whole-database scan is a screen, not a compare
+
+"Which tables differ" needs every table compared, which is expensive enough that it is a button rather
+than something that happens on screen load. Three attempts, measured against a real 263-table database
+(165 tables under the 200 MB limit):
+
+| Approach | Time | Why |
+|---|---|---|
+| Stream key+hash per table, merge-join in the client | 126 s | pipelines well, but hashes every row with SHA2 |
+| Aggregate server-side with SHA2, two slices per row | 311 s | *slower* — SHA2 evaluated twice per row, and no pipelining |
+| Aggregate with one `BINARY_CHECKSUM` per row via `CROSS APPLY` | **4.4 s** | the cost was server CPU, not the wire |
+
+The middle row is the useful one: the first guess was that network transfer dominated. It did not. Server
+CPU did, and computing the digest twice per row made the "optimisation" 2.5× worse than the thing it
+replaced. Only measuring found that.
+
+`BINARY_CHECKSUM` is weaker than a cryptographic hash and can collide. That is the right trade **because
+this is a screen**: it decides which tables are worth looking at, and the exact streaming merge join still
+runs on whichever table is opened. On the database above it reached the identical verdict as the SHA2 pass
+— 37 differing, 128 matching — which is evidence, not proof.
+
+The size limit stays. With no limit the same scan runs past nine minutes: 17 large tables dominate, and no
+cheaper digest fixes reading 21 GB. Skipped tables are reported as skipped with their size, never folded
+in with the matching ones.

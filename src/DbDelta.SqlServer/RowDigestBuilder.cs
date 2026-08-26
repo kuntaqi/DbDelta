@@ -85,7 +85,12 @@ internal static class RowDigestBuilder
 
         if (FloatTypes.Contains(typeName))
         {
-            return $"CONVERT(nvarchar(max), {quoted}, 3)";
+            // Style 3 keeps all 17 digits, which is what a double needs to round-trip — but it throws
+            // "arithmetic overflow converting to nvarchar" on any negative value, even into
+            // nvarchar(max). Found on real data: -25 fails where 25 converts fine. Converting the
+            // magnitude and putting the sign back keeps the precision without hitting it.
+            return $"CASE WHEN {quoted} < 0 THEN N'-' + CONVERT(nvarchar(max), -{quoted}, 3) "
+                + $"ELSE CONVERT(nvarchar(max), {quoted}, 3) END";
         }
 
         if (BinaryTypes.Contains(typeName))

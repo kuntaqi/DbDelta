@@ -13,5 +13,9 @@ public sealed class SafetyOptions
 
     public int MaxReviewableScriptBytes { get; init; } = 100 * 1024 * 1024;
 
+    // Tables larger than this are skipped by a full-database scan and said to be skipped. Scanning a
+    // 21 GB table to learn whether it differs costs minutes; the user can raise this deliberately.
+    public long MaxScanTableBytes { get; init; } = 200L * 1024 * 1024;
+
     public double MaxDeleteShare { get; init; } = 0.05;
 }

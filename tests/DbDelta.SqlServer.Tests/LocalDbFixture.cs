@@ -179,10 +179,11 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE TABLE dbo.Digest (
             DigestId    INT NOT NULL CONSTRAINT PK_Digest PRIMARY KEY,
             A           NVARCHAR(10) NULL,
-            B           NVARCHAR(10) NULL
+            B           NVARCHAR(10) NULL,
+            Amount      FLOAT NULL
         );
         GO
-        INSERT INTO dbo.Digest (DigestId, A, B) VALUES (1, NULL, N'x'), (2, N'x', NULL), (3, N'', N'x');
+        INSERT INTO dbo.Digest (DigestId, A, B, Amount) VALUES (1, NULL, N'x', -25), (2, N'x', NULL, 25), (3, N'', N'x', NULL);
         GO
         CREATE VIEW sales.vActiveSegments AS
             SELECT CompanyId, Segment FROM sales.vCompanySegment WHERE Segment IS NOT NULL;
@@ -225,10 +226,11 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE TABLE dbo.Digest (
             DigestId    INT NOT NULL CONSTRAINT PK_Digest PRIMARY KEY,
             A           NVARCHAR(10) NULL,
-            B           NVARCHAR(10) NULL
+            B           NVARCHAR(10) NULL,
+            Amount      FLOAT NULL
         );
         GO
-        INSERT INTO dbo.Digest (DigestId, A, B) VALUES (1, NULL, N'x'), (2, N'x', NULL), (3, N'', N'x');
+        INSERT INTO dbo.Digest (DigestId, A, B, Amount) VALUES (1, NULL, N'x', -25), (2, N'x', NULL, 25), (3, N'', N'x', NULL);
         GO
         CREATE TABLE dbo.SegmentLegacy (
             Id INT NOT NULL CONSTRAINT PK_SegmentLegacy PRIMARY KEY

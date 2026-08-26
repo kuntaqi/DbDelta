@@ -297,3 +297,37 @@ export const planApi = {
     return (await response.json()) as { selected: SelectedTable[] }
   },
 }
+
+export interface TableScanRow {
+  table: string
+  comparable: boolean
+  reason: string | null
+  differs: boolean
+  sourceRows: number
+  targetRows: number
+  rowDelta: number
+}
+
+export interface TableScanResponse {
+  durationMs: number
+  scanned: number
+  differing: number
+  notComparable: number
+  skipped: number
+  maxTableBytes: number
+  tables: TableScanRow[]
+}
+
+export const scanApi = {
+  run: (compareId: string, maxTableBytes: number) =>
+    postJson<TableScanResponse>(
+      `/api/compare/${compareId}/data/scan?maxTableBytes=${maxTableBytes}`,
+      {},
+    ),
+  cached: async (compareId: string) => {
+    const response = await fetch(`/api/compare/${compareId}/data/scan`)
+    if (response.status === 204) return null
+    if (!response.ok) throw new Error('Could not read the scan')
+    return (await response.json()) as TableScanResponse
+  },
+}

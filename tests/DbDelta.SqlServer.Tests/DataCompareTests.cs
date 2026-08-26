@@ -157,6 +157,28 @@ public sealed class DataCompareTests
         Assert.Equal(3, rows.Select(r => r.Hash).Distinct().Count());
     }
 
+    // CONVERT(nvarchar, float, 3) keeps the 17 digits a double needs, but throws "arithmetic overflow"
+    // on any negative value — even into nvarchar(max). Found on a real database where it silently took
+    // ten tables out of the scan, so the sign is handled separately now.
+    [SkippableFact]
+    public async Task A_negative_float_does_not_break_the_digest()
+    {
+        Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
+
+        var (digest, _) = await TablesAsync("Digest");
+        var request = new DataCompareRequest { Table = digest.Identity, KeyColumns = ["DigestId"] };
+
+        var rows = new List<KeyHashRow>();
+        await foreach (var row in ReaderFor(LocalDbFixture.SourceDatabase)
+            .StreamAsync(digest, request, ["A", "B", "Amount"], RowSetSide.Source))
+        {
+            rows.Add(row);
+        }
+
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(3, rows.Select(r => r.Hash).Distinct().Count());
+    }
+
     [SkippableFact]
     public async Task Keys_arrive_in_the_order_the_merge_join_requires()
     {

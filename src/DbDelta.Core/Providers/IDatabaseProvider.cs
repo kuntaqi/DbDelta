@@ -21,5 +21,7 @@ public interface IDatabaseProvider
 
     IDataScriptEmitter CreateDataScriptEmitter();
 
+    ITableFingerprintReader CreateFingerprintReader(string connectionString);
+
     Task<ServerInfo> ProbeAsync(string connectionString, CancellationToken cancellationToken = default);
 }

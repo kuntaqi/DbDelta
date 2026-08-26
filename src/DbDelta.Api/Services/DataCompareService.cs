@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DbDelta.Api.Contracts;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
@@ -13,6 +14,185 @@ public sealed class DataCompareService
     private readonly IDatabaseProvider _provider;
 
     public DataCompareService(IDatabaseProvider provider) => _provider = provider;
+
+    // Only the key+hash pass runs here, for every table at once. That is the cheap half of the design —
+    // no row data moves — but it is still one pass per table, so it is a deliberate action rather than
+    // something that happens whenever the screen opens.
+    // Measured against a real 263-table database: sequentially this took over nine minutes, which is
+    // not a request anyone will wait out. Each table is an independent pair of streams, so they run
+    // concurrently, and tables past a size limit are reported as skipped rather than quietly scanned
+    // for minutes each.
+    private const int ScanConcurrency = 8;
+    private const int ScanBatchSize = 12;
+
+    public async Task<TableScanResponse> ScanAsync(
+        CompareSession session,
+        long maxTableBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var stopwatch = Stopwatch.StartNew();
+        var targets = session.Target.Tables.ToDictionary(t => t.Identity);
+
+        var volume = await _provider.CreateVolumeReader(session.SourceConnectionString)
+            .ReadAsync(cancellationToken).ConfigureAwait(false);
+        var sizes = volume.Tables.ToDictionary(t => t.Table, t => t.TotalBytes);
+
+        var candidates = session.Source.Tables
+            .OrderBy(t => t.Identity.QualifiedName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var rows = new List<TableScanRow>();
+        var comparable = new List<FingerprintRequest>();
+
+        foreach (var source in candidates)
+        {
+            var name = source.Identity.QualifiedName;
+            var bytes = sizes.GetValueOrDefault(source.Identity);
+
+            if (!targets.TryGetValue(source.Identity, out var target))
+            {
+                rows.Add(new TableScanRow(name, false, "only on source", false, 0, 0));
+                continue;
+            }
+
+            if (maxTableBytes > 0 && bytes > maxTableBytes)
+            {
+                rows.Add(new TableScanRow(
+                    name, false, $"skipped, {bytes / 1024 / 1024} MB is over the scan limit", false, 0, 0));
+                continue;
+            }
+
+            var key = ColumnSetResolver.DefaultKeyFor(source);
+            if (key.Count == 0)
+            {
+                rows.Add(new TableScanRow(name, false, "no primary key", false, 0, 0));
+                continue;
+            }
+
+            var columns = ColumnSetResolver.Resolve(
+                source, target, new DataCompareRequest { Table = source.Identity, KeyColumns = key });
+
+            if (!columns.CanCompare)
+            {
+                rows.Add(new TableScanRow(name, false, "no comparable columns", false, 0, 0));
+                continue;
+            }
+
+            comparable.Add(new FingerprintRequest(source, key, columns.ComparedColumns));
+        }
+
+        // Both sides in parallel, and inside each side the reader batches tables per round trip. The
+        // server still scans, but nothing crosses the wire except three numbers per table.
+        var sourceTask = Fingerprints(session.SourceConnectionString, comparable, cancellationToken);
+        var targetTask = Fingerprints(session.TargetConnectionString, TargetSide(comparable, targets), cancellationToken);
+        await Task.WhenAll(sourceTask, targetTask).ConfigureAwait(false);
+
+        var sourcePrints = await sourceTask.ConfigureAwait(false);
+        var targetPrints = await targetTask.ConfigureAwait(false);
+
+        foreach (var request in comparable)
+        {
+            var name = request.Table.Identity.QualifiedName;
+            var left = sourcePrints.GetValueOrDefault(request.Table.Identity);
+            var right = targetPrints.GetValueOrDefault(request.Table.Identity);
+
+            if (left is null || right is null)
+            {
+                rows.Add(new TableScanRow(name, false, "could not be read", false, 0, 0));
+                continue;
+            }
+
+            rows.Add(new TableScanRow(name, true, null, !left.Matches(right), left.RowCount, right.RowCount));
+        }
+
+        rows = rows.OrderBy(r => r.Table, StringComparer.OrdinalIgnoreCase).ToList();
+        stopwatch.Stop();
+
+        session.Scan.Clear();
+        foreach (var row in rows)
+        {
+            session.Scan[row.Table] = row;
+        }
+
+        return new TableScanResponse(
+            stopwatch.ElapsedMilliseconds,
+            rows.Count(r => r.Comparable),
+            rows.Count(r => r.Differs),
+            rows.Count(r => !r.Comparable),
+            rows.Count(r => r.Reason?.StartsWith("skipped", StringComparison.Ordinal) == true),
+            maxTableBytes,
+            rows);
+    }
+
+    public static TableScanResponse? CachedScan(CompareSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        if (session.Scan.Count == 0)
+        {
+            return null;
+        }
+
+        var rows = session.Scan.Values
+            .OrderBy(r => r.Table, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new TableScanResponse(
+            0,
+            rows.Count(r => r.Comparable),
+            rows.Count(r => r.Differs),
+            rows.Count(r => !r.Comparable),
+            rows.Count(r => r.Reason?.StartsWith("skipped", StringComparison.Ordinal) == true),
+            0,
+            rows);
+    }
+
+    // The same tables, but paired with the target's own definitions: column types differ between sides
+    // after drift, and the digest expression is built from whichever side it will run on.
+    private static IReadOnlyList<FingerprintRequest> TargetSide(
+        IReadOnlyList<FingerprintRequest> requests,
+        Dictionary<ObjectIdentity, TableDefinition> targets) =>
+        requests
+            .Where(r => targets.ContainsKey(r.Table.Identity))
+            .Select(r => new FingerprintRequest(targets[r.Table.Identity], r.KeyColumns, r.Columns))
+            .ToList();
+
+    private async Task<Dictionary<ObjectIdentity, TableFingerprint>> Fingerprints(
+        string connectionString,
+        IReadOnlyList<FingerprintRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var reader = _provider.CreateFingerprintReader(connectionString);
+        var prints = new Dictionary<ObjectIdentity, TableFingerprint>();
+
+        // Batches run concurrently so one slow table does not hold the rest up. A table that cannot be
+        // read loses only its own batch entry; the scan still reports on everything else.
+        var batches = requests.Chunk(ScanBatchSize).ToList();
+        var results = new IReadOnlyList<TableFingerprint>[batches.Count];
+
+        await Parallel.ForAsync(0, batches.Count,
+            new ParallelOptions { MaxDegreeOfParallelism = ScanConcurrency, CancellationToken = cancellationToken },
+            async (index, token) =>
+            {
+                try
+                {
+                    results[index] = await reader.ReadAsync(batches[index], token).ConfigureAwait(false);
+                }
+                catch (Microsoft.Data.SqlClient.SqlException)
+                {
+                    results[index] = [];
+                }
+            }).ConfigureAwait(false);
+
+        foreach (var print in results.Where(r => r is not null).SelectMany(r => r))
+        {
+            prints[print.Table] = print;
+        }
+
+        return prints;
+    }
 
     public DataSelectionResponse Select(CompareSession session, DataSelectionRequest request)
     {

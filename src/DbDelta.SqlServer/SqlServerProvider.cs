@@ -27,6 +27,9 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     public IDataScriptEmitter CreateDataScriptEmitter() => new TSqlDataEmitter();
 
+    public ITableFingerprintReader CreateFingerprintReader(string connectionString) =>
+        new SqlServerFingerprintReader(connectionString);
+
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,
         CancellationToken cancellationToken = default)

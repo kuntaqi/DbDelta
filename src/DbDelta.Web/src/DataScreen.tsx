@@ -3,7 +3,9 @@ import {
   dataApi,
   formatBytes,
   planApi,
+  scanApi,
   type SelectedTable,
+  type TableScanResponse,
   type CompareResponse,
   type DataCompareResponse,
   type TableDataMode,
@@ -20,6 +22,13 @@ const MODES: { value: TableDataMode; label: string }[] = [
 const CLASS_TONE: Record<string, string> = { Insert: 'add', Update: 'chg', Delete: 'del' }
 const CLASS_GLYPH: Record<string, string> = { Insert: '+', Update: '~', Delete: '−' }
 
+// The scan knows a table differs and by how many rows in total; which rows is a question for the
+// exact compare, so the label says "differs" rather than inventing a breakdown.
+function rowDeltaLabel(delta: number): string {
+  if (delta === 0) return 'differs'
+  return `differs (${delta > 0 ? '+' : ''}${delta.toLocaleString()} rows)`
+}
+
 function sizeTone(bytes: number): string {
   if (bytes > 1024 * 1024 * 1024) return 'var(--del)'
   if (bytes > 100 * 1024 * 1024) return 'var(--chg)'
@@ -35,8 +44,33 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [inPlan, setInPlan] = useState<SelectedTable[]>([])
+  const [scan, setScan] = useState<TableScanResponse | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [onlyDiffering, setOnlyDiffering] = useState(true)
+  const [scanLimitMb, setScanLimitMb] = useState(200)
 
   const picked = selected !== null && inPlan.some((s) => s.table === selected.qualifiedName)
+  const scanned = new Map(scan?.tables.map((t) => [t.table, t]) ?? [])
+
+  // Which tables differ is only knowable by comparing them, so the list stays complete until a scan
+  // has actually run. Hiding rows before then would be hiding rows on no evidence.
+  const listed = (volume?.tables ?? []).filter((table) => {
+    if (!scan || !onlyDiffering) return true
+    const row = scanned.get(table.qualifiedName)
+    return row ? row.differs || !row.comparable : true
+  })
+
+  async function runScan() {
+    setScanning(true)
+    setError(null)
+    try {
+      setScan(await scanApi.run(comparison.id, scanLimitMb * 1024 * 1024))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setScanning(false)
+    }
+  }
 
   async function toggle(next: boolean) {
     if (!selected) return
@@ -103,10 +137,58 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
       <div className="split">
         <div className="pane-l">
           <div className="pane-hd">
-            Tables <span className="plain rt">{volume?.tables.length ?? 0}</span>
+            Tables
+            <span className="plain rt">
+              {scan ? `${listed.length} of ${volume?.tables.length ?? 0}` : (volume?.tables.length ?? 0)}
+            </span>
           </div>
+
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" className="btn" onClick={runScan} disabled={scanning || !volume}>
+              {scanning ? 'Scanning…' : scan ? 'Rescan all tables' : 'Scan all tables for differences'}
+            </button>
+
+            <label className="dim" style={{ fontSize: 11.5, display: "flex", gap: 6, alignItems: "center" }}>
+              Skip tables over
+              <input
+                className="field"
+                type="number"
+                min={1}
+                value={scanLimitMb}
+                onChange={(e) => setScanLimitMb(Number(e.target.value) || 1)}
+                style={{ width: 78 }}
+                aria-label="Scan size limit in megabytes"
+              />
+              MB
+            </label>
+
+            {!scan && !scanning && (
+              <p className="dim" style={{ margin: 0, fontSize: 11.5 }}>
+                Every table is listed until a scan runs. Finding which ones differ means comparing them —
+                one hash pass each, no row data moved.
+              </p>
+            )}
+
+            {scan && (
+              <>
+                <button
+                  type="button"
+                  className={`chip ${onlyDiffering ? 'on' : ''}`}
+                  onClick={() => setOnlyDiffering(!onlyDiffering)}
+                >
+                  Hide matching tables <span className="n">{scan.scanned - scan.differing}</span>
+                </button>
+                <p className="dim" style={{ margin: 0, fontSize: 11.5 }}>
+                  {scan.differing} differ · {scan.scanned - scan.differing} match · {scan.notComparable} not
+                  comparable {scan.skipped > 0 && `(${scan.skipped} too large)`} · scanned in{" "}
+                  {(scan.durationMs / 1000).toFixed(1)}s
+                </p>
+              </>
+            )}
+          </div>
+
           <ul className="tree" style={{ fontSize: 13 }}>
-            {volume?.tables.map((table) => (
+            {listed.map((table) => (
               <li key={table.qualifiedName}>
                 <button
                   type="button"
@@ -126,6 +208,14 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                       </span>
                     )}
                     {!table.onBothSides && <span className="why dim">source only</span>}
+                    {scanned.get(table.qualifiedName)?.differs && (
+                      <span className="why" style={{ color: 'var(--chg)' }}>
+                        {rowDeltaLabel(scanned.get(table.qualifiedName)!.rowDelta)}
+                      </span>
+                    )}
+                    {scanned.get(table.qualifiedName)?.comparable === false && (
+                      <span className="why dim">{scanned.get(table.qualifiedName)!.reason}</span>
+                    )}
                   </span>
                   <span
                     className="mono"
