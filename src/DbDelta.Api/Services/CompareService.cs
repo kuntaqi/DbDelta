@@ -127,20 +127,68 @@ public sealed class CompareService
             script.Steps.Select(s => s.Sql).ToList());
     }
 
+    public SchemaSelectionResponse SelectSchema(CompareSession session, SchemaSelectionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var identity = session.Resolve(request.ObjectId)
+            ?? throw new InvalidOperationException($"'{request.ObjectId}' is not part of this comparison.");
+
+        var diff = session.Diff.Find(identity);
+        if (diff is null || !diff.HasChanges)
+        {
+            throw new InvalidOperationException($"{identity.QualifiedName} has nothing to sync.");
+        }
+
+        if (request.Selected)
+        {
+            session.SchemaSelections.Add(identity);
+        }
+        else
+        {
+            session.SchemaSelections.Remove(identity);
+        }
+
+        return SchemaSelection(session);
+    }
+
+    public SchemaSelectionResponse SelectAllSchema(CompareSession session, bool selected)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        session.SchemaSelections.Clear();
+
+        if (selected)
+        {
+            foreach (var diff in session.Diff.Differing)
+            {
+                session.SchemaSelections.Add(diff.Identity);
+            }
+        }
+
+        return SchemaSelection(session);
+    }
+
+    public static SchemaSelectionResponse SchemaSelection(CompareSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        return new SchemaSelectionResponse(
+            session.SchemaSelections.Select(session.IdOf).OrderBy(id => id, StringComparer.Ordinal).ToList(),
+            session.Diff.Differing.Count(),
+            session.DataSelections.Count);
+    }
+
     public async Task<ScriptResponse> ScriptAsync(
         CompareSession session,
-        IReadOnlyList<string> include,
         DataCompareService data,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(include);
         ArgumentNullException.ThrowIfNull(data);
 
-        var identities = include.Count == 0
-            ? session.Diff.Differing.Select(o => o.Identity).ToHashSet()
-            : include.Select(session.Resolve).OfType<ObjectIdentity>().ToHashSet();
-
+        var identities = session.SchemaSelections.ToHashSet();
         var script = new TSqlEmitterAdapter(_provider).Emit(session, identities);
         var steps = script.Steps.ToList();
         var (dataSteps, deleteWarnings) = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);

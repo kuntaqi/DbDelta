@@ -107,7 +107,45 @@ api.MapPost("/compare/{id}/script", async (
     var session = sessions.Find(id);
     return session is null
         ? Results.NotFound()
-        : Results.Ok(await service.ScriptAsync(session, request.Include, data, cancellationToken));
+        : Results.Ok(await service.ScriptAsync(session, data, cancellationToken));
+});
+
+api.MapPost("/compare/{id}/schema/select", (
+    string id,
+    SchemaSelectionRequest request,
+    CompareService service,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(service.SelectSchema(session, request));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot select that object");
+    }
+});
+
+api.MapPost("/compare/{id}/schema/select-all", (
+    string id,
+    bool selected,
+    CompareService service,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    return session is null ? Results.NotFound() : Results.Ok(service.SelectAllSchema(session, selected));
+});
+
+api.MapGet("/compare/{id}/schema/select", (string id, CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    return session is null ? Results.NotFound() : Results.Ok(CompareService.SchemaSelection(session));
 });
 
 api.MapPost("/compare/{id}/data/scan", async (

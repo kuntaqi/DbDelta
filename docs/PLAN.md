@@ -118,11 +118,18 @@ One consequence worth stating: an exclusion is only meaningful against a known c
 surfaces a *different* change to the same object, that is a new change unit with a new identity and it is
 not covered by the old exclusion.
 
-### Data enters the plan per table, never wholesale
+### Nothing enters the plan without being picked
 
-Schema differences are selected for you. Data is not: a table's rows join the plan only when that table
-is picked explicitly, and picking it brings that table's changes under its chosen mode. Selecting every
-difference the compare happened to find would make the heaviest part of a sync the least deliberate one.
+Earlier drafts selected schema differences automatically and left data opt-in. That is now uniform:
+**nothing** is selected for you. Schema objects are ticked on the overview, table data is picked on the
+data screen, and an empty plan produces an empty script and a refused apply that says why.
+
+The reason is that a tool which pre-selects everything it found makes the review step optional in
+practice — you would press apply on a list you never read. "Select all differing" exists as one click for
+when that is genuinely what you want; the difference is that it is a click.
+
+Within a picked table, that table's changes go in under its chosen mode. Selecting every difference the
+compare happened to find would make the heaviest part of a sync the least deliberate one.
 
 Within the script, deletes walk the foreign key graph child-first and inserts parent-first, so the two
 cannot share a phase. `INSERT` batches stop at 1000 row constructors because that is the T-SQL ceiling,

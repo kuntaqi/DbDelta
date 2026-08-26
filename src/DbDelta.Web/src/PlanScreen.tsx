@@ -45,7 +45,7 @@ export function PlanScreen({
     setBusy(true)
     setError(null)
     try {
-      const response = await applyApi.apply(comparison.id, [], confirmation, allowDestructive)
+      const response = await applyApi.apply(comparison.id, confirmation, allowDestructive)
       setResult(response)
       if (response.outcome === 'Committed') onApplied()
     } catch (e) {

@@ -34,6 +34,10 @@ public sealed class CompareSession
     // session rather than recomputed every time the screen opens.
     public Dictionary<string, Contracts.TableScanRow> Scan { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    // Nothing reaches the plan without being picked — schema included. A tool that pre-selects the
+    // changes it found makes the review step optional in practice.
+    public HashSet<ObjectIdentity> SchemaSelections { get; } = [];
+
     // Stable across a session so the SPA can address an object without sending its identity back in
     // pieces, and so a stale id from an old comparison cannot silently resolve against a new one.
     public string IdOf(ObjectIdentity identity) =>

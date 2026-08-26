@@ -39,7 +39,7 @@ public sealed class ApplyService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
 
-        var script = await _compare.ScriptAsync(session, request.Include, _data, cancellationToken).ConfigureAwait(false);
+        var script = await _compare.ScriptAsync(session, _data, cancellationToken).ConfigureAwait(false);
         var destructive = Destructive(script);
 
         // An empty plan has nothing to commit, and logging it as a successful run would fill the log
@@ -47,7 +47,9 @@ public sealed class ApplyService
         if (script.StepCount == 0)
         {
             return Respond(
-                ApplyResult.Blocked("Nothing to apply — the target already matches for everything selected.", []),
+                ApplyResult.Blocked(
+                    "Nothing to apply. Pick the schema objects and table data you want on the overview and "
+                    + "data screens first — nothing is selected for you.", []),
                 0,
                 destructive);
         }

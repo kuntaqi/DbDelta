@@ -8,6 +8,7 @@ import {
   type ObjectDetail,
   type ObjectSummary,
   type ProbeResponse,
+  schemaApi,
   type ScriptResponse,
 } from './api'
 import { PlanScreen } from './PlanScreen'
@@ -259,6 +260,7 @@ export default function App() {
   const [comparison, setComparison] = useState<CompareResponse | null>(null)
   const [detail, setDetail] = useState<ObjectDetail | null>(null)
   const [script, setScript] = useState<ScriptResponse | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -323,7 +325,7 @@ export default function App() {
               onClick={() =>
                 comparison &&
                 run(
-                  () => api.script(comparison.id, []),
+                  () => api.script(comparison.id),
                   (value) => {
                     setScript(value)
                     setScreen('plan')
@@ -476,6 +478,32 @@ export default function App() {
                 <span className="dim" style={{ fontSize: 12 }}>
                   {comparison.objects.filter((o) => o.kind !== 'Same').length} object(s) differ
                 </span>
+                <span className="push" />
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() =>
+                    run(
+                      () => schemaApi.selectAll(comparison.id, true),
+                      (value) => setPicked(new Set(value.selected)),
+                    )
+                  }
+                >
+                  Select all differing
+                </button>
+                <button
+                  type="button"
+                  className="chip"
+                  disabled={picked.size === 0}
+                  onClick={() =>
+                    run(
+                      () => schemaApi.selectAll(comparison.id, false),
+                      (value) => setPicked(new Set(value.selected)),
+                    )
+                  }
+                >
+                  Clear
+                </button>
               </div>
             </div>
 
@@ -488,10 +516,26 @@ export default function App() {
                   </div>
                   <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
                     {objects.map((object) => (
-                      <li key={object.id}>
+                      <li key={object.id} className="it" style={{ paddingLeft: 14 }}>
+                        {object.kind === 'Same' ? (
+                          <span className="cb" aria-hidden="true" />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={picked.has(object.id)}
+                            onChange={(e) =>
+                              run(
+                                () => schemaApi.select(comparison.id, object.id, e.target.checked),
+                                (value) => setPicked(new Set(value.selected)),
+                              )
+                            }
+                            aria-label={`Include ${object.qualifiedName} in the sync plan`}
+                          />
+                        )}
+                        <span className={`g ${KIND_GLYPH[object.kind].tone}`}>{KIND_GLYPH[object.kind].glyph}</span>
                         <button
                           type="button"
-                          className={`it ${detail?.summary.id === object.id ? 'on' : ''}`}
+                          className="linkish"
                           onClick={() =>
                             run(
                               () => api.detail(comparison.id, object.id),
@@ -502,10 +546,9 @@ export default function App() {
                             )
                           }
                         >
-                          <span className={`g ${KIND_GLYPH[object.kind].tone}`}>{KIND_GLYPH[object.kind].glyph}</span>
                           <span className="nm">{object.qualifiedName}</span>
-                          <span className="why">{object.summary}</span>
                         </button>
+                        <span className="why">{object.summary}</span>
                       </li>
                     ))}
                   </ul>
@@ -514,7 +557,12 @@ export default function App() {
             </ul>
 
             <div className="actionbar">
-              <span className="guard">Pick an object to see what changes</span>
+              <span className="guard">
+                <span className={`g ${picked.size > 0 ? 'add' : 'same'}`}>{picked.size > 0 ? '✓' : '◇'}</span>
+                {picked.size === 0
+                  ? 'Nothing picked. Tick the objects you want in the plan — none are selected for you.'
+                  : `${picked.size} object(s) in the plan`}
+              </span>
               <span className="push" />
               <button type="button" className="btn" onClick={() => setScreen('connections')}>
                 Back to connections

@@ -123,8 +123,7 @@ export const api = {
     if (!response.ok) throw new Error(await readError(response))
     return (await response.json()) as ObjectDetail
   },
-  script: (compareId: string, include: string[]) =>
-    post<ScriptResponse>(`/api/compare/${compareId}/script`, { include }),
+  script: (compareId: string) => post<ScriptResponse>(`/api/compare/${compareId}/script`, {}),
 }
 
 export interface ApplyResponse {
@@ -150,8 +149,8 @@ export interface RunLogEntryDto {
 }
 
 export const applyApi = {
-  apply: (compareId: string, include: string[], confirmation: string, allowDestructive: boolean) =>
-    postJson<ApplyResponse>(`/api/compare/${compareId}/apply`, { include, confirmation, allowDestructive }),
+  apply: (compareId: string, confirmation: string, allowDestructive: boolean) =>
+    postJson<ApplyResponse>(`/api/compare/${compareId}/apply`, { confirmation, allowDestructive }),
   runs: async () => {
     const response = await fetch('/api/runs')
     if (!response.ok) throw new Error('Could not read the run log')
@@ -329,5 +328,26 @@ export const scanApi = {
     if (response.status === 204) return null
     if (!response.ok) throw new Error('Could not read the scan')
     return (await response.json()) as TableScanResponse
+  },
+}
+
+export interface SchemaSelectionResponse {
+  selected: string[]
+  differing: number
+  dataTables: number
+}
+
+export const schemaApi = {
+  select: (compareId: string, objectId: string, selected: boolean) =>
+    postJson<SchemaSelectionResponse>(`/api/compare/${compareId}/schema/select`, { objectId, selected }),
+  selectAll: (compareId: string, selected: boolean) =>
+    postJson<SchemaSelectionResponse>(
+      `/api/compare/${compareId}/schema/select-all?selected=${selected}`,
+      {},
+    ),
+  selection: async (compareId: string) => {
+    const response = await fetch(`/api/compare/${compareId}/schema/select`)
+    if (!response.ok) throw new Error('Could not read the schema selection')
+    return (await response.json()) as SchemaSelectionResponse
   },
 }
