@@ -13,16 +13,21 @@ per-table sync and real guardrails does not exist (Redgate Data Compare is paid)
 ## Status — read before writing any code
 
 The app runs. `dotnet run --project src/DbDelta.Api` serves it on http://localhost:5199 once the SPA has
-been built once (see *Running it*). All seven screens work against real databases: connect, compare
+been built once (see *Running it*). All six screens work against real databases: connect, compare
 schema and data, pick what goes in the plan, review the script, apply it under guards, read the run log.
 
-**Nothing is selected for you.** Schema objects are ticked on the overview, table data is picked per table
-on the data screen. An empty plan yields an empty script and a refused apply.
+**Nothing is selected for you.** Schema objects are ticked on Schema compare, table data is picked per
+table on the data screen. An empty plan yields an empty script and a refused apply.
 
 **The screens are tabs, not a wizard.** A compared pair of connections is the only prerequisite; after that
-every screen is reachable from every other, in any order. Schema detail is the single exception — it shows
-one object, so it needs one opened from the overview first. Docs still number the screens 1–7 for reference;
+every screen is reachable from every other, in any order. Docs still number the screens 1–6 for reference;
 the app does not, because numbering implied an order it never enforced.
+
+**Schema compare is one screen, not two.** The object list and one object's difference used to be separate
+screens (Overview and Schema detail); the difference now opens inline under the object's own row, so ticking
+for the plan and reading the diff happen in the same place. One object is open at a time and its detail is
+fetched when it opens — the emitter runs per object, so fetching all of them up front would be wasted work
+on a database with hundreds of tables.
 
 What exists:
 
@@ -113,11 +118,11 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
 
 1. Solution skeleton + Core model & diff engine + unit tests (no DB)
 2. SQL Server schema reader + T-SQL emitter
-3. API endpoints + React shell + screens 1–3 (schema path end to end)
+3. API endpoints + React shell + screens 1–2 (schema path end to end)
 4. Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list
-5. Data compare engine, per-table modes + screens 4–5 (parent closure designed, not built)
-6. Apply path + safety guards + screen 6
-7. FK map (screen 7)
+5. Data compare engine, per-table modes + screens 3–4 (parent closure designed, not built)
+6. Apply path + safety guards + screen 5
+7. FK map (screen 6)
 8. PostgreSQL provider stub proving the abstraction holds
 
 ## Running it

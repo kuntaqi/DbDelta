@@ -232,6 +232,15 @@
   .st { color:var(--add); }
   .cm { color:var(--ink-3); font-style:italic; }
 
+  /* the object's difference, opened in place under its row */
+  .objdetail {
+    border-bottom:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface-2);
+  }
+  .objdetail table.grid { background:var(--surface); }
+  .objdetail table.grid td .g { margin-right:7px; }
+  .objdetail table.grid td .nm { font-family:var(--mono); font-size:12.5px; }
+  .objdetail .why { margin-left:6px; }
+
   /* data grid */
   .gridwrap { overflow-x:auto; }
   table.grid { border-collapse:collapse; width:100%; font-size:12.5px; }
@@ -415,12 +424,11 @@
     <nav class="jump">
       <a href="#state">Status</a>
       <a href="#s1">1 Connections</a>
-      <a href="#s2">2 Overview</a>
-      <a href="#s3">3 Schema</a>
-      <a href="#s4">4 Data</a>
-      <a href="#s5">5 Sync plan</a>
-      <a href="#s6">6 Run log</a>
-      <a href="#s7">7 FK map</a>
+      <a href="#s2">2 Schema</a>
+      <a href="#s3">3 Data</a>
+      <a href="#s4">4 Sync plan</a>
+      <a href="#s5">5 Run log</a>
+      <a href="#s6">6 FK map</a>
       <a href="#gap">Not built</a>
     </nav>
   </div>
@@ -430,7 +438,7 @@
 
   <header class="hero">
     <p class="eyebrow">Rujukan &middot; menggambarkan apa yang benar-benar ada</p>
-    <h1>Tujuh layar, sebagaimana terbangun</h1>
+    <h1>Enam layar, sebagaimana terbangun</h1>
     <p class="lede">Dokumen ini bukan lagi usulan. Setiap layar di bawah menggambarkan aplikasi yang
       berjalan, dan bagian <a href="#gap">Not built</a> mencatat gagasan yang pernah ada di mockup awal
       tapi tidak pernah dibangun &mdash; supaya tidak ada yang mengira fitur itu tersedia.</p>
@@ -536,10 +544,15 @@
 
   <!-- 2 -->
   <section class="screen" id="s2">
-    <div class="screen-head"><span class="screen-num">02</span><h2>Overview</h2></div>
+    <div class="screen-head"><span class="screen-num">02</span><h2>Schema compare</h2></div>
     <p class="screen-note">Kartu angka per tipe objek, lalu satu pohon berisi semua tipe. Checkbox
       <strong>kosong</strong> &mdash; tidak ada yang dipilih untukmu. Baris identik disembunyikan default
-      tapi jumlahnya tetap ditampilkan. Nama objek bisa diklik untuk membuka layar 3.</p>
+      tapi jumlahnya tetap ditampilkan. Klik satu baris dan detail perbedaannya terbuka di tempat, tepat
+      di bawah baris itu &mdash; dulu ini dua layar terpisah (Overview dan Schema detail).</p>
+    <p class="screen-note">Baris yang terbuka berisi: satu tabel &ldquo;apa yang berbeda&rdquo; beserta nilai
+      kedua sisinya, lalu DDL berdampingan dengan baris berbeda ditandai, lalu perintah yang benar-benar akan
+      dijalankan di target. Mencentang untuk plan dan membuka perbedaan adalah dua hal terpisah &mdash;
+      checkbox tidak pernah membuka panel, dan hanya satu objek terbuka pada satu waktu.</p>
 
     <div class="app">
       <div class="app-bar">
@@ -574,15 +587,57 @@
 
       <ul class="tree">
         <li class="grp">Tables <span class="cnt">18</span></li>
-        <li class="it indent"><span class="cb"></span><span class="g chg">~</span>
-          <span class="nm">dbo.Company</span><span class="why">2 columns, 1 index differ</span></li>
+        <li class="it indent on"><span class="cb"></span><span class="g chg">~</span>
+          <span class="nm">dbo.Company</span><span class="why">2 columns, 1 index differ</span>
+          <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9662;</span></li>
+
+        <li><div class="objdetail">
+          <table class="grid">
+            <thead><tr><th style="width:44%;">What differs</th><th>Source</th><th>Target</th></tr></thead>
+            <tbody>
+              <tr><td><span class="g chg">~</span><span class="nm">Segment</span>
+                <span class="why dim">column &middot; data type</span></td>
+                <td style="color:var(--add);">NVARCHAR(40)</td><td style="color:var(--del);">NVARCHAR(20)</td></tr>
+              <tr><td><span class="g add">+</span><span class="nm">RatingBand</span>
+                <span class="why dim">column</span></td>
+                <td style="color:var(--add);">present</td><td class="dim">&mdash;</td></tr>
+              <tr><td><span class="g add">+</span><span class="nm">IX_Company_Rating</span>
+                <span class="why dim">index</span></td>
+                <td style="color:var(--add);">present</td><td class="dim">&mdash;</td></tr>
+              <tr><td><span class="g add">+</span><span class="nm">CK_Company_Rating</span>
+                <span class="why dim">check constraint</span></td>
+                <td style="color:var(--add);">present</td><td class="dim">&mdash;</td></tr>
+            </tbody>
+          </table>
+
+          <div class="pane-hd" style="border-top:1px solid var(--line);">
+            <span class="plain">Source &middot; AppDev</span><span class="plain rt">Target &middot; AppUat</span></div>
+          <div class="two flat">
+            <div class="codewrap">
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">    RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">5</span><span class="cd">);</span></div></pre>
+            </div>
+            <div class="codewrap">
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(20) <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">4</span><span class="cd">);</span></div><div class="cl"><span class="ln">5</span><span class="cd"> </span></div></pre>
+            </div>
+          </div>
+
+          <div class="pane-hd" style="border-top:1px solid var(--line);">Will run on target
+            <span class="plain rt">3 statement(s)</span></div>
+          <div class="codewrap" style="padding:10px 0 14px;">
+            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ALTER COLUMN</span> [Segment] <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ADD</span> [RatingBand] <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">EXEC</span> sp_executesql N&#39;<span class="kw">CREATE INDEX</span> [IX_Company_Rating] <span class="kw">ON</span> [dbo].[Company] ([RatingBand] ASC)&#39;;</span></div></pre>
+          </div>
+        </div></li>
+
         <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
-          <span class="nm">dbo.CompanyRating</span><span class="why">only on source</span></li>
+          <span class="nm">dbo.CompanyRating</span><span class="why">only on source</span>
+          <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
         <li class="it indent"><span class="cb"></span><span class="g del">&minus;</span>
-          <span class="nm">dbo.SegmentLegacy</span><span class="why">only on target</span></li>
+          <span class="nm">dbo.SegmentLegacy</span><span class="why">only on target</span>
+          <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
         <li class="grp">Views <span class="cnt">5</span></li>
         <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
-          <span class="nm">sales.vCompanySegment</span><span class="why">body differs</span></li>
+          <span class="nm">sales.vCompanySegment</span><span class="why">body differs</span>
+          <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
       </ul>
 
       <div class="actionbar">
@@ -593,67 +648,14 @@
     </div>
     <p class="caption">Tanpa satu pun dicentang, action bar berbunyi &ldquo;Nothing picked. Tick the objects
       you want in the plan &mdash; none are selected for you.&rdquo;</p>
-  </section>
 
-  <!-- 3 -->
-  <section class="screen" id="s3">
-    <div class="screen-head"><span class="screen-num">03</span><h2>Schema detail</h2></div>
-    <p class="screen-note">DDL berdampingan dengan baris berbeda ditandai, dan di bawahnya perintah yang
-      benar-benar akan dijalankan di target.</p>
-
-    <div class="app">
-      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="g chg">~</span><span class="mono">dbo.Company</span>
-        <span class="badge neutral">Table</span>
-        <span class="dim mono push">2 columns, 1 index, 1 constraint differ</span></div>
-
-      <div class="split">
-        <div class="pane-l">
-          <div class="pane-hd">Difference summary</div>
-          <ul class="tree" style="font-size:13px;">
-            <li class="it"><span class="g add">+</span><span class="nm">RatingBand</span><span class="why dim">column</span></li>
-            <li class="it"><span class="g chg">~</span><span class="nm">Segment</span><span class="why dim">column</span></li>
-            <li class="it"><span class="g add">+</span><span class="nm">IX_Company_Rating</span><span class="why dim">index</span></li>
-            <li class="it"><span class="g add">+</span><span class="nm">CK_Company_Rating</span><span class="why dim">check constraint</span></li>
-          </ul>
-          <div class="pane-hd">Values</div>
-          <div class="gridwrap">
-            <table class="grid">
-              <thead><tr><th>Property</th><th>Source</th><th>Target</th></tr></thead>
-              <tbody><tr><td>Segment.DataType</td><td style="color:var(--add);">NVARCHAR(40)</td><td style="color:var(--del);">NVARCHAR(20)</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div>
-          <div class="pane-hd"><span class="plain">Source &middot; AppDev</span><span class="plain rt">Target &middot; AppUat</span></div>
-          <div class="two flat">
-            <div class="codewrap">
-              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">    RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">5</span><span class="cd">);</span></div></pre>
-            </div>
-            <div class="codewrap">
-              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(20) <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">4</span><span class="cd">);</span></div><div class="cl"><span class="ln">5</span><span class="cd"> </span></div></pre>
-            </div>
-          </div>
-
-          <div class="pane-hd" style="border-top:1px solid var(--line);">Will run on target</div>
-          <div class="codewrap" style="padding:10px 0 14px;">
-            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ALTER COLUMN</span> [Segment] <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ADD</span> [RatingBand] <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">EXEC</span> sp_executesql N&#39;<span class="kw">CREATE INDEX</span> [IX_Company_Rating] <span class="kw">ON</span> [dbo].[Company] ([RatingBand] ASC)&#39;;</span></div></pre>
-          </div>
-        </div>
-      </div>
-      <div class="actionbar">
-        <span class="guard"><span class="g same">&#9671;</span>3 statement(s) for this object</span>
-        <span class="push"></span><button class="btn">Back to overview</button>
-      </div>
-    </div>
     <p class="caption">Baris 3 dibungkus <span class="mono">EXEC sp_executesql</span> karena kolom yang baru
       ditambah tidak terlihat oleh statement lain di batch yang sama.</p>
   </section>
 
-  <!-- 4 -->
-  <section class="screen" id="s4">
-    <div class="screen-head"><span class="screen-num">04</span><h2>Data compare</h2></div>
+  <!-- 3 -->
+  <section class="screen" id="s3">
+    <div class="screen-head"><span class="screen-num">03</span><h2>Data compare</h2></div>
     <p class="screen-note">Kiri: daftar tabel dengan footprint, tombol scan, dan filter yang menyembunyikan
       tabel yang sama. Kanan: tabel terpilih dengan mode data, kartu angka, dan grid diff per sel.
       Pemilihan untuk sync plan <strong>per tabel</strong>.</p>
@@ -797,10 +799,10 @@
       Kalau ditolak, angkanya ikut: &ldquo;Source: 453 rows but only 13 distinct key values&rdquo;.</p>
   </section>
 
-  <!-- 5 -->
-  <section class="screen" id="s5">
-    <div class="screen-head"><span class="screen-num">05</span><h2>Sync plan</h2></div>
-    <p class="screen-note">Semua yang dicentang di layar 2 dan 4 keluar di sini sebagai satu script
+  <!-- 4 -->
+  <section class="screen" id="s4">
+    <div class="screen-head"><span class="screen-num">04</span><h2>Sync plan</h2></div>
+    <p class="screen-note">Semua yang dicentang di layar 2 dan 3 keluar di sini sebagai satu script
       berurutan. Delete baris berjalan anak-dulu, insert induk-dulu. Apply butuh nama database diketik,
       dan langkah destruktif butuh centang tersendiri.</p>
 
@@ -861,9 +863,9 @@
       sensitive), langkah destruktif diakui, dan target belum bergeser sejak compare.</p>
   </section>
 
-  <!-- 6 -->
-  <section class="screen" id="s6">
-    <div class="screen-head"><span class="screen-num">06</span><h2>Run log</h2></div>
+  <!-- 5 -->
+  <section class="screen" id="s5">
+    <div class="screen-head"><span class="screen-num">05</span><h2>Run log</h2></div>
     <p class="screen-note">Setiap apply tercatat di <span class="mono">%APPDATA%\DbDelta\runs</span> sebagai
       satu file JSON, lengkap dengan script yang dipakai. Tool ini tidak pernah membuat tabel apa pun di
       database yang disambunginya.</p>
@@ -893,9 +895,9 @@
     </div>
   </section>
 
-  <!-- 7 -->
-  <section class="screen" id="s7">
-    <div class="screen-head"><span class="screen-num">07</span><h2>FK map</h2></div>
+  <!-- 6 -->
+  <section class="screen" id="s6">
+    <div class="screen-head"><span class="screen-num">06</span><h2>FK map</h2></div>
     <p class="screen-note">Diagram bertetangga, bukan ER seluruh skema. Pilih tabel fokus dan kedalaman
       1&ndash;3. Baris di atas fokus harus ada lebih dulu; baris di bawahnya jebol kalau baris yang
       direferensikan hilang.</p>
@@ -1005,7 +1007,7 @@
             <tr><td class="txt"><b>Profil koneksi tersimpan</b></td><td>1</td>
               <td class="txt">Tidak ada penyimpanan kredensial. Password harus diketik ulang tiap sesi.</td></tr>
             <tr><td class="txt"><b>Readout ukuran database</b> (Data / Log / Rows)</td><td>1</td>
-              <td class="txt">Ada per tabel di layar 4, tidak di kartu koneksi.</td></tr>
+              <td class="txt">Ada per tabel di layar 3, tidak di kartu koneksi.</td></tr>
             <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>3</td>
               <td class="txt">Emitter memang memilih strategi, tapi tidak melaporkan alasannya ke UI.</td></tr>
             <tr><td class="txt"><b>Filter arah</b> (Parents / Children / Both)</td><td>7</td>

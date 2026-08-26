@@ -597,7 +597,7 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
             {inPlan.length > 0 ? '✓' : '◇'}
           </span>
           {inPlan.length === 0
-            ? 'No table data in the plan. Nothing is selected for you — pick tables here and schema objects on the overview.'
+            ? 'No table data in the plan. Nothing is selected for you — pick tables here and schema objects on Schema compare.'
             : `${inPlan.length} table(s) of data in the plan: ${inPlan.map((s) => s.table).join(', ')}`}
         </span>
         <span className="push" />

@@ -205,6 +205,18 @@ input.field:focus-visible { outline: 2px solid var(--accent); outline-offset: -1
 .tree .it .nm { font-family: var(--mono); font-size: 12.5px; }
 .tree .it .why { margin-left: auto; font-size: 12px; color: var(--ink-2); text-align: right; }
 
+/* The object's difference, opened in place under its row. Inset on the left so the row it belongs to
+   stays visible as its parent, and tinted so a long diff cannot be mistaken for the list resuming. */
+.objdetail {
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+}
+.objdetail .grid { background: var(--surface); }
+.objdetail .grid td .g { margin-right: 7px; }
+.objdetail .grid td .nm { font-family: var(--mono); font-size: 12.5px; }
+.objdetail .why { margin-left: 6px; }
+
 .split { display: grid; grid-template-columns: 320px 1fr; }
 .split > * { min-width: 0; }
 .pane-l { border-right: 1px solid var(--line); background: var(--surface-2); }

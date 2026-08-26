@@ -16,7 +16,7 @@ import { RunsScreen } from './RunsScreen'
 import { DataScreen } from './DataScreen'
 import { FkMapScreen } from './FkMapScreen'
 
-type Screen = 'connections' | 'overview' | 'detail' | 'data' | 'plan' | 'runs' | 'fk'
+type Screen = 'connections' | 'schema' | 'data' | 'plan' | 'runs' | 'fk'
 
 const NEEDS_COMPARE = 'Compare two connections first — every screen here reads from that comparison.'
 
@@ -31,6 +31,66 @@ const KIND_GLYPH: Record<ObjectSummary['kind'], { glyph: string; tone: string }>
 // reading as "checkconstraint" in the difference list.
 function spaced(type: string): string {
   return type.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+}
+
+type DiffRow = {
+  key: string
+  kind: ObjectSummary['kind']
+  name: string
+  what: string
+  source: string | null
+  target: string | null
+}
+
+// One table instead of two. The old screen listed what differed and then, separately, a table of
+// property values — so reading "Segment differs" and reading "NVARCHAR(40) vs NVARCHAR(20)" were two
+// lookups. Each difference is one row carrying its own values.
+function diffRows(detail: ObjectDetail): DiffRow[] {
+  const bodyIsShown = detail.sourceDefinition !== null || detail.targetDefinition !== null
+
+  const rows: DiffRow[] = detail.properties
+    // "Definition" carries the whole body of a view or routine. It is already rendered side by side
+    // below, and repeating it inside a table cell buries every other row under it.
+    .filter((property) => !(property.property === 'Definition' && bodyIsShown))
+    .map((property) => ({
+      key: `self.${property.property}`,
+      kind: detail.summary.kind,
+      name: spaced(property.property),
+      what: spaced(detail.summary.type),
+      source: property.source,
+      target: property.target,
+    }))
+
+  for (const child of detail.children.filter((c) => c.kind !== 'Same')) {
+    const prefix = `${child.name}.`
+    const owned = detail.childProperties.filter((p) => p.property.startsWith(prefix))
+
+    if (owned.length === 0) {
+      // Added or dropped outright: there is no pair of values to show, only which side has it.
+      rows.push({
+        key: child.id,
+        kind: child.kind,
+        name: child.name,
+        what: spaced(child.type),
+        source: child.kind === 'TargetOnly' ? null : 'present',
+        target: child.kind === 'SourceOnly' ? null : 'present',
+      })
+      continue
+    }
+
+    for (const property of owned) {
+      rows.push({
+        key: `${child.id}.${property.property}`,
+        kind: child.kind,
+        name: child.name,
+        what: `${spaced(child.type)} · ${spaced(property.property.slice(prefix.length))}`,
+        source: property.source,
+        target: property.target,
+      })
+    }
+  }
+
+  return rows
 }
 
 function envClass(environment: EnvironmentClass): string {
@@ -261,6 +321,7 @@ export default function App() {
   const [targetProbe, setTargetProbe] = useState<ProbeResponse | null>(null)
   const [comparison, setComparison] = useState<CompareResponse | null>(null)
   const [detail, setDetail] = useState<ObjectDetail | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const [script, setScript] = useState<ScriptResponse | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [screen, setScreen] = useState<Screen>('connections')
@@ -280,6 +341,29 @@ export default function App() {
     }
   }
 
+  // One object is open at a time, and its detail is fetched when it opens rather than with the
+  // comparison: the emitter runs per object, so fetching all of them up front would be work nobody
+  // asked for on a database with 263 tables.
+  function toggleObject(object: ObjectSummary) {
+    if (expanded === object.id) {
+      setExpanded(null)
+      setDetail(null)
+      return
+    }
+
+    if (!comparison) {
+      return
+    }
+
+    run(
+      () => api.detail(comparison.id, object.id),
+      (value) => {
+        setDetail(value)
+        setExpanded(object.id)
+      },
+    )
+  }
+
   const visible = comparison?.objects.filter((o) => showSame || o.kind !== 'Same') ?? []
   const grouped = visible.reduce<Record<string, ObjectSummary[]>>((acc, object) => {
     ;(acc[object.type] ??= []).push(object)
@@ -295,35 +379,19 @@ export default function App() {
           </span>
           {/* Not a wizard. A compared pair of connections is the only prerequisite, and every screen it
               enables stays reachable from every other one — numbering them implied an order that the tool
-              never actually enforced. Schema detail is the one exception, because it shows one object and
-              needs to be told which. A disabled tab says what is missing rather than leaving it a mystery. */}
+              never actually enforced. A disabled tab says what is missing rather than leaving it a mystery. */}
           <nav className="steps">
             <button type="button" className={`step ${screen === 'connections' ? 'on' : ''}`} onClick={() => setScreen('connections')}>
               Connections
             </button>
             <button
               type="button"
-              className={`step ${screen === 'overview' ? 'on' : ''}`}
-              onClick={() => setScreen('overview')}
+              className={`step ${screen === 'schema' ? 'on' : ''}`}
+              onClick={() => setScreen('schema')}
               disabled={!comparison}
               title={comparison ? undefined : NEEDS_COMPARE}
             >
-              Overview
-            </button>
-            <button
-              type="button"
-              className={`step ${screen === 'detail' ? 'on' : ''}`}
-              onClick={() => setScreen('detail')}
-              disabled={!detail}
-              title={
-                detail
-                  ? undefined
-                  : comparison
-                    ? 'Open an object on the overview — this screen shows one object at a time.'
-                    : NEEDS_COMPARE
-              }
-            >
-              Schema detail
+              Schema compare
             </button>
             <button
               type="button"
@@ -442,9 +510,10 @@ export default function App() {
                       // previous one goes with it. Leaving these behind showed ticks and a script that
                       // belonged to a comparison that no longer exists.
                       setDetail(null)
+                      setExpanded(null)
                       setPicked(new Set())
                       setScript(null)
-                      setScreen('overview')
+                      setScreen('schema')
                     },
                   )
                 }
@@ -455,7 +524,7 @@ export default function App() {
           </div>
         )}
 
-        {screen === 'overview' && comparison && (
+        {screen === 'schema' && comparison && (
           <div className="app">
             <div className="app-bar">
               <span className="mono">{comparison.sourceDatabase}</span>
@@ -538,39 +607,120 @@ export default function App() {
                   </div>
                   <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
                     {objects.map((object) => (
-                      <li key={object.id} className="it" style={{ paddingLeft: 14 }}>
-                        {object.kind === 'Same' ? (
-                          <span className="cb" aria-hidden="true" />
-                        ) : (
-                          <input
-                            type="checkbox"
-                            checked={picked.has(object.id)}
-                            onChange={(e) =>
-                              run(
-                                () => schemaApi.select(comparison.id, object.id, e.target.checked),
-                                (value) => setPicked(new Set(value.selected)),
-                              )
-                            }
-                            aria-label={`Include ${object.qualifiedName} in the sync plan`}
-                          />
-                        )}
-                        <span className={`g ${KIND_GLYPH[object.kind].tone}`}>{KIND_GLYPH[object.kind].glyph}</span>
-                        <button
-                          type="button"
-                          className="linkish"
-                          onClick={() =>
-                            run(
-                              () => api.detail(comparison.id, object.id),
-                              (value) => {
-                                setDetail(value)
-                                setScreen('detail')
-                              },
-                            )
-                          }
+                      <li key={object.id}>
+                        {/* Ticking for the plan and opening the difference are separate acts: the whole row
+                            opens it in place, the checkbox only ever ticks. The row expands where it sits,
+                            so nothing about where you are in the list is lost. */}
+                        <div
+                          className={`it ${expanded === object.id ? 'on' : ''}`}
+                          style={{ paddingLeft: 14 }}
+                          onClick={() => toggleObject(object)}
                         >
-                          <span className="nm">{object.qualifiedName}</span>
-                        </button>
-                        <span className="why">{object.summary}</span>
+                          {object.kind === 'Same' ? (
+                            <span className="cb" aria-hidden="true" />
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={picked.has(object.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) =>
+                                run(
+                                  () => schemaApi.select(comparison.id, object.id, e.target.checked),
+                                  (value) => setPicked(new Set(value.selected)),
+                                )
+                              }
+                              aria-label={`Include ${object.qualifiedName} in the sync plan`}
+                            />
+                          )}
+                          <span className={`g ${KIND_GLYPH[object.kind].tone}`}>{KIND_GLYPH[object.kind].glyph}</span>
+                          <button
+                            type="button"
+                            className="linkish"
+                            aria-expanded={expanded === object.id}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleObject(object)
+                            }}
+                          >
+                            <span className="nm">{object.qualifiedName}</span>
+                          </button>
+                          <span className="why">{object.summary}</span>
+                          <span className="dim mono" style={{ fontSize: 11, marginLeft: 8 }}>
+                            {expanded === object.id ? '▾' : '▸'}
+                          </span>
+                        </div>
+
+                        {expanded === object.id && detail && (
+                          <div className="objdetail">
+                            {diffRows(detail).length === 0 ? (
+                              <div className="pane-hd plain" style={{ textTransform: 'none' }}>
+                                No property-level differences — the body text below is what differs.
+                              </div>
+                            ) : (
+                              <table className="grid">
+                                <thead>
+                                  <tr>
+                                    <th style={{ width: '44%' }}>What differs</th>
+                                    <th>Source</th>
+                                    <th>Target</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {diffRows(detail).map((row) => (
+                                    <tr key={row.key}>
+                                      <td>
+                                        <span className={`g ${KIND_GLYPH[row.kind].tone}`}>
+                                          {KIND_GLYPH[row.kind].glyph}
+                                        </span>
+                                        <span className="nm">{row.name}</span>
+                                        <span className="why dim">{row.what}</span>
+                                      </td>
+                                      <td style={{ color: row.source ? 'var(--add)' : undefined }}>
+                                        {row.source ?? <span className="dim">&mdash;</span>}
+                                      </td>
+                                      <td style={{ color: row.target ? 'var(--del)' : undefined }}>
+                                        {row.target ?? <span className="dim">&mdash;</span>}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+
+                            <div className="pane-hd" style={{ borderTop: '1px solid var(--line)' }}>
+                              <span className="plain">Source &middot; {comparison.sourceDatabase}</span>
+                              <span className="plain rt">Target &middot; {comparison.targetDatabase}</span>
+                            </div>
+                            <div className="two">
+                              <DiffLines text={detail.sourceDefinition} other={detail.targetDefinition} />
+                              <DiffLines text={detail.targetDefinition} other={detail.sourceDefinition} />
+                            </div>
+
+                            <div className="pane-hd" style={{ borderTop: '1px solid var(--line)' }}>
+                              Will run on target
+                              <span className="plain rt">
+                                {detail.plannedStatements.length} statement(s)
+                              </span>
+                            </div>
+                            <div className="codewrap" style={{ padding: '10px 0 14px' }}>
+                              <pre className="code">
+                                {detail.plannedStatements.length === 0 ? (
+                                  <div className="cl">
+                                    <span className="ln">1</span>
+                                    <span className="cd dim">-- nothing to run for this object</span>
+                                  </div>
+                                ) : (
+                                  detail.plannedStatements.map((statement, index) => (
+                                    <div className="cl" key={index}>
+                                      <span className="ln">{index + 1}</span>
+                                      <span className="cd">{statement}</span>
+                                    </div>
+                                  ))
+                                )}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -585,112 +735,14 @@ export default function App() {
                   ? 'Nothing picked. Tick the objects you want in the plan — none are selected for you.'
                   : `${picked.size} object(s) in the plan`}
               </span>
+              {expanded && detail && (
+                <span className="dim" style={{ fontSize: 11.5 }}>
+                  &middot; {detail.plannedStatements.length} statement(s) for {detail.summary.qualifiedName}
+                </span>
+              )}
               <span className="push" />
               <button type="button" className="btn" onClick={() => setScreen('connections')}>
                 Back to connections
-              </button>
-            </div>
-          </div>
-        )}
-
-        {screen === 'detail' && detail && comparison && (
-          <div className="app">
-            <div className="app-bar">
-              <span className={`g ${KIND_GLYPH[detail.summary.kind].tone}`}>
-                {KIND_GLYPH[detail.summary.kind].glyph}
-              </span>
-              <span className="mono">{detail.summary.qualifiedName}</span>
-              <span className="badge unknown">{detail.summary.type}</span>
-              <span className="dim mono push">{detail.summary.summary}</span>
-            </div>
-
-            <div className="split">
-              <div className="pane-l">
-                <div className="pane-hd">Difference summary</div>
-                {detail.children.filter((c) => c.kind !== 'Same').length === 0 && detail.childProperties.length === 0 ? (
-                  <div style={{ padding: '12px 14px' }} className="dim">
-                    Body differs; see the side-by-side text.
-                  </div>
-                ) : (
-                  <ul className="tree" style={{ fontSize: 13 }}>
-                    {detail.children
-                      .filter((child) => child.kind !== 'Same')
-                      .map((child) => (
-                        <li key={child.id} className="it" style={{ cursor: 'default' }}>
-                          <span className={`g ${KIND_GLYPH[child.kind].tone}`}>{KIND_GLYPH[child.kind].glyph}</span>
-                          <span className="nm">{child.name}</span>
-                          <span className="why dim">{spaced(child.type)}</span>
-                        </li>
-                      ))}
-                  </ul>
-                )}
-
-                {detail.childProperties.length > 0 && (
-                  <>
-                    <div className="pane-hd">Values</div>
-                    <table className="grid">
-                      <thead>
-                        <tr>
-                          <th>Property</th>
-                          <th>Source</th>
-                          <th>Target</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.childProperties.map((property) => (
-                          <tr key={property.property}>
-                            <td>{property.property}</td>
-                            <td style={{ color: 'var(--add)' }}>{property.source ?? '—'}</td>
-                            <td style={{ color: 'var(--del)' }}>{property.target ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </div>
-
-              <div>
-                <div className="pane-hd">
-                  <span className="plain">Source &middot; {comparison.sourceDatabase}</span>
-                  <span className="plain rt">Target &middot; {comparison.targetDatabase}</span>
-                </div>
-                <div className="two">
-                  <DiffLines text={detail.sourceDefinition} other={detail.targetDefinition} />
-                  <DiffLines text={detail.targetDefinition} other={detail.sourceDefinition} />
-                </div>
-
-                <div className="pane-hd" style={{ borderTop: '1px solid var(--line)' }}>
-                  Will run on target
-                </div>
-                <div className="codewrap" style={{ padding: '10px 0 14px' }}>
-                  <pre className="code">
-                    {detail.plannedStatements.length === 0 ? (
-                      <div className="cl">
-                        <span className="ln">1</span>
-                        <span className="cd dim">-- nothing to run for this object</span>
-                      </div>
-                    ) : (
-                      detail.plannedStatements.map((statement, index) => (
-                        <div className="cl" key={index}>
-                          <span className="ln">{index + 1}</span>
-                          <span className="cd">{statement}</span>
-                        </div>
-                      ))
-                    )}
-                  </pre>
-                </div>
-              </div>
-            </div>
-
-            <div className="actionbar">
-              <span className="guard">
-                <span className="g same">&#9671;</span>
-                {detail.plannedStatements.length} statement(s) for this object
-              </span>
-              <span className="push" />
-              <button type="button" className="btn" onClick={() => setScreen('overview')}>
-                Back to overview
               </button>
             </div>
           </div>
@@ -702,7 +754,7 @@ export default function App() {
             comparison={comparison}
             script={script}
             onApplied={() => setScreen('runs')}
-            onBack={() => setScreen('overview')}
+            onBack={() => setScreen('schema')}
           />
         )}
 

@@ -72,7 +72,7 @@ columns, and the UI reports excluded columns explicitly rather than silently ign
 
 ### The sync plan is a cart, with dependency closure
 
-Selections accumulate across screens — tick objects on the overview, tick rows on the data screen, and
+Selections accumulate across screens — tick objects on Schema compare, tick rows on the data screen, and
 both land in one plan. There is no separate "add to plan" step to forget. Three properties make it more
 than a passive basket:
 
@@ -121,7 +121,7 @@ not covered by the old exclusion.
 ### Nothing enters the plan without being picked
 
 Earlier drafts selected schema differences automatically and left data opt-in. That is now uniform:
-**nothing** is selected for you. Schema objects are ticked on the overview, table data is picked on the
+**nothing** is selected for you. Schema objects are ticked on Schema compare, table data is picked on the
 data screen, and an empty plan produces an empty script and a refused apply that says why.
 
 The reason is that a tool which pre-selects everything it found makes the review step optional in
@@ -271,22 +271,50 @@ state overlay, no interaction, poor layout on graphs.
 ## UI screens
 
 1. **Connections** — source | target side by side, saved profiles, Test, environment badge.
-2. **Overview** — object-type tree with counts, filter by Source only / Target only / Different / Same.
-3. **Schema detail** — side-by-side DDL for the selected object, line-level diff.
-4. **Data compare** — table picker with key selection, summary counts, then virtualized
+2. **Schema compare** — object-type tree with counts and per-object ticks; clicking a row opens that
+   object's difference inline beneath it: one table of what differs with both sides' values, side-by-side
+   DDL with changed lines marked, and the statements that will run on the target.
+3. **Data compare** — table picker with key selection, summary counts, then virtualized
    Inserts / Updates / Deletes tabs, per-row select, cell-level highlight on updates.
-5. **Sync plan** — everything ticked across screens 3 and 4, rolled into one ordered script
+4. **Sync plan** — everything ticked across screens 2 and 3, rolled into one ordered script
    (FK-dependency ordered for whole-DB runs), with Download and the guarded Apply.
-6. **Run log** — what was generated, what was applied, what the server said.
+5. **Run log** — what was generated, what was applied, what the server said.
+6. **FK map** — foreign-key neighbourhood of one table, as inline SVG.
+
+### Overview and Schema detail are one screen
+
+They were built as two, and the split cost something on every use: the list was where you ticked objects
+for the plan, the detail was where you found out whether an object deserved ticking, and each answer meant
+leaving the other screen. Deciding about ten objects meant twenty navigations, and the list lost its place
+each time.
+
+The difference now opens inline beneath the object's own row. The row stays visible, so the tick and the
+evidence for it sit together, and the list never moves under you. One object is open at a time, and its
+detail is fetched when it opens rather than with the comparison — the emitter runs per object, so building
+all of them up front would be work nobody asked for on a database with hundreds of tables.
+
+Two smaller consequences:
+
+- **Ticking and opening are separate acts.** The checkbox never opens the panel; the rest of the row never
+  ticks. Conflating them would make a scan through the list add things to the plan.
+- **One table, not two.** The old detail screen listed what differed, then listed property values
+  separately, so "Segment differs" and "NVARCHAR(40) vs NVARCHAR(20)" were two lookups. Each difference is
+  now one row carrying both sides' values. `Definition` is the exception: it holds a whole view or routine
+  body, and it is already rendered side by side below, so repeating it inside a table cell would bury every
+  other row under it.
+
+The navigation cost of the split was also the last reason for a tab that could be disabled mid-session:
+Schema detail had to be locked until an object had been opened. With one screen, a compared pair of
+connections is the only prerequisite anywhere in the app.
 
 ## Build order
 
 1. Solution skeleton + Core model & diff engine + unit tests (no DB).
 2. SQL Server schema reader + T-SQL emitter, verified against `DBSERVER-DEV` (Dev).
-3. API endpoints + React shell + screens 1–3 (schema path end to end).
+3. API endpoints + React shell + screens 1–2 (schema path end to end).
 4. Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list.
-5. Data compare engine (key+hash), per-table modes, parent closure + screens 4–5.
-6. Apply path + safety guards + screen 6.
+5. Data compare engine (key+hash), per-table modes, parent closure + screens 3–4.
+6. Apply path + safety guards + screen 5.
 7. PostgreSQL provider stub proving the abstraction holds.
 
 ## Open questions
