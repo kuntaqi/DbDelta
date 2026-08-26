@@ -351,3 +351,29 @@ export const schemaApi = {
     return (await response.json()) as SchemaSelectionResponse
   },
 }
+
+export interface KeyCandidate {
+  column: string
+  dataType: string
+  nullable: boolean
+}
+
+export interface KeyChoiceResponse {
+  table: string
+  chosen: string[]
+  fromPrimaryKey: boolean
+  candidates: KeyCandidate[]
+  problem: string | null
+}
+
+export const keyApi = {
+  options: async (compareId: string, table: string) => {
+    const response = await fetch(
+      `/api/compare/${compareId}/data/key?table=${encodeURIComponent(table)}`,
+    )
+    if (!response.ok) throw new Error(await readError(response))
+    return (await response.json()) as KeyChoiceResponse
+  },
+  choose: (compareId: string, table: string, columns: string[]) =>
+    postJson<KeyChoiceResponse>(`/api/compare/${compareId}/data/key`, { table, columns }),
+}

@@ -38,6 +38,19 @@ public sealed class CompareSession
     // changes it found makes the review step optional in practice.
     public HashSet<ObjectIdentity> SchemaSelections { get; } = [];
 
+    // Tables without a primary key are not compared on a guess. A key chosen here is verified unique on
+    // both sides first, because the merge join is only correct when a key identifies at most one row.
+    public Dictionary<ObjectIdentity, IReadOnlyList<string>> KeyOverrides { get; } = new();
+
+    public IReadOnlyList<string> KeyFor(TableDefinition table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+
+        return KeyOverrides.TryGetValue(table.Identity, out var chosen)
+            ? chosen
+            : Core.Data.ColumnSetResolver.DefaultKeyFor(table);
+    }
+
     // Stable across a session so the SPA can address an object without sending its identity back in
     // pieces, and so a stale id from an old comparison cannot silently resolve against a new one.
     public string IdOf(ObjectIdentity identity) =>

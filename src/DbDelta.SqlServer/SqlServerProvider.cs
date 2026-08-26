@@ -30,6 +30,9 @@ public sealed class SqlServerProvider : IDatabaseProvider
     public ITableFingerprintReader CreateFingerprintReader(string connectionString) =>
         new SqlServerFingerprintReader(connectionString);
 
+    public IKeyUniquenessChecker CreateKeyUniquenessChecker(string connectionString) =>
+        new SqlServerKeyUniquenessChecker(connectionString);
+
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,
         CancellationToken cancellationToken = default)

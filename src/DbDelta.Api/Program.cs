@@ -152,6 +152,51 @@ api.MapGet("/compare/{id}/schema/select", (string id, CompareSessionStore sessio
     return session is null ? Results.NotFound() : Results.Ok(CompareService.SchemaSelection(session));
 });
 
+api.MapGet("/compare/{id}/data/key", (
+    string id,
+    string table,
+    DataCompareService service,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(service.KeyOptions(session, table));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot read that table");
+    }
+});
+
+api.MapPost("/compare/{id}/data/key", async (
+    string id,
+    KeyChoiceRequest request,
+    DataCompareService service,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(await service.ChooseKeyAsync(session, request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot use those columns as a key");
+    }
+});
+
 api.MapPost("/compare/{id}/data/scan", async (
     string id,
     long? maxTableBytes,

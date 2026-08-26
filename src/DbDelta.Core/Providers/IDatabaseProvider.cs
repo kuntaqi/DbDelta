@@ -23,5 +23,7 @@ public interface IDatabaseProvider
 
     ITableFingerprintReader CreateFingerprintReader(string connectionString);
 
+    IKeyUniquenessChecker CreateKeyUniquenessChecker(string connectionString);
+
     Task<ServerInfo> ProbeAsync(string connectionString, CancellationToken cancellationToken = default);
 }

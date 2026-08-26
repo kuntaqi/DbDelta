@@ -320,3 +320,22 @@ runs on whichever table is opened. On the database above it reached the identica
 The size limit stays. With no limit the same scan runs past nine minutes: 17 large tables dominate, and no
 cheaper digest fixes reading 21 GB. Skipped tables are reported as skipped with their size, never folded
 in with the matching ones.
+
+### Tables without a primary key wait for a key, they are not guessed at
+
+On a real 263-table database, 78 tables have no primary key — by far the largest reason data cannot be
+compared, ahead of 17 skipped for size and 3 that exist only on the source. The first mockup said those
+tables would be "flagged, waiting for you to pick key columns manually". The flag was built; the picker
+was not, so 78 tables were permanently unavailable and clicking one blanked the pane with no explanation.
+
+The picker now offers the columns present on both sides, and **verifies the choice before accepting it**:
+row count against distinct key count, plus a NULL check, on the source *and* the target. Both sides matter
+because a key that is unique on the source and repeated on the target still breaks the merge join — and it
+is the target that gets written to.
+
+This turns a confusing mid-compare failure into a refusal that carries the numbers:
+
+> Source: 453 rows but only 13 distinct key values, so the key does not identify a single row.
+
+Falling back to "use every column as the key" was rejected. It looks like it works until duplicate rows
+make it silently wrong, and a data sync that is silently wrong is worse than one that refuses.

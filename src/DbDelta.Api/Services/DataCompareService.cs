@@ -64,7 +64,7 @@ public sealed class DataCompareService
                 continue;
             }
 
-            var key = ColumnSetResolver.DefaultKeyFor(source);
+            var key = session.KeyFor(source);
             if (key.Count == 0)
             {
                 rows.Add(new TableScanRow(name, false, "no primary key", false, 0, 0));
@@ -194,6 +194,96 @@ public sealed class DataCompareService
         return prints;
     }
 
+    // What a table's key currently is, and what it could be. A table without a primary key is not
+    // guessed at: it waits here until columns are picked and verified.
+    public KeyChoiceResponse KeyOptions(CompareSession session, string table)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var source = Find(session.Source, table)
+            ?? throw new InvalidOperationException($"{table} is not a table on the source.");
+
+        var target = Find(session.Target, table);
+        var targetColumns = target?.Columns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var candidates = source.Columns
+            .Where(c => c.ComputedExpression is null)
+            .Where(c => target is null || targetColumns.Contains(c.Name))
+            .OrderBy(c => c.OrdinalPosition)
+            .Select(c => new KeyCandidate(c.Name, c.DataType.ToString(), c.IsNullable))
+            .ToList();
+
+        var chosen = session.KeyFor(source);
+
+        return new KeyChoiceResponse(
+            source.Identity.QualifiedName,
+            chosen,
+            source.PrimaryKey is not null,
+            candidates,
+            chosen.Count == 0
+                ? "This table has no primary key. Pick the columns that identify a row, and they will be "
+                    + "checked for uniqueness on both sides before the data can be compared."
+                : null);
+    }
+
+    public async Task<KeyChoiceResponse> ChooseKeyAsync(
+        CompareSession session,
+        KeyChoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var source = Find(session.Source, request.Table)
+            ?? throw new InvalidOperationException($"{request.Table} is not a table on the source.");
+
+        if (request.Columns.Count == 0)
+        {
+            session.KeyOverrides.Remove(source.Identity);
+            return KeyOptions(session, request.Table);
+        }
+
+        var unknown = request.Columns
+            .Where(c => !source.Columns.Any(x => string.Equals(x.Name, c, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        if (unknown.Count > 0)
+        {
+            throw new InvalidOperationException($"Not a column of {request.Table}: {string.Join(", ", unknown)}.");
+        }
+
+        var target = Find(session.Target, request.Table)
+            ?? throw new InvalidOperationException($"{request.Table} is not on the target, so there is nothing to compare against.");
+
+        // Both sides, because a key that is unique on the source and repeated on the target still breaks
+        // the merge join — and it is the target that gets written to.
+        var sourceCheck = await _provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
+            .CheckAsync(source, request.Columns, cancellationToken).ConfigureAwait(false);
+
+        if (!sourceCheck.IsUnique)
+        {
+            return Rejected(session, request, sourceCheck.Explain("Source"));
+        }
+
+        var targetCheck = await _provider.CreateKeyUniquenessChecker(session.TargetConnectionString)
+            .CheckAsync(target, request.Columns, cancellationToken).ConfigureAwait(false);
+
+        if (!targetCheck.IsUnique)
+        {
+            return Rejected(session, request, targetCheck.Explain("Target"));
+        }
+
+        session.KeyOverrides[source.Identity] = request.Columns;
+        return KeyOptions(session, request.Table);
+    }
+
+    private KeyChoiceResponse Rejected(CompareSession session, KeyChoiceRequest request, string problem)
+    {
+        var options = KeyOptions(session, request.Table);
+        return options with { Problem = problem };
+    }
+
     public DataSelectionResponse Select(CompareSession session, DataSelectionRequest request)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -208,7 +298,7 @@ public sealed class DataCompareService
             return Selection(session);
         }
 
-        if (ColumnSetResolver.DefaultKeyFor(table).Count == 0)
+        if (session.KeyFor(table).Count == 0)
         {
             throw new InvalidOperationException(
                 $"{request.Table} has no primary key, so its rows cannot be addressed. Pick key columns first.");
@@ -255,7 +345,7 @@ public sealed class DataCompareService
         var request = new DataCompareRequest
         {
             Table = table,
-            KeyColumns = ColumnSetResolver.DefaultKeyFor(source),
+            KeyColumns = session.KeyFor(source),
             Mode = selection.Mode,
             TopCount = selection.TopCount,
             FilterPredicate = selection.Filter
@@ -350,7 +440,7 @@ public sealed class DataCompareService
             {
                 var sourceVolume = source.Tables.FirstOrDefault(v => v.Table == table.Identity);
                 var targetVolume = targetByTable.GetValueOrDefault(table.Identity);
-                var key = ColumnSetResolver.DefaultKeyFor(table);
+                var key = session.KeyFor(table);
 
                 return new TableRow(
                     table.Identity.QualifiedName,
@@ -388,7 +478,7 @@ public sealed class DataCompareService
         }
 
         var mode = Enum.Parse<TableDataMode>(request.Mode, true);
-        var key = ColumnSetResolver.DefaultKeyFor(source);
+        var key = session.KeyFor(source);
 
         if (key.Count == 0)
         {

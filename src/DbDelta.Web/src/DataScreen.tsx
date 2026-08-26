@@ -3,7 +3,9 @@ import {
   dataApi,
   formatBytes,
   planApi,
+  keyApi,
   scanApi,
+  type KeyChoiceResponse,
   type SelectedTable,
   type TableScanResponse,
   type CompareResponse,
@@ -48,6 +50,20 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
   const [scanning, setScanning] = useState(false)
   const [onlyDiffering, setOnlyDiffering] = useState(true)
   const [scanLimitMb, setScanLimitMb] = useState(200)
+  const [keyChoice, setKeyChoice] = useState<KeyChoiceResponse | null>(null)
+  const [draftKey, setDraftKey] = useState<string[]>([])
+
+  async function run<T>(action: () => Promise<T>, then: (value: T) => void) {
+    setBusy(true)
+    setError(null)
+    try {
+      then(await action())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const picked = selected !== null && inPlan.some((s) => s.table === selected.qualifiedName)
   const scanned = new Map(scan?.tables.map((t) => [t.table, t]) ?? [])
@@ -104,8 +120,26 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [comparison.id])
 
+  // A keyless table needs its candidate columns before anything can be offered, so that request goes
+  // out as soon as one is selected.
   useEffect(() => {
-    if (!selected || !selected.hasKey || !selected.onBothSides) {
+    setDraftKey([])
+    setKeyChoice(null)
+
+    if (!selected || !selected.onBothSides || selected.hasKey) {
+      return
+    }
+
+    keyApi
+      .options(comparison.id, selected.qualifiedName)
+      .then(setKeyChoice)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [comparison.id, selected])
+
+  useEffect(() => {
+    const hasKey = selected?.hasKey || (keyChoice?.chosen.length ?? 0) > 0
+
+    if (!selected || !hasKey || !selected.onBothSides) {
       setResult(null)
       return
     }
@@ -120,7 +154,7 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
         setError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => setBusy(false))
-  }, [comparison.id, selected, mode, topCount])
+  }, [comparison.id, selected, mode, topCount, keyChoice])
 
   const selectedFootprint =
     volume?.tables.filter((t) => t.onBothSides).reduce((sum, t) => sum + t.sourceBytes, 0) ?? 0
@@ -254,7 +288,80 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
         <div>
           {!selected && <div style={{ padding: 20 }} className="dim">Pick a table on the left.</div>}
 
-          {selected && (
+          {/* Silence was the old behaviour here: clicking a keyless table blanked the pane with no
+              explanation. A table that cannot be compared now says why, and offers the way out. */}
+          {selected && !selected.onBothSides && (
+            <div style={{ padding: 20 }}>
+              <div className="warnline warn">
+                <span className="g">!</span>
+                <div>
+                  <b>{selected.qualifiedName}</b> exists only on the source, so there is no target data to
+                  compare against. Sync its schema first, then it becomes comparable.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selected && selected.onBothSides && !selected.hasKey && !keyChoice?.chosen.length && (
+            <div style={{ padding: '16px 16px 0' }}>
+              <div className="warnline warn" style={{ marginBottom: 12 }}>
+                <span className="g">!</span>
+                <div>
+                  <b>{selected.qualifiedName}</b> has no primary key, so DbDelta cannot tell one row from
+                  another. Pick the columns that identify a row &mdash; they are checked for uniqueness on
+                  both sides before anything is compared.
+                </div>
+              </div>
+
+              {keyChoice?.problem && !keyChoice.problem.startsWith('This table has no primary key') && (
+                <div className="warnline" style={{ marginBottom: 12 }}>
+                  <span className="g">!</span>
+                  <div>{keyChoice.problem}</div>
+                </div>
+              )}
+
+              <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {keyChoice?.candidates.map((candidate) => (
+                  <button
+                    key={candidate.column}
+                    type="button"
+                    className={`chip ${draftKey.includes(candidate.column) ? 'on' : ''}`}
+                    onClick={() =>
+                      setDraftKey(
+                        draftKey.includes(candidate.column)
+                          ? draftKey.filter((c) => c !== candidate.column)
+                          : [...draftKey, candidate.column],
+                      )
+                    }
+                  >
+                    <span className="mono">{candidate.column}</span>
+                    <span className="dim" style={{ fontSize: 11 }}>
+                      {candidate.dataType}
+                      {candidate.nullable ? ' · null' : ''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={draftKey.length === 0 || busy}
+                  onClick={() =>
+                    run(() => keyApi.choose(comparison.id, selected.qualifiedName, draftKey), setKeyChoice)
+                  }
+                >
+                  {busy ? 'Checking…' : 'Use these as the key'}
+                </button>
+                <span className="dim" style={{ fontSize: 11.5 }}>
+                  {draftKey.length === 0 ? 'Nothing picked yet.' : `Key: ${draftKey.join(', ')}`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {selected && selected.onBothSides && (selected.hasKey || (keyChoice?.chosen.length ?? 0) > 0) && (
             <>
               <div
                 style={{
@@ -421,7 +528,7 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
             {inPlan.length > 0 ? '✓' : '◇'}
           </span>
           {inPlan.length === 0
-            ? 'No table data in the plan. Schema differences are selected for you; data is per table.'
+            ? 'No table data in the plan. Nothing is selected for you — pick tables here and schema objects on the overview.'
             : `${inPlan.length} table(s) of data in the plan: ${inPlan.map((s) => s.table).join(', ')}`}
         </span>
         <span className="push" />
