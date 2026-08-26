@@ -13,8 +13,9 @@ import {
 import { PlanScreen } from './PlanScreen'
 import { RunsScreen } from './RunsScreen'
 import { DataScreen } from './DataScreen'
+import { FkMapScreen } from './FkMapScreen'
 
-type Screen = 'connections' | 'overview' | 'detail' | 'data' | 'plan' | 'runs'
+type Screen = 'connections' | 'overview' | 'detail' | 'data' | 'plan' | 'runs' | 'fk'
 
 const KIND_GLYPH: Record<ObjectSummary['kind'], { glyph: string; tone: string }> = {
   SourceOnly: { glyph: '+', tone: 'add' },
@@ -220,6 +221,14 @@ export default function App() {
             </button>
             <button type="button" className={`step ${screen === 'runs' ? 'on' : ''}`} onClick={() => setScreen('runs')}>
               6 Run log
+            </button>
+            <button
+              type="button"
+              className={`step ${screen === 'fk' ? 'on' : ''}`}
+              onClick={() => setScreen('fk')}
+              disabled={!comparison}
+            >
+              7 FK map
             </button>
           </nav>
         </div>
@@ -514,6 +523,8 @@ export default function App() {
         )}
 
         {screen === 'runs' && <RunsScreen />}
+
+        {screen === 'fk' && comparison && <FkMapScreen comparison={comparison} />}
 
       </div>
     </>

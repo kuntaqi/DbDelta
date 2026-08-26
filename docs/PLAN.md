@@ -227,9 +227,11 @@ tolerable or a hard failure, and no generic ER view surfaces it against a sync p
 Two things fall out of it for free: FK cycles become visible instead of being an abstract emitter concern,
 and the unsatisfiable-seed case gets somewhere to be explained rather than just refused.
 
-Rendering: **React Flow + dagre** for layered auto-layout. MIT, handles pan/zoom, and custom nodes can carry
-the state badges. Layered layout is right because this is a dependency graph, which is what dagre is for.
-Mermaid `erDiagram` was considered and rejected — no state overlay, no interaction, and poor layout on graphs.
+Rendering: hand-authored inline SVG with a band layout computed in the component. React Flow + dagre was
+the original plan and was dropped once built: a depth 1-3 neighbourhood is a handful of horizontal bands,
+and two dependencies to place three rows of boxes is not a trade worth making. If an "all reachable" mode
+is ever added, that is when a real layout engine earns its place. Mermaid `erDiagram` stays rejected — no
+state overlay, no interaction, poor layout on graphs.
 
 ### Safety model
 

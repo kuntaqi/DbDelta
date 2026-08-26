@@ -229,3 +229,40 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
+
+export interface FkNode {
+  qualifiedName: string
+  band: number
+  state: string
+  note: string
+  rows: number
+  bytes: number
+}
+
+export interface FkEdge {
+  from: string
+  to: string
+  name: string
+  columns: string
+  nullable: boolean
+  partOfCycle: boolean
+}
+
+export interface FkMapResponse {
+  focus: string
+  depth: number
+  nodes: FkNode[]
+  edges: FkEdge[]
+  cycles: string[]
+  notes: string[]
+}
+
+export const fkApi = {
+  map: async (compareId: string, table: string, depth: number) => {
+    const response = await fetch(
+      `/api/compare/${compareId}/fk?table=${encodeURIComponent(table)}&depth=${depth}`,
+    )
+    if (!response.ok) throw new Error(await readError(response))
+    return (await response.json()) as FkMapResponse
+  },
+}

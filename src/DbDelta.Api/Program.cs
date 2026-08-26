@@ -17,6 +17,7 @@ builder.Services.AddSingleton<RunLogStore>();
 builder.Services.AddScoped<CompareService>();
 builder.Services.AddScoped<ApplyService>();
 builder.Services.AddScoped<DataCompareService>();
+builder.Services.AddScoped<FkMapService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -136,6 +137,29 @@ api.MapPost("/compare/{id}/data", async (
     catch (InvalidOperationException ex)
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot compare that table");
+    }
+});
+
+api.MapGet("/compare/{id}/fk", (
+    string id,
+    string table,
+    int? depth,
+    FkMapService service,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(service.Build(session, table, depth ?? 1));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot map that table");
     }
 });
 
