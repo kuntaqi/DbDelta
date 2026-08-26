@@ -104,7 +104,7 @@ public sealed class EndToEndCompareTests
     }
 
     [SkippableFact]
-    public async Task Dependency_order_from_a_real_schema_puts_the_parent_first()
+    public async Task Dependency_order_from_a_real_schema_follows_the_foreign_key_chain()
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
@@ -115,7 +115,7 @@ public sealed class EndToEndCompareTests
 
         Assert.False(order.HasCycles);
         Assert.Equal(
-            ["dbo.Category", "dbo.Company"],
+            ["dbo.Category", "dbo.Company", "dbo.Contact"],
             order.Ordered.Select(t => t.QualifiedName));
     }
 

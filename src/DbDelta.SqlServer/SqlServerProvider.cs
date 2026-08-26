@@ -12,6 +12,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
     public ISchemaReader CreateSchemaReader(string connectionString) =>
         new SqlServerSchemaReader(connectionString);
 
+    public IScriptEmitter CreateScriptEmitter() => new TSqlEmitter();
+
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,
         CancellationToken cancellationToken = default)

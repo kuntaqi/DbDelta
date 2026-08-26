@@ -8,5 +8,7 @@ public interface IDatabaseProvider
 
     ISchemaReader CreateSchemaReader(string connectionString);
 
+    IScriptEmitter CreateScriptEmitter();
+
     Task<ServerInfo> ProbeAsync(string connectionString, CancellationToken cancellationToken = default);
 }

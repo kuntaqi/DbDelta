@@ -56,6 +56,18 @@ public sealed class LocalDbFixture : IAsyncLifetime
         await DropAsync(TargetDatabase);
     }
 
+    // The emitter test mutates its target, so it gets a disposable copy rather than the shared one
+    // the read-only tests assert against.
+    public async Task<string> CreateScratchTargetAsync(string suffix)
+    {
+        var name = $"{TargetDatabase}_{suffix}";
+        await DropAsync(name);
+        await CreateAsync(name, TargetScript);
+        return ConnectionStringFor(name);
+    }
+
+    public async Task DropScratchAsync(string suffix) => await DropAsync($"{TargetDatabase}_{suffix}");
+
     private static async Task CreateAsync(string database, string script)
     {
         await ExecuteOnMasterAsync($"CREATE DATABASE [{database}];");
@@ -138,6 +150,15 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE INDEX IX_Company_Rating ON dbo.Company (RatingBand) INCLUDE (CompanyName);
         GO
         CREATE UNIQUE INDEX UX_Company_Segment ON dbo.Company (Segment) WHERE Segment IS NOT NULL;
+        GO
+        CREATE TABLE dbo.Contact (
+            ContactId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Contact PRIMARY KEY,
+            CompanyId   INT NOT NULL CONSTRAINT FK_Contact_Company REFERENCES dbo.Company(CompanyId),
+            Email       NVARCHAR(320) NOT NULL,
+            CONSTRAINT CK_Contact_Email CHECK (Email LIKE '%@%')
+        );
+        GO
+        CREATE INDEX IX_Contact_Company ON dbo.Contact (CompanyId);
         GO
         CREATE VIEW sales.vCompanySegment AS
             SELECT CompanyId, Segment FROM dbo.Company;
