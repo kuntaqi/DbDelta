@@ -112,6 +112,14 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
 
 - Requires the .NET 10 SDK and Node 20+. `sqlcmd`/`bcp` (ODBC 17) are useful for verification.
 - `sqlpackage` is not assumed present.
+- **Integration tests run against SQL Server LocalDB**, never a shared server. Connection:
+  `Server=(localdb)\MSSQLLocalDB;Integrated Security=true;TrustServerCertificate=true`.
+  `tests/DbDelta.SqlServer.Tests` creates `DbDelta_IntegrationTest_Src` / `_Tgt` per run and drops them
+  after. If LocalDB is missing the tests **skip** rather than fail, so `dotnet test` stays green on a
+  machine without SQL Server — check for skips before believing a clean run proves the reader works.
+  Start it with `SqlLocalDB start MSSQLLocalDB` if a test reports it unavailable.
+- LocalDB caps a database at 10 GB and accepts local connections only, so volume behaviour at real
+  scale cannot be proven here — only that the queries are correct.
 - Connection profiles belong in `%APPDATA%\DbDelta\profiles.json`, never in the repo. `.gitignore` already
   excludes `profiles.json`, `appsettings.Local.json`, `runs/` and `*.sync.sql`.
 - Never point a write operation at a production server. `Safety:ReadOnlyServers` in config exists for this
