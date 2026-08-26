@@ -18,6 +18,8 @@ import { FkMapScreen } from './FkMapScreen'
 
 type Screen = 'connections' | 'overview' | 'detail' | 'data' | 'plan' | 'runs' | 'fk'
 
+const NEEDS_COMPARE = 'Compare two connections first — every screen here reads from that comparison.'
+
 const KIND_GLYPH: Record<ObjectSummary['kind'], { glyph: string; tone: string }> = {
   SourceOnly: { glyph: '+', tone: 'add' },
   TargetOnly: { glyph: '−', tone: 'del' },
@@ -291,33 +293,46 @@ export default function App() {
           <span className="brand">
             <span className="brand-mark">&#916;</span>DbDelta
           </span>
+          {/* Not a wizard. A compared pair of connections is the only prerequisite, and every screen it
+              enables stays reachable from every other one — numbering them implied an order that the tool
+              never actually enforced. Schema detail is the one exception, because it shows one object and
+              needs to be told which. A disabled tab says what is missing rather than leaving it a mystery. */}
           <nav className="steps">
             <button type="button" className={`step ${screen === 'connections' ? 'on' : ''}`} onClick={() => setScreen('connections')}>
-              1 Connections
+              Connections
             </button>
             <button
               type="button"
               className={`step ${screen === 'overview' ? 'on' : ''}`}
               onClick={() => setScreen('overview')}
               disabled={!comparison}
+              title={comparison ? undefined : NEEDS_COMPARE}
             >
-              2 Overview
+              Overview
             </button>
             <button
               type="button"
               className={`step ${screen === 'detail' ? 'on' : ''}`}
               onClick={() => setScreen('detail')}
               disabled={!detail}
+              title={
+                detail
+                  ? undefined
+                  : comparison
+                    ? 'Open an object on the overview — this screen shows one object at a time.'
+                    : NEEDS_COMPARE
+              }
             >
-              3 Schema detail
+              Schema detail
             </button>
             <button
               type="button"
               className={`step ${screen === 'data' ? 'on' : ''}`}
               onClick={() => setScreen('data')}
               disabled={!comparison}
+              title={comparison ? undefined : NEEDS_COMPARE}
             >
-              4 Data compare
+              Data compare
             </button>
             <button
               type="button"
@@ -333,19 +348,21 @@ export default function App() {
                 )
               }
               disabled={!comparison}
+              title={comparison ? undefined : NEEDS_COMPARE}
             >
-              5 Sync plan
+              Sync plan
             </button>
             <button type="button" className={`step ${screen === 'runs' ? 'on' : ''}`} onClick={() => setScreen('runs')}>
-              6 Run log
+              Run log
             </button>
             <button
               type="button"
               className={`step ${screen === 'fk' ? 'on' : ''}`}
               onClick={() => setScreen('fk')}
               disabled={!comparison}
+              title={comparison ? undefined : NEEDS_COMPARE}
             >
-              7 FK map
+              FK map
             </button>
           </nav>
         </div>
@@ -421,7 +438,12 @@ export default function App() {
                     () => api.compare(source, target),
                     (result) => {
                       setComparison(result)
+                      // A new comparison is a new session on the server, so anything derived from the
+                      // previous one goes with it. Leaving these behind showed ticks and a script that
+                      // belonged to a comparison that no longer exists.
                       setDetail(null)
+                      setPicked(new Set())
+                      setScript(null)
                       setScreen('overview')
                     },
                   )

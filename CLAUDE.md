@@ -19,6 +19,11 @@ schema and data, pick what goes in the plan, review the script, apply it under g
 **Nothing is selected for you.** Schema objects are ticked on the overview, table data is picked per table
 on the data screen. An empty plan yields an empty script and a refused apply.
 
+**The screens are tabs, not a wizard.** A compared pair of connections is the only prerequisite; after that
+every screen is reachable from every other, in any order. Schema detail is the single exception — it shows
+one object, so it needs one opened from the overview first. Docs still number the screens 1–7 for reference;
+the app does not, because numbering implied an order it never enforced.
+
 What exists:
 
 - `docs/PLAN.md` — the engineering plan. Architecture, locked decisions, the diff engine design, safety
