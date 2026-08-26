@@ -6,6 +6,11 @@ namespace DbDelta.Core.Data;
 // accepting a hand-picked key turns a confusing mid-compare failure into a clear refusal up front.
 public interface IKeyUniquenessChecker
 {
+    Task<TableUniquenessProfile> ProfileAsync(
+        TableDefinition table,
+        IReadOnlyList<string> candidates,
+        CancellationToken cancellationToken = default);
+
     Task<KeyUniqueness> CheckAsync(
         TableDefinition table,
         IReadOnlyList<string> keyColumns,

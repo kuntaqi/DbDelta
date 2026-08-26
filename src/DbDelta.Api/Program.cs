@@ -152,11 +152,12 @@ api.MapGet("/compare/{id}/schema/select", (string id, CompareSessionStore sessio
     return session is null ? Results.NotFound() : Results.Ok(CompareService.SchemaSelection(session));
 });
 
-api.MapGet("/compare/{id}/data/key", (
+api.MapGet("/compare/{id}/data/key", async (
     string id,
     string table,
     DataCompareService service,
-    CompareSessionStore sessions) =>
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
 {
     var session = sessions.Find(id);
     if (session is null)
@@ -166,7 +167,7 @@ api.MapGet("/compare/{id}/data/key", (
 
     try
     {
-        return Results.Ok(service.KeyOptions(session, table));
+        return Results.Ok(await service.KeyOptionsAsync(session, table, cancellationToken));
     }
     catch (InvalidOperationException ex)
     {

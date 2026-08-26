@@ -339,3 +339,39 @@ This turns a confusing mid-compare failure into a refusal that carries the numbe
 
 Falling back to "use every column as the key" was rejected. It looks like it works until duplicate rows
 make it silently wrong, and a data sync that is silently wrong is worse than one that refuses.
+
+### "No primary key" is two different situations
+
+The picker treated every keyless table the same, and that was wrong in both directions. Guessing a column
+took three tries on a real table — the first refused at 453 rows against 13 distinct values, the second at
+14, the third finally accepted — while a table that already carried a perfectly good key was made to go
+through the same guessing, because the key simply was not the primary key.
+
+**A key the schema already states.** A `UNIQUE` constraint, or a unique index over columns that are all
+`NOT NULL`, is a key. The schema reader had been reading both all along; the picker ignored them. Now they
+are offered by name, no scan needed:
+
+> No primary key, but `UQ_Ledger_Ref` already declares `Ref` unique. Confirm it to compare this table's data.
+
+A nullable unique index is deliberately not counted. SQL Server permits one NULL row under one, and that is
+exactly the row that cannot be addressed by key.
+
+**Nothing declared.** Then every candidate is measured in a single pass — `COUNT(DISTINCT col)` and a null
+count per column, capped at 40 columns, with `text`/`ntext`/`image`/`xml`/`geography`/`geometry`/
+`hierarchyid` left out because `COUNT(DISTINCT …)` refuses them outright and one such column would fail the
+whole query rather than its own measurement. Each column then carries what was actually found —
+`unique across all rows`, `2 distinct of 3 rows`, `1 NULL row(s)` — so the choice is made from evidence
+instead of from three rejections in a row. A probe that cannot run at all is reported and the picker stays
+usable by hand.
+
+Uniqueness is only ever claimed of the rows that exist right now. A column unique today can start merging
+rows tomorrow, so the confirmed choice is still verified on both sides at the moment it is confirmed — the
+profile decides what to *offer*, never what to accept.
+
+What did not change: **nothing is compared until the user confirms.** The suggestion arrives pre-ticked so
+nobody has to guess, and the confirming click is still theirs. An empty table recommends nothing at all —
+every column is trivially "distinct per row" at zero rows, and accepting that would hand back a key chosen
+by an empty table and then apply it to a full one.
+
+One consequence reaches the table list: a table whose key is merely undeclared now reads `key not set`
+rather than `no key`, because those are different problems and only one of them is the user's to solve.

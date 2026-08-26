@@ -132,7 +132,12 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
 
     keyApi
       .options(comparison.id, selected.qualifiedName)
-      .then(setKeyChoice)
+      .then((options) => {
+        setKeyChoice(options)
+        // Ticked, not applied: the suggestion fills the picker so the user is not left guessing, but
+        // the confirming click is still theirs to make.
+        setDraftKey(options.recommended)
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [comparison.id, selected])
 
@@ -158,6 +163,14 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
 
   const selectedFootprint =
     volume?.tables.filter((t) => t.onBothSides).reduce((sum, t) => sum + t.sourceBytes, 0) ?? 0
+
+  // A declared key is a different situation from a guessed one: the schema already states it, so the
+  // picker says so instead of asking the user to rediscover it.
+  const declaredBy =
+    keyChoice?.candidates.find((c) => c.declaredBy && keyChoice.recommended.includes(c.column))
+      ?.declaredBy ?? null
+  const declaredKey =
+    declaredBy && keyChoice ? `${declaredBy} (${keyChoice.recommended.join(', ')})` : null
 
   return (
     <div className="app">
@@ -237,8 +250,16 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                       <span className="badge dev">in plan</span>
                     )}
                     {!table.hasKey && (
-                      <span className="why" style={{ color: 'var(--del)' }}>
-                        no key
+                      <span
+                        className="why"
+                        style={{ color: table.declaredKey.length > 0 ? 'var(--chg)' : 'var(--del)' }}
+                        title={
+                          table.declaredKey.length > 0
+                            ? `A key is declared here (${table.declaredKey.join(', ')}) — it is just not the primary key.`
+                            : 'Nothing identifies a row yet.'
+                        }
+                      >
+                        {table.declaredKey.length > 0 ? 'key not set' : 'no key'}
                       </span>
                     )}
                     {!table.onBothSides && <span className="why dim">source only</span>}
@@ -308,12 +329,16 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                 <span className="g">!</span>
                 <div>
                   <b>{selected.qualifiedName}</b> has no primary key, so DbDelta cannot tell one row from
-                  another. Pick the columns that identify a row &mdash; they are checked for uniqueness on
-                  both sides before anything is compared.
+                  another.{' '}
+                  {declaredKey
+                    ? `The schema does declare a key here — ${declaredKey} — it is just not the primary key. Confirm it and the compare runs.`
+                    : keyChoice?.probed
+                      ? `Nothing is declared, so every column was measured across ${keyChoice.rowCount.toLocaleString()} row${keyChoice.rowCount === 1 ? '' : 's'}. Pick the columns that identify a row; they are checked on both sides before anything is compared.`
+                      : 'Pick the columns that identify a row — they are checked for uniqueness on both sides before anything is compared.'}
                 </div>
               </div>
 
-              {keyChoice?.problem && !keyChoice.problem.startsWith('This table has no primary key') && (
+              {keyChoice?.problem && (keyChoice.rejected || !keyChoice.probed) && (
                 <div className="warnline" style={{ marginBottom: 12 }}>
                   <span className="g">!</span>
                   <div>{keyChoice.problem}</div>
@@ -326,6 +351,10 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                     key={candidate.column}
                     type="button"
                     className={`chip ${draftKey.includes(candidate.column) ? 'on' : ''}`}
+                    style={{
+                      alignItems: 'flex-start',
+                      opacity: candidate.unique === false && !draftKey.includes(candidate.column) ? 0.55 : 1,
+                    }}
                     onClick={() =>
                       setDraftKey(
                         draftKey.includes(candidate.column)
@@ -339,6 +368,18 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                       {candidate.dataType}
                       {candidate.nullable ? ' · null' : ''}
                     </span>
+                    <span
+                      className="dim"
+                      style={{
+                        fontSize: 11,
+                        color:
+                          candidate.declaredBy || candidate.unique === true
+                            ? 'var(--ok, #2f7d32)'
+                            : undefined,
+                      }}
+                    >
+                      {candidate.note}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -349,13 +390,38 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                   className="btn primary"
                   disabled={draftKey.length === 0 || busy}
                   onClick={() =>
-                    run(() => keyApi.choose(comparison.id, selected.qualifiedName, draftKey), setKeyChoice)
+                    run(
+                      () => keyApi.choose(comparison.id, selected.qualifiedName, draftKey),
+                      (choice) => {
+                        setKeyChoice(choice)
+                        // The table list took its key from the primary key when it loaded, so a key
+                        // accepted now has to reach it or the row keeps saying the key is not set.
+                        if (choice.chosen.length > 0) {
+                          setVolume((current) =>
+                            current === null
+                              ? current
+                              : {
+                                  ...current,
+                                  tables: current.tables.map((t) =>
+                                    t.qualifiedName === choice.table
+                                      ? { ...t, hasKey: true, keyColumns: choice.chosen }
+                                      : t,
+                                  ),
+                                },
+                          )
+                        }
+                      },
+                    )
                   }
                 >
                   {busy ? 'Checking…' : 'Use these as the key'}
                 </button>
                 <span className="dim" style={{ fontSize: 11.5 }}>
-                  {draftKey.length === 0 ? 'Nothing picked yet.' : `Key: ${draftKey.join(', ')}`}
+                  {draftKey.length === 0
+                    ? 'Nothing picked yet.'
+                    : `Key: ${draftKey.join(', ')}${
+                        keyChoice && sameSet(draftKey, keyChoice.recommended) ? ' — suggested' : ''
+                      }`}
                 </span>
               </div>
             </div>
@@ -380,7 +446,10 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                   <span className="badge unknown">tgt {selected.targetRows.toLocaleString()}</span>
                   <span className="push" />
                   <span className="lbl" style={{ margin: 0 }}>Key</span>
-                  <span className="chip on mono">{selected.keyColumns.join(', ') || '(none)'}</span>
+                  <span className="chip on mono">
+                    {(keyChoice?.chosen.length ? keyChoice.chosen : selected.keyColumns).join(', ') ||
+                      '(none)'}
+                  </span>
                 </div>
 
                 <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -545,4 +614,8 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
       </div>
     </div>
   )
+}
+
+function sameSet(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((c) => right.includes(c))
 }

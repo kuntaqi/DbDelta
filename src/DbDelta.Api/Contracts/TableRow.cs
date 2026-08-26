@@ -8,4 +8,5 @@ public sealed record TableRow(
     long TargetBytes,
     IReadOnlyList<string> KeyColumns,
     bool HasKey,
-    bool OnBothSides);
+    bool OnBothSides,
+    IReadOnlyList<string> DeclaredKey);

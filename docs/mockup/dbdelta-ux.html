@@ -687,7 +687,12 @@
                 <span class="why" style="color:var(--chg);">differs (+439 rows)</span></span>
               <span class="l2" style="grid-column:1;"><span class="sz big">88 MB &middot; 96,300 rows</span></span></li>
             <li class="it stack">
-              <span class="l1"><span class="nm dim">dbo.AuditTrail</span><span class="why dim">no primary key</span></span>
+              <span class="l1"><span class="nm">dbo.Ledger</span>
+                <span class="why" style="color:var(--chg);" title="A key is declared here (Ref) — it is just not the primary key.">key not set</span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz">32 kB &middot; 2 rows</span></span></li>
+            <li class="it stack">
+              <span class="l1"><span class="nm">dbo.AuditTrail</span>
+                <span class="why" style="color:var(--del);" title="Nothing identifies a row yet.">no key</span></span>
               <span class="l2" style="grid-column:1;"><span class="sz big">6.2 GB &middot; 31.7M rows</span></span></li>
             <li class="it stack">
               <span class="l1"><span class="nm dim">dbo.SiteReading</span>
@@ -748,6 +753,48 @@
     </div>
     <p class="caption">Mode <b>Top N</b> mengubah kartu Delete jadi &ldquo;&mdash; suppressed&rdquo; dengan
       spanduk yang menjelaskan kenapa: row set terbatas tidak bisa membuktikan sebuah baris terhapus.</p>
+
+    <p class="screen-note">Tabel tanpa primary key tidak lagi mati. Ada dua keadaan yang berbeda, dan
+      layarnya membedakan keduanya.</p>
+
+    <div class="app">
+      <div class="app-bar"><span class="mono">data compare &mdash; key belum ditentukan</span></div>
+      <div style="padding:16px;">
+        <div class="warnline warn" style="margin-bottom:12px;">
+          <span class="g">!</span>
+          <div><b>dbo.Ledger</b> has no primary key, so DbDelta cannot tell one row from another. The schema
+            does declare a key here &mdash; UQ_Ledger_Ref (Ref) &mdash; it is just not the primary key.
+            Confirm it and the compare runs.</div>
+        </div>
+        <div class="row" style="flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+          <span class="chip on mono">Ref <span class="dim" style="font-size:11px;">NVARCHAR(20)</span>
+            <span class="dim" style="font-size:11px; color:#2f7d32;">declared unique by UQ_Ledger_Ref</span></span>
+          <span class="chip mono">Amount <span class="dim" style="font-size:11px;">DECIMAL(18,2)</span></span>
+        </div>
+        <div class="row"><button class="btn primary">Use these as the key</button>
+          <span class="dim" style="font-size:11.5px;">Key: Ref &mdash; suggested</span></div>
+
+        <div class="warnline warn" style="margin:22px 0 12px;">
+          <span class="g">!</span>
+          <div><b>dbo.AuditTrail</b> has no primary key, so DbDelta cannot tell one row from another. Nothing
+            is declared, so every column was measured across 31,700,000 rows. Pick the columns that identify
+            a row; they are checked on both sides before anything is compared.</div>
+        </div>
+        <div class="row" style="flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+          <span class="chip on mono">EventId <span class="dim" style="font-size:11px;">INT</span>
+            <span class="dim" style="font-size:11px; color:#2f7d32;">unique across all rows</span></span>
+          <span class="chip mono">Area <span class="dim" style="font-size:11px;">NVARCHAR(40)</span>
+            <span class="dim" style="font-size:11px;">6 distinct of 31,700,000 rows</span></span>
+          <span class="chip mono">Note <span class="dim" style="font-size:11px;">NVARCHAR(200) &middot; null</span>
+            <span class="dim" style="font-size:11px;">412 NULL row(s)</span></span>
+        </div>
+        <div class="row"><button class="btn primary">Use these as the key</button>
+          <span class="dim" style="font-size:11.5px;">Key: EventId &mdash; suggested</span></div>
+      </div>
+    </div>
+    <p class="caption">Saran datang sudah tercentang supaya tidak ada yang menebak, tapi klik konfirmasinya
+      tetap milik user &mdash; dan pilihan itu diverifikasi di kedua sisi sebelum satu baris pun dibandingkan.
+      Kalau ditolak, angkanya ikut: &ldquo;Source: 453 rows but only 13 distinct key values&rdquo;.</p>
   </section>
 
   <!-- 5 -->

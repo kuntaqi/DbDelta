@@ -177,6 +177,7 @@ export interface TableRow {
   keyColumns: string[]
   hasKey: boolean
   onBothSides: boolean
+  declaredKey: string[]
 }
 
 export interface VolumeSummary {
@@ -356,14 +357,22 @@ export interface KeyCandidate {
   column: string
   dataType: string
   nullable: boolean
+  declaredBy: string | null
+  unique: boolean | null
+  distinctValues: number
+  note: string
 }
 
 export interface KeyChoiceResponse {
   table: string
   chosen: string[]
   fromPrimaryKey: boolean
+  recommended: string[]
+  rowCount: number
+  probed: boolean
   candidates: KeyCandidate[]
   problem: string | null
+  rejected: boolean
 }
 
 export const keyApi = {

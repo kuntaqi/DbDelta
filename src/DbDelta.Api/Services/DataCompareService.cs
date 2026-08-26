@@ -196,7 +196,10 @@ public sealed class DataCompareService
 
     // What a table's key currently is, and what it could be. A table without a primary key is not
     // guessed at: it waits here until columns are picked and verified.
-    public KeyChoiceResponse KeyOptions(CompareSession session, string table)
+    public async Task<KeyChoiceResponse> KeyOptionsAsync(
+        CompareSession session,
+        string table,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
 
@@ -207,24 +210,128 @@ public sealed class DataCompareService
         var targetColumns = target?.Columns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
             ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var candidates = source.Columns
+        var usable = source.Columns
             .Where(c => c.ComputedExpression is null)
             .Where(c => target is null || targetColumns.Contains(c.Name))
             .OrderBy(c => c.OrdinalPosition)
-            .Select(c => new KeyCandidate(c.Name, c.DataType.ToString(), c.IsNullable))
             .ToList();
 
+        // A table can carry a perfectly good key that simply is not the primary key: a UNIQUE constraint
+        // or a unique index over NOT NULL columns is already a key, and ignoring it made the tool ask the
+        // user to rediscover something the schema already states.
+        var declared = Declared(source);
+
+        var profile = declared.Count > 0
+            ? new TableUniquenessProfile { RowCount = 0, Columns = [], WasProbed = false }
+            : await _provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
+                .ProfileAsync(source, usable.Select(c => c.Name).ToList(), cancellationToken)
+                .ConfigureAwait(false);
+
+        var stats = profile.Columns.ToDictionary(c => c.Column, StringComparer.OrdinalIgnoreCase);
+
+        var candidates = usable.Select(column =>
+        {
+            var declaredBy = declared
+                .FirstOrDefault(d => d.Columns.Contains(column.Name, StringComparer.OrdinalIgnoreCase));
+
+            var stat = stats.GetValueOrDefault(column.Name);
+            var unique = stat is null ? (bool?)null : stat.CouldBeKey(profile.RowCount);
+
+            return new KeyCandidate(
+                column.Name,
+                column.DataType.ToString(),
+                column.IsNullable,
+                declaredBy?.Name,
+                unique,
+                stat?.DistinctValues ?? 0,
+                Note(column, declaredBy?.Name, stat, profile));
+        }).ToList();
+
         var chosen = session.KeyFor(source);
+        var recommended = declared.Count > 0
+            ? declared[0].Columns
+            : profile.UniqueColumns.Take(1).ToList();
 
         return new KeyChoiceResponse(
             source.Identity.QualifiedName,
             chosen,
             source.PrimaryKey is not null,
+            recommended,
+            profile.RowCount,
+            profile.WasProbed,
             candidates,
-            chosen.Count == 0
-                ? "This table has no primary key. Pick the columns that identify a row, and they will be "
-                    + "checked for uniqueness on both sides before the data can be compared."
-                : null);
+            Problem(chosen, profile));
+    }
+
+    // A unique constraint, or a unique index whose columns are all NOT NULL. A nullable unique index
+    // permits one NULL row in SQL Server, which is exactly the row that cannot be addressed by key.
+    private static List<DeclaredKey> Declared(TableDefinition table)
+    {
+        var notNull = table.Columns
+            .Where(c => !c.IsNullable)
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var found = new List<DeclaredKey>();
+
+        foreach (var unique in table.UniqueConstraints)
+        {
+            var columns = unique.Columns.Select(c => c.Name).ToList();
+            if (columns.All(notNull.Contains))
+            {
+                found.Add(new DeclaredKey(unique.Name, columns));
+            }
+        }
+
+        foreach (var index in table.Indexes.Where(i => i.IsUnique && i.FilterExpression is null))
+        {
+            var columns = index.Columns.Select(c => c.Name).ToList();
+            if (columns.All(notNull.Contains))
+            {
+                found.Add(new DeclaredKey(index.Name, columns));
+            }
+        }
+
+        return found.OrderBy(f => f.Columns.Count).ToList();
+    }
+
+    private static string Note(
+        ColumnDefinition column,
+        string? declaredBy,
+        ColumnUniqueness? stat,
+        TableUniquenessProfile profile)
+    {
+        if (declaredBy is not null)
+        {
+            return $"declared unique by {declaredBy}";
+        }
+
+        if (stat is null)
+        {
+            return column.IsNullable ? "nullable" : string.Empty;
+        }
+
+        if (stat.NullRows > 0)
+        {
+            return $"{stat.NullRows} NULL row(s)";
+        }
+
+        return stat.CouldBeKey(profile.RowCount)
+            ? "unique across all rows"
+            : $"{stat.DistinctValues} distinct of {profile.RowCount} rows";
+    }
+
+    // Only an actual problem belongs here. What to pick is advice, and the screen states that from the
+    // candidates themselves — routing it through the same field made the UI say the same thing twice.
+    private static string? Problem(IReadOnlyList<string> chosen, TableUniquenessProfile profile)
+    {
+        if (chosen.Count > 0 || profile.WasProbed)
+        {
+            return null;
+        }
+
+        return profile.Problem
+            ?? "Uniqueness could not be measured here. Pick columns and they will be verified on both sides.";
     }
 
     public async Task<KeyChoiceResponse> ChooseKeyAsync(
@@ -241,7 +348,7 @@ public sealed class DataCompareService
         if (request.Columns.Count == 0)
         {
             session.KeyOverrides.Remove(source.Identity);
-            return KeyOptions(session, request.Table);
+            return await KeyOptionsAsync(session, request.Table, cancellationToken).ConfigureAwait(false);
         }
 
         var unknown = request.Columns
@@ -263,7 +370,7 @@ public sealed class DataCompareService
 
         if (!sourceCheck.IsUnique)
         {
-            return Rejected(session, request, sourceCheck.Explain("Source"));
+            return await Rejected(session, request, sourceCheck.Explain("Source"), cancellationToken).ConfigureAwait(false);
         }
 
         var targetCheck = await _provider.CreateKeyUniquenessChecker(session.TargetConnectionString)
@@ -271,17 +378,21 @@ public sealed class DataCompareService
 
         if (!targetCheck.IsUnique)
         {
-            return Rejected(session, request, targetCheck.Explain("Target"));
+            return await Rejected(session, request, targetCheck.Explain("Target"), cancellationToken).ConfigureAwait(false);
         }
 
         session.KeyOverrides[source.Identity] = request.Columns;
-        return KeyOptions(session, request.Table);
+        return await KeyOptionsAsync(session, request.Table, cancellationToken).ConfigureAwait(false);
     }
 
-    private KeyChoiceResponse Rejected(CompareSession session, KeyChoiceRequest request, string problem)
+    private async Task<KeyChoiceResponse> Rejected(
+        CompareSession session,
+        KeyChoiceRequest request,
+        string problem,
+        CancellationToken cancellationToken)
     {
-        var options = KeyOptions(session, request.Table);
-        return options with { Problem = problem };
+        var options = await KeyOptionsAsync(session, request.Table, cancellationToken).ConfigureAwait(false);
+        return options with { Problem = problem, Rejected = true };
     }
 
     public DataSelectionResponse Select(CompareSession session, DataSelectionRequest request)
@@ -450,7 +561,10 @@ public sealed class DataCompareService
                     targetVolume?.TotalBytes ?? 0,
                     key,
                     key.Count > 0,
-                    targetTables.Contains(table.Identity));
+                    targetTables.Contains(table.Identity),
+                    // A table can be keyless only in the sense that nobody declared the key as primary.
+                    // The list says which of the two it is rather than calling both "no key".
+                    Declared(table).FirstOrDefault()?.Columns ?? []);
             })
             .OrderByDescending(r => r.SourceBytes)
             .ToList();

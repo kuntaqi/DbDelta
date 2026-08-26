@@ -51,3 +51,23 @@ SET IDENTITY_INSERT dbo.Category ON;
 INSERT INTO dbo.Category (CategoryId, Name) VALUES (1,N'Retail'),(2,N'Wholesale Ltd'),(4,N'Obsolete');
 SET IDENTITY_INSERT dbo.Category OFF;
 GO
+
+-- Two keyless tables, because "no primary key" is two different situations and both need to be
+-- reachable from a fresh clone. dbo.Ledger has a key the schema already declares; dbo.AuditTrail has
+-- nothing declared, so its candidates have to be measured.
+USE DbDelta_Demo_Src;
+GO
+CREATE TABLE dbo.Ledger (Ref NVARCHAR(20) NOT NULL CONSTRAINT UQ_Ledger_Ref UNIQUE, Amount DECIMAL(18,2) NOT NULL);
+CREATE TABLE dbo.AuditTrail (EventId INT NOT NULL, Area NVARCHAR(40) NOT NULL, Note NVARCHAR(200) NULL);
+GO
+INSERT INTO dbo.Ledger (Ref, Amount) VALUES (N'A1', 10), (N'A2', 20);
+INSERT INTO dbo.AuditTrail (EventId, Area, Note) VALUES (1, N'load', N'first'), (2, N'load', NULL), (3, N'sync', N'third');
+GO
+USE DbDelta_Demo_Tgt;
+GO
+CREATE TABLE dbo.Ledger (Ref NVARCHAR(20) NOT NULL CONSTRAINT UQ_Ledger_Ref UNIQUE, Amount DECIMAL(18,2) NOT NULL);
+CREATE TABLE dbo.AuditTrail (EventId INT NOT NULL, Area NVARCHAR(40) NOT NULL, Note NVARCHAR(200) NULL);
+GO
+INSERT INTO dbo.Ledger (Ref, Amount) VALUES (N'A1', 10), (N'A2', 99);
+INSERT INTO dbo.AuditTrail (EventId, Area, Note) VALUES (1, N'load', N'first'), (2, N'load', NULL), (3, N'sync', N'third');
+GO

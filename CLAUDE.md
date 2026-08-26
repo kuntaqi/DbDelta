@@ -1,4 +1,4 @@
-| 5 | Grid/diagram libs | None. The grids are plain tables and the FK map is hand-authored inline SVG. TanStack and React Flow were planned and dropped as unneeded for the sizes involved. |# DbDelta — project context
+# DbDelta — project context
 
 Read this first. It records where the project stands, the decisions that are locked, and the conventions
 every change follows.
@@ -36,7 +36,7 @@ What exists:
 | 2 | Interface | Local web UI — ASP.NET Core API (.NET 10) + React 19 + TypeScript + Vite |
 | 3 | Sync execution | Always emit a reviewable `.sql` script; apply is opt-in, transactional, blocked on read-only servers |
 | 4 | UI language | English |
-| 5 | Grid/diagram libs | TanStack Table + TanStack Virtual; React Flow + dagre for the FK map |
+| 5 | Grid/diagram libs | None. The grids are plain tables and the FK map is hand-authored inline SVG. TanStack and React Flow were planned, then dropped as unneeded at these sizes |
 
 Angular was considered and rejected: React was expected to need TanStack for virtualized diff grids, and
 commercial component libraries are not an option for a personal tool. The virtualization never
