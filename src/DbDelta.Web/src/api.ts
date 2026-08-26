@@ -116,3 +116,45 @@ export const api = {
   script: (compareId: string, include: string[]) =>
     post<ScriptResponse>(`/api/compare/${compareId}/script`, { include }),
 }
+
+export interface ApplyResponse {
+  outcome: 'Committed' | 'RolledBack' | 'Blocked' | 'Drifted'
+  message: string
+  stepCount: number
+  durationMs: number
+  serverMessage: string | null
+  errorNumber: number | null
+  blockers: string[]
+  destructiveSteps: string[]
+}
+
+export interface RunLogEntryDto {
+  id: string
+  at: string
+  action: string
+  route: string
+  outcome: string
+  stepCount: number
+  durationMs: number
+  serverMessage: string | null
+}
+
+export const applyApi = {
+  apply: (compareId: string, include: string[], confirmation: string, allowDestructive: boolean) =>
+    postJson<ApplyResponse>(`/api/compare/${compareId}/apply`, { include, confirmation, allowDestructive }),
+  runs: async () => {
+    const response = await fetch('/api/runs')
+    if (!response.ok) throw new Error('Could not read the run log')
+    return (await response.json()) as RunLogEntryDto[]
+  },
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  return (await response.json()) as T
+}

@@ -1,5 +1,6 @@
 using DbDelta.Api.Contracts;
 using DbDelta.Api.Services;
+using DbDelta.Core.Apply;
 using DbDelta.Core.Providers;
 using DbDelta.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -11,7 +12,10 @@ builder.Services.AddSingleton<IDatabaseProvider, SqlServerProvider>();
 builder.Services.AddSingleton<ConnectionFactory>();
 builder.Services.AddSingleton<ServerClassifier>();
 builder.Services.AddSingleton<CompareSessionStore>();
+builder.Services.AddSingleton<IScriptExecutor, SqlServerScriptExecutor>();
+builder.Services.AddSingleton<RunLogStore>();
 builder.Services.AddScoped<CompareService>();
+builder.Services.AddScoped<ApplyService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -84,6 +88,28 @@ api.MapPost("/compare/{id}/script", (
     return session is null
         ? Results.NotFound()
         : Results.Ok(service.Script(session, request.Include));
+});
+
+api.MapPost("/compare/{id}/apply", async (
+    string id,
+    ApplyRequest request,
+    ApplyService service,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    return session is null
+        ? Results.NotFound()
+        : Results.Ok(await service.ApplyAsync(session, request, cancellationToken));
+});
+
+api.MapGet("/runs", async (ApplyService service, CancellationToken cancellationToken) =>
+    Results.Ok(await service.RunsAsync(cancellationToken)));
+
+api.MapGet("/runs/{runId}", async (string runId, ApplyService service, CancellationToken cancellationToken) =>
+{
+    var run = await service.RunAsync(runId, cancellationToken);
+    return run is null ? Results.NotFound() : Results.Ok(new { run.Id, run.Sql, run.Outcome, run.ServerMessage });
 });
 
 app.MapFallbackToFile("index.html");

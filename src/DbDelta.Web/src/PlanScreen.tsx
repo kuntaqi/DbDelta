@@ -1,0 +1,213 @@
+import { useState } from 'react'
+import { applyApi, type ApplyResponse, type CompareResponse, type ScriptResponse } from './api'
+
+const OUTCOME_TONE: Record<ApplyResponse['outcome'], string> = {
+  Committed: 'ok',
+  RolledBack: '',
+  Blocked: 'warn',
+  Drifted: 'warn',
+}
+
+export function PlanScreen({
+  comparison,
+  script,
+  onApplied,
+  onBack,
+}: {
+  comparison: CompareResponse
+  script: ScriptResponse
+  onApplied: () => void
+  onBack: () => void
+}) {
+  const [confirmation, setConfirmation] = useState('')
+  const [allowDestructive, setAllowDestructive] = useState(false)
+  const [result, setResult] = useState<ApplyResponse | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const destructive = script.steps.filter(
+    (s) => /drop table/i.test(s.sql) || /drop column/i.test(s.sql),
+  )
+  const confirmed = confirmation === comparison.targetDatabase
+  const ready = confirmed && (destructive.length === 0 || allowDestructive) && !comparison.targetReadOnly
+
+  function download() {
+    const blob = new Blob([script.sql], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `sync_${comparison.targetDatabase}.sql`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function apply() {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await applyApi.apply(comparison.id, [], confirmation, allowDestructive)
+      setResult(response)
+      if (response.outcome === 'Committed') onApplied()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="app">
+      <div className="app-bar">
+        <span className="mono">sync plan</span>
+        <span className="dim">&rarr;</span>
+        <span className="mono">{comparison.targetDatabase}</span>
+        <span className="dim mono push">FK-dependency ordered</span>
+      </div>
+
+      <div className="split">
+        <div className="pane-l">
+          <div className="pane-hd">
+            Plan <span className="plain rt">{script.stepCount} steps</span>
+          </div>
+          <ul className="tree" style={{ fontSize: 13 }}>
+            {script.steps.map((step, index) => (
+              <li key={index} className="it" style={{ cursor: 'default', paddingLeft: 14 }}>
+                <span className="nm">{step.description}</span>
+                <span className="why dim">{step.phase}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <div className="pane-hd">
+            Generated script
+            <span className="plain rt">
+              {script.stepCount} steps &middot; {(script.byteSize / 1024).toFixed(1)} kB
+            </span>
+          </div>
+          <div className="codewrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
+            <pre className="code">
+              {script.sql.split('\n').map((line, index) => (
+                <div className="cl" key={index}>
+                  <span className="ln">{index + 1}</span>
+                  <span className="cd">{line || ' '}</span>
+                </div>
+              ))}
+            </pre>
+          </div>
+
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {comparison.targetReadOnly && (
+              <div className="warnline">
+                <span className="g">!</span>
+                <div>
+                  This target is on the read-only list. Download the script and run it yourself &mdash; apply
+                  stays disabled.
+                </div>
+              </div>
+            )}
+
+            {script.exceedsReviewableSize && (
+              <div className="warnline warn">
+                <span className="g">!</span>
+                <div>
+                  This script is too large to review comfortably. Bulk mode is the right answer here rather
+                  than a file nobody reads.
+                </div>
+              </div>
+            )}
+
+            {destructive.length > 0 && (
+              <div className="warnline warn">
+                <span className="g">!</span>
+                <div>
+                  <b>{destructive.length} step(s) drop objects or columns.</b> Dropped data does not come back
+                  with a rollback of a later run.
+                  <ul style={{ margin: '6px 0 8px', paddingLeft: 18 }}>
+                    {destructive.map((step, index) => (
+                      <li key={index}>{step.description}</li>
+                    ))}
+                  </ul>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={allowDestructive}
+                      onChange={(e) => setAllowDestructive(e.target.checked)}
+                    />
+                    I have read these and want them applied
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="lbl" htmlFor="confirm">
+                Type the target database name to enable apply
+              </label>
+              <input
+                id="confirm"
+                className="field"
+                placeholder={comparison.targetDatabase}
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                style={{ maxWidth: 320 }}
+              />
+            </div>
+
+            {error && (
+              <div className="warnline">
+                <span className="g">!</span>
+                <div>{error}</div>
+              </div>
+            )}
+
+            {result && (
+              <div className={`warnline ${OUTCOME_TONE[result.outcome]}`}>
+                <span className="g">{result.outcome === 'Committed' ? '✓' : '!'}</span>
+                <div>
+                  <b>{result.outcome}</b> &mdash; {result.message}
+                  {result.blockers.length > 0 && (
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                      {result.blockers.map((blocker, index) => (
+                        <li key={index}>{blocker}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {result.serverMessage && (
+                    <div className="mono" style={{ marginTop: 6 }}>
+                      {result.errorNumber ? `Msg ${result.errorNumber} · ` : ''}
+                      {result.serverMessage}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="actionbar">
+            <span className="guard">
+              <span className="g add">&#10003;</span>Single transaction &middot; rolls back whole
+            </span>
+            <span className="guard">
+              <span className={`g ${destructive.length > 0 ? 'chg' : 'add'}`}>
+                {destructive.length > 0 ? '!' : '✓'}
+              </span>
+              {destructive.length} destructive step(s)
+            </span>
+            <span className="push" />
+            <button type="button" className="btn" onClick={onBack}>
+              Back
+            </button>
+            <button type="button" className="btn primary" onClick={download}>
+              Download .sql
+            </button>
+            <button type="button" className="btn" disabled={!ready || busy} onClick={apply}>
+              {busy ? 'Applying…' : `Apply to ${comparison.targetDatabase}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

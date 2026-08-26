@@ -8,9 +8,12 @@ import {
   type ObjectDetail,
   type ObjectSummary,
   type ProbeResponse,
+  type ScriptResponse,
 } from './api'
+import { PlanScreen } from './PlanScreen'
+import { RunsScreen } from './RunsScreen'
 
-type Screen = 'connections' | 'overview' | 'detail'
+type Screen = 'connections' | 'overview' | 'detail' | 'plan' | 'runs'
 
 const KIND_GLYPH: Record<ObjectSummary['kind'], { glyph: string; tone: string }> = {
   SourceOnly: { glyph: '+', tone: 'add' },
@@ -138,6 +141,7 @@ export default function App() {
   const [targetProbe, setTargetProbe] = useState<ProbeResponse | null>(null)
   const [comparison, setComparison] = useState<CompareResponse | null>(null)
   const [detail, setDetail] = useState<ObjectDetail | null>(null)
+  const [script, setScript] = useState<ScriptResponse | null>(null)
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -187,6 +191,26 @@ export default function App() {
               disabled={!detail}
             >
               3 Schema detail
+            </button>
+            <button
+              type="button"
+              className={`step ${screen === 'plan' ? 'on' : ''}`}
+              onClick={() =>
+                comparison &&
+                run(
+                  () => api.script(comparison.id, []),
+                  (value) => {
+                    setScript(value)
+                    setScreen('plan')
+                  },
+                )
+              }
+              disabled={!comparison}
+            >
+              4 Sync plan
+            </button>
+            <button type="button" className={`step ${screen === 'runs' ? 'on' : ''}`} onClick={() => setScreen('runs')}>
+              5 Run log
             </button>
           </nav>
         </div>
@@ -469,6 +493,17 @@ export default function App() {
             </div>
           </div>
         )}
+        {screen === 'plan' && comparison && script && (
+          <PlanScreen
+            comparison={comparison}
+            script={script}
+            onApplied={() => setScreen('runs')}
+            onBack={() => setScreen('overview')}
+          />
+        )}
+
+        {screen === 'runs' && <RunsScreen />}
+
       </div>
     </>
   )
