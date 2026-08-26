@@ -97,6 +97,12 @@ function ConnectionCard({
             {probe.edition} &middot; {probe.productVersion} &middot; {probe.collation}
           </div>
         )}
+        {probe?.warnings.map((warning) => (
+          <div className="warnline warn" key={warning}>
+            <span className="g">!</span>
+            <div>{warning}</div>
+          </div>
+        ))}
         {probe?.readOnly && (
           <div className="warnline">
             <span className="g">!</span>
@@ -329,12 +335,12 @@ export default function App() {
             </div>
 
             <div className="app-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {comparison.collationWarning && (
-                <div className="warnline warn">
+              {comparison.warnings.map((warning) => (
+                <div className="warnline warn" key={warning}>
                   <span className="g">!</span>
-                  <div>{comparison.collationWarning}</div>
+                  <div>{warning}</div>
                 </div>
-              )}
+              ))}
               {comparison.targetIsEmpty && (
                 <div className="warnline info">
                   <span className="g">i</span>

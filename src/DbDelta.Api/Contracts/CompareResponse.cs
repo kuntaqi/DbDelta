@@ -9,6 +9,6 @@ public sealed record CompareResponse(
     bool TargetReadOnly,
     long DurationMs,
     bool TargetIsEmpty,
-    string? CollationWarning,
+    IReadOnlyList<string> Warnings,
     IReadOnlyList<TypeCount> Counts,
     IReadOnlyList<ObjectSummary> Objects);

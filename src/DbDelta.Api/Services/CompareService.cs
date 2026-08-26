@@ -46,7 +46,8 @@ public sealed class CompareService
             _classifier.IsReadOnly(request.Server),
             schema.Tables.Count,
             schema.Views.Count,
-            schema.Routines.Count);
+            schema.Routines.Count,
+            schema.ReadWarnings);
     }
 
     public async Task<CompareResponse> CompareAsync(CompareRequest request, CancellationToken cancellationToken)
@@ -93,7 +94,7 @@ public sealed class CompareService
             _classifier.IsReadOnly(session.TargetServer),
             session.DurationMs,
             session.Target.IsEmpty,
-            CollationWarning(session),
+            Warnings(session),
             Counts(session),
             session.Diff.Objects.Select(o => Summarise(session, o)).ToList());
     }
@@ -143,11 +144,22 @@ public sealed class CompareService
             script.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList());
     }
 
-    private string? CollationWarning(CompareSession session) =>
-        string.Equals(session.Source.Collation, session.Target.Collation, StringComparison.OrdinalIgnoreCase)
-            ? null
-            : $"Source is {session.Source.Collation} and target is {session.Target.Collation}. "
-                + "String comparison differs between them, so data compare results cannot be trusted until this is resolved.";
+    private static IReadOnlyList<string> Warnings(CompareSession session)
+    {
+        var warnings = new List<string>();
+
+        if (!string.Equals(session.Source.Collation, session.Target.Collation, StringComparison.OrdinalIgnoreCase))
+        {
+            warnings.Add(
+                $"Source is {session.Source.Collation} and target is {session.Target.Collation}. "
+                + "String comparison differs between them, so data compare results cannot be trusted until this is resolved.");
+        }
+
+        warnings.AddRange(session.Source.ReadWarnings.Select(w => $"Source: {w}"));
+        warnings.AddRange(session.Target.ReadWarnings.Select(w => $"Target: {w}"));
+
+        return warnings;
+    }
 
     private static IReadOnlyList<TypeCount> Counts(CompareSession session) =>
         session.Diff.Objects

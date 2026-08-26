@@ -18,6 +18,7 @@ export interface ProbeResponse {
   tableCount: number
   viewCount: number
   routineCount: number
+  warnings: string[]
 }
 
 export interface ObjectSummary {
@@ -46,7 +47,7 @@ export interface CompareResponse {
   targetReadOnly: boolean
   durationMs: number
   targetIsEmpty: boolean
-  collationWarning: string | null
+  warnings: string[]
   counts: TypeCount[]
   objects: ObjectSummary[]
 }

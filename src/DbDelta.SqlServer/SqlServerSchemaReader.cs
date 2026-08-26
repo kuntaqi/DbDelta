@@ -6,7 +6,14 @@ namespace DbDelta.SqlServer;
 
 public sealed class SqlServerSchemaReader : ISchemaReader
 {
+    private const int PermissionDenied = 229;
+    private const int ObjectNotFound = 208;
+
     private readonly string _connectionString;
+
+    // Set when a non-essential catalog query was refused, so the caller can say so rather than
+    // silently presenting a partially informed result as complete.
+    public string? DependencyWarning { get; private set; }
 
     public SqlServerSchemaReader(string connectionString)
     {
@@ -36,6 +43,7 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         {
             DatabaseName = info.DatabaseName,
             Collation = info.Collation,
+            ReadWarnings = DependencyWarning is null ? [] : [DependencyWarning],
             Tables = tables.Values.Select(t => t.Build()).ToList(),
             Views = views.Select(v => new ViewDefinition
             {
@@ -368,23 +376,35 @@ public sealed class SqlServerSchemaReader : ISchemaReader
 
     // Keyed on schema-qualified name rather than ObjectType, because the same body can reference a
     // view and a procedure and the emitter only cares that one comes before the other.
-    private static async Task<ILookup<string, ObjectIdentity>> ReadDependenciesAsync(
+    // Reading this view needs VIEW DEFINITION, which a read-only account on a shared server often
+    // does not have. It only improves emission order, so losing it must not take the whole schema read
+    // down with it: the compare still works, and the caller is told the ordering is unverified.
+    private async Task<ILookup<string, ObjectIdentity>> ReadDependenciesAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
         var pairs = new List<(string Referencing, ObjectIdentity Referenced)>();
 
-        await using var reader = await ExecuteAsync(connection, CatalogQueries.ProgrammableDependencies, cancellationToken)
-            .ConfigureAwait(false);
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            var referencing = $"{Str(reader, "SchemaName")}.{Str(reader, "Name")}";
-            var type = Str(reader, "ReferencedType").Trim() == "V" ? ObjectType.View : ObjectType.Routine;
+            await using var reader = await ExecuteAsync(connection, CatalogQueries.ProgrammableDependencies, cancellationToken)
+                .ConfigureAwait(false);
 
-            pairs.Add((
-                referencing,
-                new ObjectIdentity(type, Str(reader, "ReferencedSchema"), Str(reader, "ReferencedName"))));
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var referencing = $"{Str(reader, "SchemaName")}.{Str(reader, "Name")}";
+                var type = Str(reader, "ReferencedType").Trim() == "V" ? ObjectType.View : ObjectType.Routine;
+
+                pairs.Add((
+                    referencing,
+                    new ObjectIdentity(type, Str(reader, "ReferencedSchema"), Str(reader, "ReferencedName"))));
+            }
+        }
+        catch (SqlException ex) when (ex.Number is PermissionDenied or ObjectNotFound)
+        {
+            DependencyWarning =
+                "Object dependencies could not be read (VIEW DEFINITION permission is missing), so views and "
+                + "procedures are emitted in name order. Check that order by hand if one of them selects from another.";
         }
 
         return pairs.ToLookup(p => p.Referencing, p => p.Referenced, StringComparer.OrdinalIgnoreCase);

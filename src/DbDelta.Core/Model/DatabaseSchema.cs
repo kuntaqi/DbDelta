@@ -6,6 +6,10 @@ public sealed class DatabaseSchema
 
     public string? Collation { get; init; }
 
+    // Non-fatal gaps in what could be read. Presenting an incomplete picture as complete is worse
+    // than saying which part is missing.
+    public IReadOnlyList<string> ReadWarnings { get; init; } = [];
+
     public IReadOnlyList<TableDefinition> Tables { get; init; } = [];
 
     public IReadOnlyList<ViewDefinition> Views { get; init; } = [];

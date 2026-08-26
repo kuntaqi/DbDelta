@@ -10,4 +10,5 @@ public sealed record ProbeResponse(
     bool ReadOnly,
     int TableCount,
     int ViewCount,
-    int RoutineCount);
+    int RoutineCount,
+    IReadOnlyList<string> Warnings);
