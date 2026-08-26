@@ -118,6 +118,20 @@ One consequence worth stating: an exclusion is only meaningful against a known c
 surfaces a *different* change to the same object, that is a new change unit with a new identity and it is
 not covered by the old exclusion.
 
+### Data enters the plan per table, never wholesale
+
+Schema differences are selected for you. Data is not: a table's rows join the plan only when that table
+is picked explicitly, and picking it brings that table's changes under its chosen mode. Selecting every
+difference the compare happened to find would make the heaviest part of a sync the least deliberate one.
+
+Within the script, deletes walk the foreign key graph child-first and inserts parent-first, so the two
+cannot share a phase. `INSERT` batches stop at 1000 row constructors because that is the T-SQL ceiling,
+and any table whose rows were written with explicit identity values gets `DBCC CHECKIDENT … RESEED`
+afterwards — without it the application's next insert collides with a row just seeded.
+
+Row deletes count as destructive alongside dropped objects, and a delete share over `Safety:MaxDeleteShare`
+joins the same list rather than sitting in a warning nobody has to acknowledge.
+
 ### Volume awareness: footprint vs transfer
 
 Two different numbers, and conflating them is what makes size readouts useless:

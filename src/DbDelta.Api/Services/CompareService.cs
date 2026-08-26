@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using DbDelta.Api.Contracts;
 using DbDelta.Core.Comparison;
+using DbDelta.Core.Data;
 using DbDelta.Core.Model;
+using DbDelta.Core.Planning;
 using DbDelta.Core.Providers;
 using DbDelta.Core.Scripting;
 using Microsoft.Extensions.Options;
@@ -125,25 +127,105 @@ public sealed class CompareService
             script.Steps.Select(s => s.Sql).ToList());
     }
 
-    public ScriptResponse Script(CompareSession session, IReadOnlyList<string> include)
+    public async Task<ScriptResponse> ScriptAsync(
+        CompareSession session,
+        IReadOnlyList<string> include,
+        DataCompareService data,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(include);
+        ArgumentNullException.ThrowIfNull(data);
 
         var identities = include.Count == 0
             ? session.Diff.Differing.Select(o => o.Identity).ToHashSet()
             : include.Select(session.Resolve).OfType<ObjectIdentity>().ToHashSet();
 
         var script = new TSqlEmitterAdapter(_provider).Emit(session, identities);
-        var sql = script.ToSql();
+        var steps = script.Steps.ToList();
+        var (dataSteps, deleteWarnings) = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
+        steps.AddRange(dataSteps);
+
+        var combined = new SyncScript
+        {
+            Header = script.Header,
+            Steps = steps.OrderBy(s => s.Phase).ToList()
+        };
+
+        var sql = combined.ToSql();
         var bytes = System.Text.Encoding.UTF8.GetByteCount(sql);
 
         return new ScriptResponse(
             sql,
-            script.Count,
+            combined.Count,
             bytes,
             bytes > _safety.MaxReviewableScriptBytes,
-            script.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList());
+            combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList(),
+            deleteWarnings);
+    }
+
+    // Deletes walk the foreign key graph child-first and inserts parent-first. Both directions in one
+    // pass would break one of them, so the two phases are filled in opposite orders.
+    private async Task<(List<ScriptStep> Steps, List<string> DeleteWarnings)> DataStepsAsync(
+        CompareSession session,
+        DataCompareService data,
+        CancellationToken cancellationToken)
+    {
+        var steps = new List<ScriptStep>();
+        var warnings = new List<string>();
+
+        if (session.DataSelections.Count == 0)
+        {
+            return (steps, warnings);
+        }
+
+        var order = TableDependencyGraph.Build(session.Source.Tables).OrderForData();
+        var ranked = order.Ordered.Concat(order.Cyclic).ToList();
+
+        var selected = ranked
+            .Where(session.DataSelections.ContainsKey)
+            .Select(table => (Table: table, Selection: session.DataSelections[table]))
+            .ToList();
+
+        var emitted = new List<(ObjectIdentity Table, IReadOnlyList<ScriptStep> Steps)>();
+
+        foreach (var (table, selection) in selected)
+        {
+            var changes = await data.ChangesAsync(session, table, selection, cancellationToken).ConfigureAwait(false);
+            if (changes is null)
+            {
+                continue;
+            }
+
+            var deletes = changes.Changes.Count(c => c.Classification == RowClassification.Delete);
+
+            // Two deletes out of five rows is a different decision from two out of five million, so the
+            // share is what gets reported rather than the raw count.
+            if (deletes > 0 && changes.TargetRowCount > 0)
+            {
+                var share = (double)deletes / changes.TargetRowCount;
+                if (share > _safety.MaxDeleteShare)
+                {
+                    warnings.Add(
+                        $"{table.QualifiedName}: {deletes} of {changes.TargetRowCount} target rows would be deleted "
+                        + $"({share:P1}, over the {_safety.MaxDeleteShare:P0} limit).");
+                }
+            }
+
+            emitted.Add((table, _provider.CreateDataScriptEmitter().Emit(changes)));
+        }
+
+        foreach (var (_, produced) in Enumerable.Reverse(emitted))
+        {
+            steps.AddRange(produced.Where(s => s.Phase == ScriptPhase.DataDeletes));
+        }
+
+        foreach (var (_, produced) in emitted)
+        {
+            steps.AddRange(produced.Where(s => s.Phase == ScriptPhase.DataUpserts));
+        }
+
+        return (steps, warnings);
     }
 
     private static IReadOnlyList<string> Warnings(CompareSession session)

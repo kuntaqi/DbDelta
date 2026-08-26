@@ -1,5 +1,6 @@
 using DbDelta.Core.Data;
 using DbDelta.Core.Providers;
+using DbDelta.Core.Scripting;
 using Microsoft.Data.SqlClient;
 
 namespace DbDelta.SqlServer;
@@ -23,6 +24,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
 
     public IRowDetailReader CreateRowDetailReader(string connectionString) =>
         new SqlServerRowDetailReader(connectionString);
+
+    public IDataScriptEmitter CreateDataScriptEmitter() => new TSqlDataEmitter();
 
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,

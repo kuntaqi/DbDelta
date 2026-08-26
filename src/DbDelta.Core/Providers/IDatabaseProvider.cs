@@ -1,4 +1,5 @@
 using DbDelta.Core.Data;
+using DbDelta.Core.Scripting;
 
 namespace DbDelta.Core.Providers;
 
@@ -17,6 +18,8 @@ public interface IDatabaseProvider
     IRowHashReader CreateRowHashReader(string connectionString);
 
     IRowDetailReader CreateRowDetailReader(string connectionString);
+
+    IDataScriptEmitter CreateDataScriptEmitter();
 
     Task<ServerInfo> ProbeAsync(string connectionString, CancellationToken cancellationToken = default);
 }

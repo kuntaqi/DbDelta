@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   dataApi,
   formatBytes,
+  planApi,
+  type SelectedTable,
   type CompareResponse,
   type DataCompareResponse,
   type TableDataMode,
@@ -32,6 +34,30 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
   const [result, setResult] = useState<DataCompareResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [inPlan, setInPlan] = useState<SelectedTable[]>([])
+
+  const picked = selected !== null && inPlan.some((s) => s.table === selected.qualifiedName)
+
+  async function toggle(next: boolean) {
+    if (!selected) return
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await planApi.select(comparison.id, selected.qualifiedName, next, mode, topCount)
+      setInPlan(response.selected)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    planApi
+      .selection(comparison.id)
+      .then((s) => setInPlan(s.selected))
+      .catch(() => setInPlan([]))
+  }, [comparison.id])
 
   useEffect(() => {
     dataApi
@@ -91,6 +117,9 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                 >
                   <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span className={`nm ${table.onBothSides ? '' : 'dim'}`}>{table.qualifiedName}</span>
+                    {inPlan.some((s) => s.table === table.qualifiedName) && (
+                      <span className="badge dev">in plan</span>
+                    )}
                     {!table.hasKey && (
                       <span className="why" style={{ color: 'var(--del)' }}>
                         no key
@@ -298,9 +327,24 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
 
       <div className="actionbar">
         <span className="guard">
-          <span className="g same">&#9671;</span>
-          Data sync is not wired into the plan yet — this compares and explains only.
+          <span className={`g ${inPlan.length > 0 ? 'add' : 'same'}`}>
+            {inPlan.length > 0 ? '✓' : '◇'}
+          </span>
+          {inPlan.length === 0
+            ? 'No table data in the plan. Schema differences are selected for you; data is per table.'
+            : `${inPlan.length} table(s) of data in the plan: ${inPlan.map((s) => s.table).join(', ')}`}
         </span>
+        <span className="push" />
+        {selected && selected.hasKey && selected.onBothSides && (
+          <button
+            type="button"
+            className={`btn ${picked ? '' : 'primary'}`}
+            disabled={mode === 'SchemaOnly' || busy}
+            onClick={() => toggle(!picked)}
+          >
+            {picked ? 'Remove from plan' : 'Add this table to plan'}
+          </button>
+        )}
       </div>
     </div>
   )

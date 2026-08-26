@@ -12,6 +12,7 @@ public sealed class ApplyService
     private readonly IScriptExecutor _executor;
     private readonly ServerClassifier _classifier;
     private readonly CompareService _compare;
+    private readonly DataCompareService _data;
     private readonly RunLogStore _runs;
 
     public ApplyService(
@@ -19,12 +20,14 @@ public sealed class ApplyService
         IScriptExecutor executor,
         ServerClassifier classifier,
         CompareService compare,
+        DataCompareService data,
         RunLogStore runs)
     {
         _provider = provider;
         _executor = executor;
         _classifier = classifier;
         _compare = compare;
+        _data = data;
         _runs = runs;
     }
 
@@ -36,7 +39,7 @@ public sealed class ApplyService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
 
-        var script = _compare.Script(session, request.Include);
+        var script = await _compare.ScriptAsync(session, request.Include, _data, cancellationToken).ConfigureAwait(false);
         var destructive = Destructive(script);
 
         // An empty plan has nothing to commit, and logging it as a successful run would fill the log
@@ -129,11 +132,16 @@ public sealed class ApplyService
             : $"{drift.Differing.Count()} object(s) no longer match what was compared: {string.Join(", ", changed)}";
     }
 
+    // Dropped objects and deleted rows are the parts a later rollback cannot bring back, so they need
+    // the same deliberate consent. Over-limit delete shares join the list rather than sitting in a
+    // separate warning nobody has to acknowledge.
     private static IReadOnlyList<string> Destructive(ScriptResponse script) =>
         script.Steps
             .Where(s => s.Sql.Contains("DROP TABLE", StringComparison.OrdinalIgnoreCase)
-                || s.Sql.Contains("DROP COLUMN", StringComparison.OrdinalIgnoreCase))
+                || s.Sql.Contains("DROP COLUMN", StringComparison.OrdinalIgnoreCase)
+                || s.Sql.Contains("DELETE FROM", StringComparison.OrdinalIgnoreCase))
             .Select(s => s.Description)
+            .Concat(script.DeleteWarnings)
             .ToList();
 
     private static ApplyResponse Respond(ApplyResult result, int stepCount, IReadOnlyList<string> destructive) =>

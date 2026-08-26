@@ -5,4 +5,5 @@ public sealed record ScriptResponse(
     int StepCount,
     int ByteSize,
     bool ExceedsReviewableSize,
-    IReadOnlyList<StepDto> Steps);
+    IReadOnlyList<StepDto> Steps,
+    IReadOnlyList<string> DeleteWarnings);

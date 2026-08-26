@@ -14,5 +14,9 @@ public enum ScriptPhase
     Indexes,
     CheckConstraints,
     AddForeignKeys,
+    // Child rows go before parents on the way out and after them on the way in, so deletes and
+    // upserts cannot share one phase.
+    DataDeletes,
+    DataUpserts,
     Programmables
 }

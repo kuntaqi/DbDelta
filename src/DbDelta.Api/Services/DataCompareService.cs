@@ -2,6 +2,7 @@ using DbDelta.Api.Contracts;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
 using DbDelta.Core.Providers;
+using DbDelta.Core.Scripting;
 
 namespace DbDelta.Api.Services;
 
@@ -12,6 +13,145 @@ public sealed class DataCompareService
     private readonly IDatabaseProvider _provider;
 
     public DataCompareService(IDatabaseProvider provider) => _provider = provider;
+
+    public DataSelectionResponse Select(CompareSession session, DataSelectionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var table = Find(session.Source, request.Table)
+            ?? throw new InvalidOperationException($"{request.Table} is not a table on the source.");
+
+        if (!request.Selected)
+        {
+            session.DataSelections.Remove(table.Identity);
+            return Selection(session);
+        }
+
+        if (ColumnSetResolver.DefaultKeyFor(table).Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{request.Table} has no primary key, so its rows cannot be addressed. Pick key columns first.");
+        }
+
+        var mode = Enum.Parse<TableDataMode>(request.Mode, true);
+
+        if (mode == TableDataMode.SchemaOnly)
+        {
+            session.DataSelections.Remove(table.Identity);
+            return Selection(session);
+        }
+
+        session.DataSelections[table.Identity] = new DataSelection(mode, request.TopCount, request.Filter);
+        return Selection(session);
+    }
+
+    public static DataSelectionResponse Selection(CompareSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        return new DataSelectionResponse(session.DataSelections
+            .Select(pair => new SelectedTable(pair.Key.QualifiedName, pair.Value.Mode.ToString(), pair.Value.TopCount))
+            .OrderBy(s => s.Table, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+    }
+
+    // Turns a selected table into the rows the emitter needs. Row values are fetched here and only
+    // here: the counts came from hashes, so nothing is moved until something is actually being written.
+    public async Task<TableDataChanges?> ChangesAsync(
+        CompareSession session,
+        ObjectIdentity table,
+        DataSelection selection,
+        CancellationToken cancellationToken)
+    {
+        var source = session.Source.Tables.FirstOrDefault(t => t.Identity == table);
+        var target = session.Target.Tables.FirstOrDefault(t => t.Identity == table);
+
+        if (source is null || target is null)
+        {
+            return null;
+        }
+
+        var request = new DataCompareRequest
+        {
+            Table = table,
+            KeyColumns = ColumnSetResolver.DefaultKeyFor(source),
+            Mode = selection.Mode,
+            TopCount = selection.TopCount,
+            FilterPredicate = selection.Filter
+        };
+
+        var columns = ColumnSetResolver.Resolve(source, target, request);
+        if (!columns.CanCompare)
+        {
+            return null;
+        }
+
+        var result = await DataComparer.CompareAsync(
+            _provider.CreateRowHashReader(session.SourceConnectionString)
+                .StreamAsync(source, request, columns.ComparedColumns, RowSetSide.Source, cancellationToken),
+            _provider.CreateRowHashReader(session.TargetConnectionString)
+                .StreamAsync(target, request, columns.ComparedColumns, RowSetSide.Target, cancellationToken),
+            new DataCompareSettings { Mode = selection.Mode, ComparedColumns = columns.ComparedColumns },
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.HasChanges)
+        {
+            return null;
+        }
+
+        var fetched = columns.ComparedColumns.Concat(request.KeyColumns)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var sourceRows = (await _provider.CreateRowDetailReader(session.SourceConnectionString)
+            .FetchAsync(source, request, fetched,
+                result.Differences.Where(d => d.Classification != RowClassification.Delete).Select(d => d.Key).ToList(),
+                cancellationToken).ConfigureAwait(false))
+            .ToDictionary(r => r.Key, StringComparer.Ordinal);
+
+        var targetRows = (await _provider.CreateRowDetailReader(session.TargetConnectionString)
+            .FetchAsync(target, request, fetched,
+                result.Differences.Where(d => d.Classification == RowClassification.Delete).Select(d => d.Key).ToList(),
+                cancellationToken).ConfigureAwait(false))
+            .ToDictionary(r => r.Key, StringComparer.Ordinal);
+
+        var changes = result.Differences
+            .Select(difference =>
+            {
+                var row = difference.Classification == RowClassification.Delete
+                    ? targetRows.GetValueOrDefault(difference.Key)
+                    : sourceRows.GetValueOrDefault(difference.Key);
+
+                if (row is null)
+                {
+                    return null;
+                }
+
+                var keys = request.KeyColumns.ToDictionary(
+                    c => c, c => row.Values.GetValueOrDefault(c), StringComparer.OrdinalIgnoreCase);
+
+                return new DataChange(
+                    difference.Key,
+                    string.Join(", ", keys.Values.Select(v => v ?? "NULL")),
+                    difference.Classification,
+                    row.Values,
+                    keys);
+            })
+            .OfType<DataChange>()
+            .ToList();
+
+        var volume = await _provider.CreateVolumeReader(session.TargetConnectionString)
+            .ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        return new TableDataChanges
+        {
+            Table = source,
+            KeyColumns = request.KeyColumns,
+            Columns = columns.ComparedColumns,
+            Changes = changes,
+            TargetRowCount = volume.Tables.FirstOrDefault(v => v.Table == table)?.RowCount ?? 0
+        };
+    }
 
     public async Task<VolumeSummary> VolumeAsync(CompareSession session, CancellationToken cancellationToken)
     {

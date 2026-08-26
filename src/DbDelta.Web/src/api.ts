@@ -88,6 +88,7 @@ export interface ScriptResponse {
   byteSize: number
   exceedsReviewableSize: boolean
   steps: StepDto[]
+  deleteWarnings: string[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -273,5 +274,26 @@ export const fkApi = {
     )
     if (!response.ok) throw new Error(await readError(response))
     return (await response.json()) as FkMapResponse
+  },
+}
+
+export interface SelectedTable {
+  table: string
+  mode: string
+  topCount: number
+}
+
+export const planApi = {
+  select: (compareId: string, table: string, selected: boolean, mode: TableDataMode, topCount: number) =>
+    postJson<{ selected: SelectedTable[] }>(`/api/compare/${compareId}/data/select`, {
+      table,
+      selected,
+      mode,
+      topCount,
+    }),
+  selection: async (compareId: string) => {
+    const response = await fetch(`/api/compare/${compareId}/data/select`)
+    if (!response.ok) throw new Error('Could not read the data selection')
+    return (await response.json()) as { selected: SelectedTable[] }
   },
 }

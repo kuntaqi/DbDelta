@@ -95,16 +95,46 @@ api.MapGet("/compare/{id}/objects/{objectId}", (
     return detail is null ? Results.NotFound() : Results.Ok(detail);
 });
 
-api.MapPost("/compare/{id}/script", (
+api.MapPost("/compare/{id}/script", async (
     string id,
     ScriptRequest request,
     CompareService service,
-    CompareSessionStore sessions) =>
+    DataCompareService data,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
 {
     var session = sessions.Find(id);
     return session is null
         ? Results.NotFound()
-        : Results.Ok(service.Script(session, request.Include));
+        : Results.Ok(await service.ScriptAsync(session, request.Include, data, cancellationToken));
+});
+
+api.MapPost("/compare/{id}/data/select", (
+    string id,
+    DataSelectionRequest request,
+    DataCompareService service,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(service.Select(session, request));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot select that table");
+    }
+});
+
+api.MapGet("/compare/{id}/data/select", (string id, CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    return session is null ? Results.NotFound() : Results.Ok(DataCompareService.Selection(session));
 });
 
 api.MapPost("/compare/{id}/apply", async (

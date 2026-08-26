@@ -1,4 +1,5 @@
 using DbDelta.Core.Comparison;
+using DbDelta.Core.Data;
 using DbDelta.Core.Model;
 
 namespace DbDelta.Api.Services;
@@ -24,6 +25,10 @@ public sealed class CompareSession
     public required long DurationMs { get; init; }
 
     public DateTimeOffset ComparedAt { get; init; }
+
+    // Data enters the plan only for tables picked here. Schema differences are selected for you;
+    // moving rows is a heavier decision, so it stays deliberate and per-table.
+    public Dictionary<ObjectIdentity, DataSelection> DataSelections { get; } = new();
 
     // Stable across a session so the SPA can address an object without sending its identity back in
     // pieces, and so a stale id from an old comparison cannot silently resolve against a new one.
