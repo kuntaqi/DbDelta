@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/DbDelta.Api/DbDelta.Api.csproj" />
     <Project Path="src/DbDelta.Core/DbDelta.Core.csproj" />
     <Project Path="src/DbDelta.SqlServer/DbDelta.SqlServer.csproj" />
   </Folder>

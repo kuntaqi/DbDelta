@@ -108,6 +108,20 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
 7. FK map (screen 7)
 8. PostgreSQL provider stub proving the abstraction holds
 
+## Running it
+
+```
+cd src/DbDelta.Web && npm install && npm run build   # builds into ../DbDelta.Api/wwwroot
+cd ../.. && dotnet run --project src/DbDelta.Api     # http://localhost:5199
+```
+
+For UI work run the API and `npm run dev` (port 5200) side by side; Vite proxies `/api` to 5199.
+`wwwroot/` is build output and is not committed, so a fresh clone must run the npm build once before
+`dotnet run` serves anything.
+
+Two demo databases on LocalDB make the UI worth looking at — recreate them from the script in
+`docs/demo-data.sql` if they are missing.
+
 ## Environment notes
 
 - Requires the .NET 10 SDK and Node 20+. `sqlcmd`/`bcp` (ODBC 17) are useful for verification.
