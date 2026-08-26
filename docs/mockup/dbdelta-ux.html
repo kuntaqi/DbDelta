@@ -1,4 +1,4 @@
-<title>DbDelta Screen Walkthrough</title>
+<title>DbDelta Screen Reference</title>
 <style>
   :root {
     --ground:#F6F8FA; --surface:#FFFFFF; --surface-2:#EEF2F6; --surface-3:#E4EAF0;
@@ -413,6 +413,7 @@
   <div class="topbar-in">
     <span class="brand"><span class="brand-mark">&#916;</span>DbDelta</span>
     <nav class="jump">
+      <a href="#state">Status</a>
       <a href="#s1">1 Connections</a>
       <a href="#s2">2 Overview</a>
       <a href="#s3">3 Schema</a>
@@ -420,6 +421,7 @@
       <a href="#s5">5 Sync plan</a>
       <a href="#s6">6 Run log</a>
       <a href="#s7">7 FK map</a>
+      <a href="#gap">Not built</a>
     </nav>
   </div>
 </div>
@@ -427,45 +429,39 @@
 <div class="wrap">
 
   <header class="hero">
-    <p class="eyebrow">Mockup untuk sign-off &middot; sebelum coding</p>
-    <h1>Tujuh layar, satu alur: bandingkan lalu sync satu arah</h1>
-    <p class="lede">React + TypeScript, SQL Server dulu. Setiap layar di bawah ini dirender langsung dengan
-      HTML/CSS, bukan gambar &mdash; jadi spacing dan hierarki yang kamu lihat memang yang akan jadi. Label UI
-      sengaja bahasa Inggris supaya nyambung dengan codebase.</p>
+    <p class="eyebrow">Rujukan &middot; menggambarkan apa yang benar-benar ada</p>
+    <h1>Tujuh layar, sebagaimana terbangun</h1>
+    <p class="lede">Dokumen ini bukan lagi usulan. Setiap layar di bawah menggambarkan aplikasi yang
+      berjalan, dan bagian <a href="#gap">Not built</a> mencatat gagasan yang pernah ada di mockup awal
+      tapi tidak pernah dibangun &mdash; supaya tidak ada yang mengira fitur itu tersedia.</p>
   </header>
 
-  <div class="decisions">
-    <h2>Yang perlu kamu putuskan di mockup ini</h2>
+  <div class="decisions" id="state">
+    <h2>Yang berubah sejak mockup pertama</h2>
     <ol>
-      <li><strong>Layar 1</strong> &mdash; pita warna environment plus arah sync ditulis sebagai kalimat. Cukup untuk mencegah salah target?</li>
-      <li><strong>Layar 2</strong> &mdash; satu pohon berisi semua tipe objek dengan checkbox di baris, bukan tab per tipe.</li>
-      <li><strong>Layar 4</strong> &mdash; kolom yang di-exclude ditampilkan terbuka, dan update ditampilkan per sel sebagai <span class="mono">lama &rarr; baru</span>.</li>
-      <li><strong>Layar 5</strong> &mdash; pilihan dari layar 2 dan 4 menumpuk jadi satu cart, lalu keluar sebagai
-        <em>satu</em> script berurutan. Cart-nya menarik prasyarat sendiri, jadi isinya bisa lebih banyak dari yang kamu klik.</li>
-      <li><strong>Layar 5, scope</strong> &mdash; naik ke seluruh database meruntuhkan pilihan yang lebih sempit
-        (sekali kerja, tidak dobel), tapi <em>exclusion</em>-mu bertahan. Ini yang paling perlu kamu setujui.</li>
-      <li><strong>Layar 1 &amp; 4, ukuran</strong> &mdash; <em>footprint</em> (besar objeknya) dipisah dari <em>transfer</em>
-        (yang benar-benar pindah). Yang menempel di tombol selalu transfer, karena itu yang jadi konsekuensi.</li>
-      <li><strong>Layar 4, mode data</strong> &mdash; per tabel: All rows / Top N / Filter / Schema only. Mode terbatas
-        <em>mematikan DELETE</em>, dan tabel yang di-seed menarik parent row-nya. Ini bagian yang paling perlu kamu setujui.</li>
-      <li><strong>Layar 1, target kosong</strong> &mdash; dideteksi dan default-nya berbalik: semua tabel jadi
-        Schema only, data harus dipilih sendiri. Tool tidak akan membuat database-nya sendiri.</li>
-      <li><strong>Layar 6</strong> &mdash; run log menyimpan script yang dipakai, jadi run gagal bisa dijalankan ulang apa adanya.</li>
-      <li><strong>Layar 7, FK map</strong> &mdash; diagram bertetangga (bukan ER seluruh skema) yang <em>tahu isi cart</em>,
-        lengkap dengan nullability FK. Ini yang bikin kasus seed tak terpenuhi bisa dijelaskan, bukan cuma ditolak.</li>
+      <li><strong>Tidak ada yang otomatis masuk sync plan.</strong> Mockup awal menggambar checkbox skema
+        <em>sudah tercentang</em>. Sekarang skema maupun data harus dipilih; rencana kosong menghasilkan
+        script kosong dan apply yang ditolak.</li>
+      <li><strong>Koneksi punya dua mode</strong> &mdash; isi rinci (server, port, Windows / SQL login) atau
+        tempel connection string. Nama server tetap diekstrak dari string yang ditempel supaya guard
+        read-only tidak bisa dilewati.</li>
+      <li><strong>Layar data punya scan penyaring.</strong> Menyembunyikan tabel yang sama butuh
+        membandingkan semuanya lebih dulu, jadi itu tombol, bukan otomatis.</li>
+      <li><strong>Pemilihan data per tabel</strong>, bukan per baris.</li>
+      <li><strong>Sinkronisasi data sudah jalan</strong> &mdash; INSERT/UPDATE/DELETE dengan
+        <span class="mono">IDENTITY_INSERT</span> dan <span class="mono">DBCC CHECKIDENT</span>.</li>
     </ol>
   </div>
 
   <!-- 1 -->
   <section class="screen" id="s1">
     <div class="screen-head"><span class="screen-num">01</span><h2>Connections</h2></div>
-    <p class="screen-note">Dua sisi berdampingan, masing-masing dengan pita warna environment. Arah sync ditulis
-      sebagai kalimat, bukan cuma panah, dan tombol swap ada di antaranya.</p>
-    <div class="ask"><b>Konfirmasi:</b> environment dideteksi dari nama server lewat config, bukan diisi manual &mdash;
-      jadi Prod tidak bisa &ldquo;lupa&rdquo; ditandai. Setuju?</div>
+    <p class="screen-note">Dua sisi berdampingan dengan pita warna environment. Tiap sisi bisa diisi rinci
+      atau ditempel sebagai connection string. Environment dideteksi dari nama server lewat config, tidak
+      diisi manual.</p>
 
     <div class="app">
-      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span><span class="app-path">localhost:5199/connections</span></div>
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span><span class="app-path">localhost:5199</span></div>
       <div class="app-body">
         <div class="conns">
 
@@ -474,114 +470,76 @@
             <div class="conn-in">
               <div class="conn-hd"><h3>Source</h3><span class="badge dev">Dev</span>
                 <span class="dim mono push">read</span></div>
-              <div><span class="lbl">Saved profile</span><div class="field sel">App &mdash; Dev</div></div>
-              <div><span class="lbl">Server</span><div class="field">DBSERVER-DEV</div></div>
-              <div><span class="lbl">Database</span><div class="field sel">AppDev</div></div>
-              <div><span class="lbl">Authentication</span><div class="field sel">Windows Integrated</div></div>
-              <div class="row"><button class="btn">Test connection</button>
-                <span class="guard"><span class="g add">&#10003;</span>142 tables &middot; 38 views</span></div>
-              <div class="sizebox">
-                <div><span class="k">Data</span><span class="v">41.6 GB</span></div>
-                <div><span class="k">Log</span><span class="v">2.1 GB</span></div>
-                <div><span class="k">Rows</span><span class="v">184.2 M</span></div>
+              <div class="row" style="gap:6px;"><span class="chip on">Enter details</span><span class="chip">Connection string</span></div>
+              <div class="two" style="grid-template-columns:1fr 90px; gap:10px;">
+                <div><span class="lbl">Server</span><div class="field">DBSERVER-DEV</div></div>
+                <div><span class="lbl">Port</span><div class="field dim">1433</div></div>
               </div>
+              <div><span class="lbl">Database</span><div class="field">AppDev</div></div>
+              <div><span class="lbl">Authentication</span>
+                <div class="row" style="gap:6px;"><span class="chip on">Windows</span><span class="chip">SQL login</span></div></div>
+              <label class="dim" style="font-size:12px;"><span class="cb on">&#10003;</span> Trust the server certificate</label>
+              <div class="row"><button class="btn">Test connection</button>
+                <span class="guard"><span class="g add">&#10003;</span>263 tables &middot; 503 views</span></div>
+              <div class="dim" style="font-size:11.5px;">Standard Edition (64-bit) &middot; 17.0.4025.3 &middot; Latin1_General_CI_AS</div>
             </div>
           </div>
 
           <div class="arrowcol">
             <span class="mono dim" style="font-size:20px;">&rarr;</span>
-            <button class="btn" title="Swap source and target" style="padding:5px 8px;">&#8646;</button>
+            <button class="btn" title="Swap" style="padding:5px 8px;">&#8646;</button>
           </div>
 
           <div class="conn uat">
             <span class="band"></span>
             <div class="conn-in">
               <div class="conn-hd"><h3>Target</h3><span class="badge uat">UAT</span>
-                <span class="dim mono push">write &middot; confirm</span></div>
-              <div><span class="lbl">Saved profile</span><div class="field sel">App &mdash; UAT</div></div>
-              <div><span class="lbl">Server</span><div class="field">DBSERVER-UAT</div></div>
-              <div><span class="lbl">Database</span><div class="field sel">AppUat</div></div>
-              <div><span class="lbl">Authentication</span><div class="field sel">Windows Integrated</div></div>
+                <span class="dim mono push">write</span></div>
+              <div class="row" style="gap:6px;"><span class="chip">Enter details</span><span class="chip on">Connection string</span></div>
+              <div><span class="lbl">Connection string</span>
+                <div class="field" style="height:auto; padding:8px 10px; line-height:1.5;">Server=DBSERVER-UAT,1433;Database=AppUat;Integrated Security=true;TrustServerCertificate=true</div></div>
+              <p class="dim" style="margin:0; font-size:11.5px;">Dipakai apa adanya. Nama server tetap dibaca
+                kembali darinya, jadi server read-only tetap terblokir.</p>
               <div class="row"><button class="btn">Test connection</button>
-                <span class="guard"><span class="g add">&#10003;</span>141 tables &middot; 37 views</span></div>
-              <div class="sizebox">
-                <div><span class="k">Data</span><span class="v">38.9 GB</span></div>
-                <div><span class="k">Log</span><span class="v">1.4 GB</span></div>
-                <div><span class="k">Rows</span><span class="v">179.8 M</span></div>
-              </div>
+                <span class="guard"><span class="g add">&#10003;</span>280 tables &middot; 498 views</span></div>
             </div>
           </div>
         </div>
 
         <div style="margin-top:16px;" class="warnline info">
           <span class="g">&rarr;</span>
-          <div>Changes will be written to <b>AppUat</b> on <b>DBSERVER-UAT</b>. Nothing is ever written to the source.</div>
+          <div>Perubahan akan ditulis ke koneksi <b>target</b>. Source tidak pernah ditulisi.</div>
         </div>
       </div>
       <div class="actionbar">
-        <span class="guard"><span class="g same">&#9671;</span>Compare scope</span>
-        <span class="chip on">Schema</span><span class="chip on">Data</span>
         <span class="push"></span>
-        <button class="btn">Save as profile</button>
         <button class="btn primary">Compare</button>
       </div>
     </div>
 
     <div class="modal-scrim">
-      <div class="modal">
-        <h4>Target is a read-only server</h4>
-        <div class="mb">
-          <div class="warnline"><span class="g">!</span><div><b>DBSERVER-PROD</b> is on the read-only list.
-            You can compare and download a script, but Apply stays disabled.</div></div>
-          <p>Ubah daftarnya di <span class="mono">appsettings.json</span> &rarr; <span class="mono">Safety:ReadOnlyServers</span>.</p>
-        </div>
-        <div class="mf"><button class="btn">Change target</button><button class="btn primary">Compare read-only</button></div>
-      </div>
-    </div>
-    <p class="caption">Kalau target-nya Prod: compare tetap jalan, Apply mati permanen.</p>
-
-    <div class="modal-scrim">
       <div class="modal wide">
-        <h4>Target database is empty</h4>
+        <h4>Pesan koneksi yang spesifik</h4>
         <div class="mb">
-          <div class="sizebox">
-            <div><span class="k">Target objects</span><span class="v">0</span></div>
-            <div><span class="k">Source objects</span><span class="v">297</span></div>
-            <div><span class="k">Full copy would move</span><span class="v" style="color:var(--del);">41.6 GB</span></div>
-          </div>
-          <p>Every source object is a create, so this is a provisioning run rather than a diff.
-            Data is <b>off by default</b> &mdash; opt in per table.</p>
-          <div class="precheck">
-            <span class="lbl" style="margin:0;">Applied and checked</span>
-            <ul>
-              <li><span class="g add">&#10003;</span><div>All 142 tables set to <b>Schema only</b>. A full copy would need
-                bulk mode and a script no one can review.</div></li>
-              <li><span class="g add">&#10003;</span><div>Collation matches source
-                (<span class="mono">SQL_Latin1_General_CP1_CI_AS</span>) &mdash; row hashes will compare correctly.</div></li>
-              <li><span class="g chg">i</span><div>Tables created bare, then all 188 foreign keys added afterwards,
-                so FK cycles are not an issue.</div></li>
-              <li><span class="g chg">i</span><div>38 views and 117 routines ordered by
-                <span class="mono">sys.sql_expression_dependencies</span>, wrapped in
-                <span class="mono">EXEC sp_executesql</span> so they can share one transaction.</div></li>
-              <li><span class="g chg">i</span><div><span class="mono">DBCC CHECKIDENT … RESEED</span> appended for every
-                seeded identity table, otherwise the app's next insert collides with a seeded key.</div></li>
-            </ul>
-          </div>
+          <div class="warnline"><span class="g">!</span><div><b>That database does not exist</b> &mdash;
+            <span class="mono">'AppDev_Typo'</span> tidak ditemukan di DBSERVER-DEV. DbDelta tidak pernah
+            membuat database: filegroup, collation, dan recovery model bukan keputusannya.</div></div>
+          <div class="warnline warn"><span class="g">!</span><div><b>Object dependencies could not be read</b>
+            (izin <span class="mono">VIEW DEFINITION</span> tidak ada), jadi view dan procedure diurutkan
+            berdasarkan nama. Compare tetap jalan.</div></div>
         </div>
-        <div class="mf"><button class="btn">Pick tables to seed</button><button class="btn primary">Review provisioning plan</button></div>
+        <div class="mf"><button class="btn">Change target</button></div>
       </div>
     </div>
-    <p class="caption">Target kosong: default berbalik jadi schema-only, data harus dipilih sendiri.</p>
+    <p class="caption">Kegagalan koneksi dijelaskan per jenis, bukan diteruskan sebagai error mentah.</p>
   </section>
 
   <!-- 2 -->
   <section class="screen" id="s2">
     <div class="screen-head"><span class="screen-num">02</span><h2>Overview</h2></div>
-    <p class="screen-note">Ringkasan dulu, detail kemudian. Kartu angka di atas, filter sebagai chip, lalu satu pohon
-      berisi semua tipe objek. Checkbox di setiap baris langsung mengisi sync plan &mdash; tidak ada langkah
-      &ldquo;tambah ke plan&rdquo; terpisah.</p>
-    <div class="ask"><b>Konfirmasi:</b> baris <span class="mono">Same</span> disembunyikan secara default karena
-      784 objek identik cuma jadi kebisingan &mdash; tapi jumlahnya tetap ditampilkan supaya kamu tahu totalnya benar.</div>
+    <p class="screen-note">Kartu angka per tipe objek, lalu satu pohon berisi semua tipe. Checkbox
+      <strong>kosong</strong> &mdash; tidak ada yang dipilih untukmu. Baris identik disembunyikan default
+      tapi jumlahnya tetap ditampilkan. Nama objek bisa diklik untuk membuka layar 3.</p>
 
     <div class="app">
       <div class="app-bar">
@@ -589,454 +547,301 @@
         <span class="mono">AppDev</span><span class="badge dev">Dev</span>
         <span class="dim">&rarr;</span>
         <span class="mono">AppUat</span><span class="badge uat">UAT</span>
-        <span class="dim mono push">compared 14:02:11 &middot; 6.4s</span>
-        <span class="cart">Plan <span class="n">7</span> <span class="auto">+2 required</span></span>
+        <span class="dim mono push">compared in 3953 ms</span>
       </div>
 
       <div class="app-body" style="display:flex; flex-direction:column; gap:14px;">
+        <div class="warnline warn"><span class="g">!</span>
+          <div>Source is <span class="mono">SQL_Latin1_General_CP1_CI_AS</span> and target is
+            <span class="mono">Latin1_General_CI_AS</span>. Perbandingan string berbeda di antaranya, jadi
+            hasil data compare tidak bisa dipercaya sampai ini diselesaikan.</div></div>
+
         <div class="tiles">
-          <div class="tile chg"><div class="k">Tables</div><div class="v">4</div><div class="s">of 142 differ</div></div>
-          <div class="tile chg"><div class="k">Views</div><div class="v">1</div><div class="s">of 38 differ</div></div>
-          <div class="tile chg"><div class="k">Procedures</div><div class="v">3</div><div class="s">of 96 differ</div></div>
-          <div class="tile"><div class="k">Functions</div><div class="v">0</div><div class="s">of 21 differ</div></div>
-          <div class="tile chg"><div class="k">Indexes</div><div class="v">2</div><div class="s">of 310 differ</div></div>
-          <div class="tile chg"><div class="k">Foreign keys</div><div class="v">1</div><div class="s">of 188 differ</div></div>
+          <div class="tile chg"><div class="k">Tables</div><div class="v">18</div><div class="s">of 263 differ</div></div>
+          <div class="tile chg"><div class="k">Views</div><div class="v">5</div><div class="s">of 503 differ</div></div>
+          <div class="tile chg"><div class="k">Routines</div><div class="v">2</div><div class="s">of 49 differ</div></div>
+          <div class="tile"><div class="k">Triggers</div><div class="v">0</div><div class="s">of 14 differ</div></div>
         </div>
 
         <div class="row" style="flex-wrap:wrap;">
-          <span class="chip on">Different <span class="n">7</span></span>
-          <span class="chip on">Source only <span class="n">3</span></span>
-          <span class="chip on">Target only <span class="n">1</span></span>
-          <span class="chip">Same <span class="n">784</span></span>
+          <span class="chip">Show identical <span class="n">804</span></span>
+          <span class="dim" style="font-size:12px;">25 object(s) differ</span>
           <span class="push"></span>
-          <div class="field" style="width:210px;"><span class="dim">&#8981;</span><span class="dim">filter by name&hellip;</span></div>
+          <span class="chip">Select all differing</span>
+          <span class="chip">Clear</span>
         </div>
       </div>
 
       <ul class="tree">
-        <li class="grp"><span class="cb on">&#10003;</span>Tables <span class="cnt">4</span></li>
-        <li class="it indent on"><span class="cb on">&#10003;</span><span class="g chg">~</span>
-          <span class="nm">dbo.Company</span><span class="why">2 columns differ &middot; 1 index missing on target</span></li>
-        <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
-          <span class="nm">dbo.CompanyRating</span><span class="why">source only &middot; 4 columns, 1 FK</span></li>
-        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
-          <span class="nm">dbo.Site</span><span class="why">column <span class="mono">Category</span> nullability</span></li>
-        <li class="it indent"><span class="cb"></span><span class="g del">&minus;</span>
-          <span class="nm">dbo.SegmentLegacy</span><span class="why">target only &middot; <span class="mono">DROP</span> not selected</span></li>
-
-        <li class="grp"><span class="cb on">&#10003;</span>Views <span class="cnt">1</span></li>
-        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
-          <span class="nm">sales.vCompanySegment</span><span class="why">body differs &middot; 12 lines</span></li>
-
-        <li class="grp"><span class="cb on">&#10003;</span>Stored procedures <span class="cnt">3</span></li>
-        <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
-          <span class="nm">dbo.usp_RebuildCompanyRating</span><span class="why">source only</span></li>
-        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
-          <span class="nm">dbo.usp_GetCompanySummary</span><span class="why">body differs &middot; 3 lines</span></li>
+        <li class="grp">Tables <span class="cnt">18</span></li>
         <li class="it indent"><span class="cb"></span><span class="g chg">~</span>
-          <span class="nm">dbo.usp_NightlyRollup</span><span class="why">whitespace only &middot; <span class="dim">ignored by rule</span></span></li>
+          <span class="nm">dbo.Company</span><span class="why">2 columns, 1 index differ</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
+          <span class="nm">dbo.CompanyRating</span><span class="why">only on source</span></li>
+        <li class="it indent"><span class="cb"></span><span class="g del">&minus;</span>
+          <span class="nm">dbo.SegmentLegacy</span><span class="why">only on target</span></li>
+        <li class="grp">Views <span class="cnt">5</span></li>
+        <li class="it indent"><span class="cb on">&#10003;</span><span class="g chg">~</span>
+          <span class="nm">sales.vCompanySegment</span><span class="why">body differs</span></li>
       </ul>
 
       <div class="actionbar">
-        <span class="guard"><span class="cb on">&#10003;</span>7 objects picked</span>
-        <span class="autoadd"><span class="g">+</span>2 pulled in as prerequisites</span>
-        <span class="guard dim">&middot;</span>
-        <span class="guard">1 drop excluded</span>
+        <span class="guard"><span class="g add">&#10003;</span>2 object(s) in the plan</span>
         <span class="push"></span>
-        <button class="btn">Compare data &rarr;</button>
-        <button class="btn primary">Review sync plan</button>
+        <button class="btn">Back to connections</button>
       </div>
     </div>
+    <p class="caption">Tanpa satu pun dicentang, action bar berbunyi &ldquo;Nothing picked. Tick the objects
+      you want in the plan &mdash; none are selected for you.&rdquo;</p>
   </section>
 
   <!-- 3 -->
   <section class="screen" id="s3">
     <div class="screen-head"><span class="screen-num">03</span><h2>Schema detail</h2></div>
-    <p class="screen-note">DDL berdampingan dengan diff per baris. Yang penting bukan cuma <em>apa</em> yang beda,
-      tapi DDL apa yang akan dijalankan &mdash; jadi ada blok ketiga di bawah: perintah yang benar-benar dikirim ke target.</p>
-    <div class="ask"><b>Konfirmasi:</b> untuk perubahan kolom, tool memilih <span class="mono">ALTER COLUMN</span>
-      kalau aman dan jatuh ke pola tabel-bayangan hanya kalau tidak bisa. Keputusan itu ditampilkan terbuka di panel
-      <em>Strategy</em>, tidak disembunyikan.</div>
+    <p class="screen-note">DDL berdampingan dengan baris berbeda ditandai, dan di bawahnya perintah yang
+      benar-benar akan dijalankan di target.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
         <span class="g chg">~</span><span class="mono">dbo.Company</span>
         <span class="badge neutral">Table</span>
-        <span class="dim mono push">3 of 7 objects</span></div>
+        <span class="dim mono push">2 columns, 1 index, 1 constraint differ</span></div>
 
       <div class="split">
         <div class="pane-l">
           <div class="pane-hd">Difference summary</div>
           <ul class="tree" style="font-size:13px;">
-            <li class="it"><span class="g add">+</span>
-              <span class="nm">RatingBand</span><span class="why dim">new column</span></li>
-            <li class="it"><span class="g chg">~</span>
-              <span class="nm">Segment</span><span class="why dim">len 20 &rarr; 40</span></li>
-            <li class="it"><span class="g add">+</span>
-              <span class="nm">IX_Company_Rating</span><span class="why dim">new index</span></li>
+            <li class="it"><span class="g add">+</span><span class="nm">RatingBand</span><span class="why dim">column</span></li>
+            <li class="it"><span class="g chg">~</span><span class="nm">Segment</span><span class="why dim">column</span></li>
+            <li class="it"><span class="g add">+</span><span class="nm">IX_Company_Rating</span><span class="why dim">index</span></li>
+            <li class="it"><span class="g add">+</span><span class="nm">CK_Company_Rating</span><span class="why dim">check constraint</span></li>
           </ul>
-          <div class="pane-hd">Strategy</div>
-          <div style="padding:12px 14px;">
-            <div class="warnline ok" style="font-size:12px;"><span class="g">&#10003;</span>
-              <div>In-place <span class="mono">ALTER</span> is safe &mdash; widening only, no data loss, no rebuild.</div></div>
+          <div class="pane-hd">Values</div>
+          <div class="gridwrap">
+            <table class="grid">
+              <thead><tr><th>Property</th><th>Source</th><th>Target</th></tr></thead>
+              <tbody><tr><td>Segment.DataType</td><td style="color:var(--add);">NVARCHAR(40)</td><td style="color:var(--del);">NVARCHAR(20)</td></tr></tbody>
+            </table>
           </div>
         </div>
 
         <div>
-          <div class="pane-hd">
-            <span class="plain">Source &middot; AppDev</span>
-            <span class="plain rt">Target &middot; AppUat</span>
-          </div>
+          <div class="pane-hd"><span class="plain">Source &middot; AppDev</span><span class="plain rt">Target &middot; AppUat</span></div>
           <div class="two flat">
             <div class="codewrap">
-              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">  CompanyId      <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">3</span><span class="cd">  CompanyName    <span class="kw">NVARCHAR</span>(200) <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">  Segment      <span class="kw">NVARCHAR</span>(40)  <span class="kw">NULL</span>,</span></div><div class="cl add"><span class="ln">5</span><span class="cd">  RatingBand     <span class="kw">TINYINT</span>      <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">6</span><span class="cd">  ModifiedUtc    <span class="kw">DATETIME2</span>(3) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">7</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_Company <span class="kw">PRIMARY KEY</span> (CompanyId)</span></div><div class="cl"><span class="ln">8</span><span class="cd">);</span></div><div class="cl"><span class="ln">9</span><span class="cd"> </span></div><div class="cl add"><span class="ln">10</span><span class="cd"><span class="kw">CREATE INDEX</span> IX_Company_Rating</span></div><div class="cl add"><span class="ln">11</span><span class="cd">  <span class="kw">ON</span> dbo.Company (RatingBand);</span></div></pre>
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">    RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">5</span><span class="cd">);</span></div></pre>
             </div>
             <div class="codewrap">
-              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">  CompanyId      <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">3</span><span class="cd">  CompanyName    <span class="kw">NVARCHAR</span>(200) <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">4</span><span class="cd">  Segment      <span class="kw">NVARCHAR</span>(20)  <span class="kw">NULL</span>,</span></div><div class="cl del"><span class="ln">5</span><span class="cd"><span class="cm">  -- RatingBand is missing</span></span></div><div class="cl"><span class="ln">6</span><span class="cd">  ModifiedUtc    <span class="kw">DATETIME2</span>(3) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">7</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_Company <span class="kw">PRIMARY KEY</span> (CompanyId)</span></div><div class="cl"><span class="ln">8</span><span class="cd">);</span></div><div class="cl"><span class="ln">9</span><span class="cd"> </span></div><div class="cl del"><span class="ln">10</span><span class="cd"><span class="cm">-- IX_Company_Rating is missing</span></span></div><div class="cl"><span class="ln">11</span><span class="cd"> </span></div></pre>
+              <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.Company (</span></div><div class="cl"><span class="ln">2</span><span class="cd">    CompanyId <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl chg"><span class="ln">3</span><span class="cd">    Segment <span class="kw">NVARCHAR</span>(20) <span class="kw">NULL</span>,</span></div><div class="cl"><span class="ln">4</span><span class="cd">);</span></div><div class="cl"><span class="ln">5</span><span class="cd"> </span></div></pre>
             </div>
           </div>
 
           <div class="pane-hd" style="border-top:1px solid var(--line);">Will run on target</div>
           <div class="codewrap" style="padding:10px 0 14px;">
-            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ALTER COLUMN</span> Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ADD</span> RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">CREATE INDEX</span> IX_Company_Rating <span class="kw">ON</span> dbo.Company (RatingBand);</span></div></pre>
+            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ALTER COLUMN</span> [Segment] <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">ALTER TABLE</span> [dbo].[Company] <span class="kw">ADD</span> [RatingBand] <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">EXEC</span> sp_executesql N&#39;<span class="kw">CREATE INDEX</span> [IX_Company_Rating] <span class="kw">ON</span> [dbo].[Company] ([RatingBand] ASC)&#39;;</span></div></pre>
           </div>
         </div>
       </div>
+      <div class="actionbar">
+        <span class="guard"><span class="g same">&#9671;</span>3 statement(s) for this object</span>
+        <span class="push"></span><button class="btn">Back to overview</button>
+      </div>
     </div>
+    <p class="caption">Baris 3 dibungkus <span class="mono">EXEC sp_executesql</span> karena kolom yang baru
+      ditambah tidak terlihat oleh statement lain di batch yang sama.</p>
   </section>
 
   <!-- 4 -->
   <section class="screen" id="s4">
     <div class="screen-head"><span class="screen-num">04</span><h2>Data compare</h2></div>
-    <p class="screen-note">Kiri: daftar tabel dengan <em>footprint</em>-nya (ukuran &amp; jumlah baris) plus mode data
-      yang sedang aktif. Kanan: tabel terpilih &mdash; mode data, angka <em>transfer</em>, key yang dipakai, kolom
-      yang di-exclude, lalu grid per kategori. Update ditampilkan per sel <span class="mono">lama &rarr; baru</span>.</p>
-    <div class="ask"><b>Konfirmasi &mdash; dua hal:</b><br>
-      <b>1. Ukuran.</b> <span class="mono">dbo.SiteReading</span> 21.4 GB jelas tidak mau kamu copy, jadi dia
-      <em>Schema only</em>; <span class="mono">dbo.Contact</span> 1.9 GB cukup di-seed <em>Top 100</em>. Footprint
-      di kiri adalah konteks, tapi angka yang menempel di tombol selalu <em>transfer</em> &mdash; 23.4 GB terpilih,
-      1.4 MB yang benar-benar pindah.<br>
-      <b>2. Mode terbatas mematikan DELETE.</b> Ini bukan preferensi tapi aturan kebenaran: kalau row set dibatasi,
-      baris yang tidak ada di source belum tentu terhapus &mdash; bisa jadi cuma di luar Top 100. Kalau delete tetap
-      jalan, &ldquo;seeding&rdquo; justru menghapus isi target.<br>
-      Konsekuensinya: tabel yang di-seed ikut menarik <em>parent row</em> yang direferensikan FK-nya, kalau tidak
-      100 baris <span class="mono">dbo.Contact</span> itu akan yatim.</div>
+    <p class="screen-note">Kiri: daftar tabel dengan footprint, tombol scan, dan filter yang menyembunyikan
+      tabel yang sama. Kanan: tabel terpilih dengan mode data, kartu angka, dan grid diff per sel.
+      Pemilihan untuk sync plan <strong>per tabel</strong>.</p>
+    <div class="ask"><b>Kenapa scan itu tombol:</b> mengetahui tabel mana yang beda berarti membandingkan
+      semuanya. Dengan checksum per tabel itu 4,4 detik untuk 165 tabel &mdash; cepat, tapi tetap kerja, dan
+      tabel di atas batas ukuran dilaporkan sebagai dilewati, bukan disembunyikan.</div>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">Data compare</span>
-        <span class="dim mono push">3 of 142 tables selected</span>
-        <span class="cart">Plan <span class="n">13</span> <span class="auto">+2 required</span></span></div>
+        <span class="mono">data compare</span>
+        <span class="dim mono push">263 tables</span></div>
 
       <div class="split">
         <div class="pane-l">
-          <div class="pane-hd"><span class="cb on">&#10003;</span>Tables <span class="plain rt">142</span></div>
+          <div class="pane-hd">Tables <span class="plain rt">54 of 263</span></div>
+          <div style="padding:10px 14px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:8px;">
+            <button class="btn">Rescan all tables</button>
+            <label class="dim" style="font-size:11.5px; display:flex; gap:6px; align-items:center;">
+              Skip tables over <span class="field" style="width:70px; padding:4px 8px;">200</span> MB</label>
+            <span class="chip on">Hide matching tables <span class="n">128</span></span>
+            <p class="dim" style="margin:0; font-size:11.5px;">37 differ &middot; 128 match &middot; 98 not
+              comparable (17 too large) &middot; scanned in 4.4s</p>
+          </div>
           <ul class="tree" style="font-size:13px;">
-            <li class="it stack on"><span class="cb on">&#10003;</span>
-              <span class="l1"><span class="nm">dbo.Company</span><span class="why"><span class="mono" style="color:var(--chg);">130</span></span></span>
-              <span class="l2"><span class="sz">12.4 MB &middot; 12.5K rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="cb on">&#10003;</span>
-              <span class="l1"><span class="nm">dbo.Site</span><span class="why"><span class="mono" style="color:var(--chg);">18</span></span></span>
-              <span class="l2"><span class="sz">88.1 MB &middot; 96.3K rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="cb on">&#10003;</span>
-              <span class="l1"><span class="nm">dbo.Category</span><span class="why"><span class="mono" style="color:var(--chg);">2</span></span></span>
-              <span class="l2"><span class="sz">72 KB &middot; 418 rows</span><span class="push"></span><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="cb on">&#10003;</span>
-              <span class="l1"><span class="nm">dbo.Contact</span><span class="why"><span class="mono" style="color:var(--chg);">100</span></span></span>
-              <span class="l2"><span class="sz big">1.9 GB &middot; 4.1M rows</span><span class="push"></span><span class="modebadge seed">Top 100</span></span></li>
-            <li class="it stack"><span class="cb on">&#10003;</span>
-              <span class="l1"><span class="nm">dbo.SiteReading</span><span class="why dim">&mdash;</span></span>
-              <span class="l2"><span class="sz huge">21.4 GB &middot; 48.2M rows</span><span class="push"></span><span class="modebadge schema">Schema only</span></span></li>
-            <li class="it stack"><span class="cb"></span>
-              <span class="l1"><span class="nm dim">dbo.AuditTrail</span><span class="why"><span class="g del">!</span><span class="dim">no key</span></span></span>
-              <span class="l2"><span class="sz big">6.2 GB &middot; 31.7M rows</span></span></li>
-            <li class="it stack"><span class="cb"></span>
-              <span class="l1"><span class="nm dim">dbo.Invoice</span><span class="why dim mono">0</span></span>
-              <span class="l2"><span class="sz">204 MB &middot; 812K rows</span></span></li>
+            <li class="it stack on">
+              <span class="l1"><span class="nm">dbo.Category</span><span class="badge dev">in plan</span>
+                <span class="why" style="color:var(--chg);">differs (+1 rows)</span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz">16 kB &middot; 3 rows</span></span></li>
+            <li class="it stack">
+              <span class="l1"><span class="nm">dbo.SiteCompletion</span>
+                <span class="why" style="color:var(--chg);">differs (+439 rows)</span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz big">88 MB &middot; 96,300 rows</span></span></li>
+            <li class="it stack">
+              <span class="l1"><span class="nm dim">dbo.AuditTrail</span><span class="why dim">no primary key</span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz big">6.2 GB &middot; 31.7M rows</span></span></li>
+            <li class="it stack">
+              <span class="l1"><span class="nm dim">dbo.SiteReading</span>
+                <span class="why dim">skipped, 21504 MB is over the scan limit</span></span>
+              <span class="l2" style="grid-column:1;"><span class="sz huge">21.4 GB &middot; 48.2M rows</span></span></li>
           </ul>
-          <div style="padding:12px 14px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:9px;">
-            <div class="warnline" style="font-size:12px;"><span class="g">!</span>
-              <div><b>dbo.AuditTrail</b> has no primary key. Pick key columns to compare it.</div></div>
+          <div style="padding:12px 14px; border-top:1px solid var(--line);">
             <div class="sizebox">
               <div><span class="k">Footprint</span><span class="v">23.4 GB</span></div>
               <div><span class="k">Transfer</span><span class="v" style="color:var(--accent);">1.4 MB</span></div>
             </div>
-            <p class="dim" style="margin:0; font-size:11.5px;">Selected tables hold 23.4 GB, but this plan moves 1.4 MB.</p>
+            <p class="dim" style="margin:8px 0 0; font-size:11.5px;">Footprint itu besar tabelnya. Transfer
+              itu yang benar-benar pindah.</p>
           </div>
         </div>
 
         <div>
           <div style="padding:14px 16px; display:flex; flex-direction:column; gap:12px; border-bottom:1px solid var(--line);">
             <div class="row" style="flex-wrap:wrap;">
-              <span class="mono" style="font-size:15px; font-weight:600;">dbo.Company</span>
-              <span class="badge neutral">src 12,480</span><span class="badge neutral">tgt 12,391</span>
+              <span class="mono" style="font-size:15px; font-weight:600;">dbo.Category</span>
+              <span class="badge neutral">src 3</span><span class="badge neutral">tgt 3</span>
               <span class="push"></span>
-              <span class="lbl" style="margin:0;">Key</span>
-              <span class="chip on mono">CompanyId</span><span class="dim" style="font-size:12px;">from PK</span>
+              <span class="lbl" style="margin:0;">Key</span><span class="chip on mono">CategoryId</span>
             </div>
             <div class="row" style="flex-wrap:wrap;">
               <span class="lbl" style="margin:0;">Data mode</span>
-              <div class="seg">
-                <span class="on">All rows</span>
-                <span>Top <span class="n">100</span></span>
-                <span>Filter</span>
-                <span>Schema only</span>
-              </div>
-              <span class="push"></span>
-              <div class="transfer"><span class="l">Transfer</span><span class="n">1.2 MB</span>
-                <span class="of">of 12.4 MB footprint</span></div>
-            </div>
-            <div class="warnline info" style="font-size:12px;"><span class="g">i</span>
-              <div>Switching to <b>Top N</b> or <b>Filter</b> suppresses deletes for this table &mdash; a limited
-                row set cannot tell you a row was deleted, only that it fell outside the limit.</div></div>
-
-            <div class="row" style="flex-wrap:wrap; gap:7px;">
-              <span class="lbl" style="margin:0;">Compared</span>
-              <span class="chip">24 of 26 columns</span>
-              <span class="chip mono dim">RowVersion <span class="sub">&middot; not comparable</span></span>
-              <span class="chip mono dim">ModifiedUtc <span class="sub">&middot; excluded by rule</span></span>
+              <span class="chip on">All rows</span><span class="chip">Top N</span><span class="chip">Schema only</span>
             </div>
             <div class="tiles">
-              <div class="tile add"><div class="k">Insert</div><div class="v">94</div><div class="s">missing on target</div></div>
-              <div class="tile chg"><div class="k">Update</div><div class="v">31</div><div class="s">values differ</div></div>
-              <div class="tile del"><div class="k">Delete</div><div class="v">5</div><div class="s">target only</div></div>
-              <div class="tile"><div class="k">Same</div><div class="v">12,350</div><div class="s">no action</div></div>
+              <div class="tile"><div class="k">Insert</div><div class="v" style="color:var(--add);">1</div><div class="s">missing on target</div></div>
+              <div class="tile"><div class="k">Update</div><div class="v" style="color:var(--chg);">1</div><div class="s">values differ</div></div>
+              <div class="tile"><div class="k">Delete</div><div class="v" style="color:var(--del);">1</div><div class="s">target only</div></div>
+              <div class="tile"><div class="k">Same</div><div class="v">1</div><div class="s">no action</div></div>
             </div>
           </div>
 
-          <div class="tabs">
-            <input type="radio" name="dtab" id="t-ins"><input type="radio" name="dtab" id="t-upd" checked><input type="radio" name="dtab" id="t-del">
-            <div class="tablist">
-              <label for="t-ins"><span class="g add">+</span>Inserts <span class="n">94</span></label>
-              <label for="t-upd"><span class="g chg">~</span>Updates <span class="n">31</span></label>
-              <label for="t-del"><span class="g del">&minus;</span>Deletes <span class="n">5</span></label>
-            </div>
-            <div class="panels">
-              <div class="tabpanel p-ins">
-                <div class="gridwrap">
-                  <table class="grid">
-                    <thead><tr><th style="width:34px;"><span class="cb on">&#10003;</span></th><th>CompanyId</th><th>CompanyName</th><th>Segment</th><th>RatingBand</th></tr></thead>
-                    <tbody>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14902</td><td>Acme Industrial</td><td>Retail North</td><td class="num">2</td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14903</td><td>Brightwater Ltd</td><td>Wholesale</td><td class="num">1</td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">14904</td><td>Cedar Point Co</td><td>Logistics</td><td class="num">3</td></tr>
-                      <tr><td colspan="5" class="collapsed" style="text-align:center;">91 more rows &middot; virtualized</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div class="tabpanel p-upd">
-                <div class="gridwrap">
-                  <table class="grid">
-                    <thead><tr><th style="width:34px;"><span class="cb on">&#10003;</span></th><th>CompanyId</th><th>Changed cells</th></tr></thead>
-                    <tbody>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1044</td>
-                        <td><div>Segment <span class="was">Retail</span><span class="arrow">&rarr;</span><span class="now">Retail North</span></div>
-                            <div>RatingBand <span class="was">NULL</span><span class="arrow">&rarr;</span><span class="now">2</span></div>
-                            <div class="collapsed">+ 22 unchanged columns</div></td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">2187</td>
-                        <td><div>CompanyName <span class="was">Delta Manufacturing</span><span class="arrow">&rarr;</span><span class="now">Delta Manufacturing Pty Ltd</span></div>
-                            <div class="collapsed">+ 23 unchanged columns</div></td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">3512</td>
-                        <td><div>Segment <span class="was">Energy</span><span class="arrow">&rarr;</span><span class="now">Energy Grid</span></div>
-                            <div class="collapsed">+ 23 unchanged columns</div></td></tr>
-                      <tr><td colspan="3" class="collapsed" style="text-align:center;">28 more rows &middot; virtualized</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div class="tabpanel p-del">
-                <div class="gridwrap">
-                  <table class="grid">
-                    <thead><tr><th style="width:34px;"><span class="cb"></span></th><th>CompanyId</th><th>CompanyName</th><th>Referenced by</th></tr></thead>
-                    <tbody>
-                      <tr><td><span class="cb"></span></td><td class="num">908</td><td>Old Holdings Ltd</td><td><span class="g del">!</span>12 rows in dbo.Site</td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1220</td><td>Test Company A</td><td class="dim">none</td></tr>
-                      <tr><td><span class="cb on">&#10003;</span></td><td class="num">1221</td><td>Test Company B</td><td class="dim">none</td></tr>
-                      <tr><td colspan="4" class="collapsed" style="text-align:center;">2 more rows</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+          <div class="gridwrap">
+            <table class="grid">
+              <thead><tr><th style="width:90px;">Change</th><th style="width:120px;">CategoryId</th><th>Cells</th></tr></thead>
+              <tbody>
+                <tr><td><span class="g chg">~</span> Update</td><td>2</td>
+                  <td>Name <span class="was">Wholesale Ltd</span><span class="arrow">&rarr;</span><span class="now">Wholesale</span></td></tr>
+                <tr><td><span class="g add">+</span> Insert</td><td>3</td>
+                  <td>Name <span class="was">NULL</span><span class="arrow">&rarr;</span><span class="now">Energy</span></td></tr>
+                <tr><td><span class="g del">&minus;</span> Delete</td><td>4</td>
+                  <td>Name <span class="was">Obsolete</span><span class="arrow">&rarr;</span><span class="now">NULL</span></td></tr>
+              </tbody>
+            </table>
           </div>
 
           <div class="actionbar">
-            <span class="guard"><span class="cb on">&#10003;</span>128 of 130 rows picked</span>
-            <span class="guard"><span class="g del">!</span>1 delete skipped &mdash; FK references</span>
-            <span class="autoadd"><span class="g">+</span>dbo.Category pulled in first</span>
+            <span class="guard"><span class="g add">&#10003;</span>1 table(s) of data in the plan: dbo.Category</span>
             <span class="push"></span>
-            <button class="btn primary">Review sync plan &rarr;</button>
+            <button class="btn">Remove from plan</button>
           </div>
         </div>
       </div>
     </div>
+    <p class="caption">Mode <b>Top N</b> mengubah kartu Delete jadi &ldquo;&mdash; suppressed&rdquo; dengan
+      spanduk yang menjelaskan kenapa: row set terbatas tidak bisa membuktikan sebuah baris terhapus.</p>
   </section>
 
   <!-- 5 -->
   <section class="screen" id="s5">
     <div class="screen-head"><span class="screen-num">05</span><h2>Sync plan</h2></div>
-    <p class="screen-note">Isi cart dari layar 2 dan 4 keluar di sini sebagai <em>satu</em> script berurutan &mdash;
-      skema dulu, lalu data, diurutkan mengikuti dependensi FK. Baris bertanda <span class="autoadd">required</span>
-      adalah yang ditarik tool sendiri sebagai prasyarat, bukan yang kamu klik &mdash; ditandai supaya cart yang
-      membesar tidak jadi kejutan.</p>
-    <div class="ask"><b>Konfirmasi:</b> Download selalu tersedia; Apply butuh mengetik nama database target.
-      Dua guard dihitung <em>sebelum</em> kamu klik: blast radius, dan drift check &mdash; target di-verifikasi
-      masih sama dengan yang di-compare, kalau sudah digeser orang lain, apply ditolak.<br><br>
-      Baris <b>Scope</b> di bawah ini menjawab &ldquo;sekalian DB nya aja deh&rdquo;: naik ke seluruh database
-      meruntuhkan pilihan per-tabel dan per-baris yang tadi &mdash; jadi tetap sekali kerja, tidak dobel &mdash;
-      tapi <em>exclusion</em>-mu dipertahankan dan ditampilkan, bukan diam-diam ditelan.</div>
+    <p class="screen-note">Semua yang dicentang di layar 2 dan 4 keluar di sini sebagai satu script
+      berurutan. Delete baris berjalan anak-dulu, insert induk-dulu. Apply butuh nama database diketik,
+      dan langkah destruktif butuh centang tersendiri.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">sync plan</span>
-        <span class="dim">&rarr;</span><span class="mono">AppUat</span><span class="badge uat">UAT</span>
+        <span class="mono">sync plan</span><span class="dim">&rarr;</span>
+        <span class="mono">AppUat</span><span class="badge uat">UAT</span>
         <span class="dim mono push">FK-dependency ordered</span></div>
-
-      <div class="scopebar">
-        <span class="lbl" style="margin:0;">Scope</span>
-        <div style="display:flex; flex-direction:column; gap:6px;">
-          <div class="seg">
-            <span class="on">Picked items <span class="n">13</span></span>
-            <span>Entire database <span class="n">14</span></span>
-          </div>
-          <div class="sz big" style="display:flex; align-items:center; gap:6px;">
-            <span class="g chg">!</span>Entire database = 8.9 GB transfer, script over 100 MB &rarr; bulk mode
-          </div>
-        </div>
-        <div class="kept">
-          <div class="hd"><span class="g">!</span>3 exclusions kept if you escalate to the whole database</div>
-          <ul>
-            <li><span class="g del">&minus;</span><span class="nm">DROP dbo.SegmentLegacy</span>
-              <span class="dim">you left this out</span><span class="rv">revoke</span></li>
-            <li><span class="g del">&minus;</span><span class="nm">dbo.Company &middot; CompanyId 908</span>
-              <span class="dim">12 rows in dbo.Site reference it</span><span class="rv">revoke</span></li>
-            <li><span class="g del">&minus;</span><span class="nm">dbo.Company &middot; 2 of 130 rows</span>
-              <span class="dim">skipped by you</span><span class="rv">revoke</span></li>
-          </ul>
-        </div>
-      </div>
 
       <div class="split">
         <div class="pane-l">
           <div class="pane-hd">Plan <span class="plain rt">13 steps</span></div>
           <ul class="tree" style="font-size:13px;">
-            <li class="grp">Schema <span class="cnt">7</span></li>
-            <li class="it"><span class="g chg">~</span><span class="nm">dbo.Company</span><span class="why dim">alter &times;2</span></li>
-            <li class="it"><span class="g add">+</span><span class="nm">dbo.CompanyRating</span><span class="why dim">create</span></li>
-            <li class="it"><span class="g chg">~</span><span class="nm">dbo.Site</span><span class="why dim">alter</span></li>
-            <li class="it"><span class="g chg">~</span><span class="nm">sales.vCompanySegment</span><span class="why dim">alter view</span></li>
-            <li class="it"><span class="g add">+</span><span class="nm">usp_RebuildCompanyRating</span><span class="why dim">create</span></li>
-            <li class="grp">Data <span class="cnt">5 tables &middot; 249 rows &middot; 1.4 MB</span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.Category</span><span class="why"><span class="autoadd">required</span><span class="dim mono">2</span></span></span>
-              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.Company</span><span class="why dim mono">127</span></span>
-              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.Site</span><span class="why dim mono">18</span></span>
-              <span class="l2" style="grid-column:1;"><span class="modebadge">All rows</span></span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.Contact</span><span class="why dim mono">100</span></span>
-              <span class="l2" style="grid-column:1;"><span class="modebadge seed">Top 100</span><span class="sz">no deletes</span></span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.ContactType</span><span class="why"><span class="autoadd">required</span><span class="dim mono">2</span></span></span>
-              <span class="l2" style="grid-column:1;"><span class="sz">parent rows for the seed</span></span></li>
-            <li class="grp">Schema only <span class="cnt">1 table &middot; no data</span></li>
-            <li class="it stack"><span class="l1"><span class="nm">dbo.SiteReading</span><span class="why dim">21.4 GB skipped</span></span>
-              <span class="l2" style="grid-column:1;"><span class="modebadge schema">Schema only</span></span></li>
+            <li class="it"><span class="nm">drop table dbo.SegmentLegacy</span><span class="why dim">DropTables</span></li>
+            <li class="it"><span class="nm">create table dbo.CompanyRating</span><span class="why dim">CreateTables</span></li>
+            <li class="it"><span class="nm">alter column dbo.Company.Segment</span><span class="why dim">AlterColumns</span></li>
+            <li class="it"><span class="nm">delete 1 row(s) from dbo.Category</span><span class="why dim">DataDeletes</span></li>
+            <li class="it"><span class="nm">insert 1 row(s) into dbo.Category</span><span class="why dim">DataUpserts</span></li>
+            <li class="it"><span class="nm">reseed identity on dbo.Category</span><span class="why dim">DataUpserts</span></li>
+            <li class="it"><span class="nm">view sales.vCompanySegment</span><span class="why dim">Programmables</span></li>
           </ul>
-          <div style="padding:12px 14px; border-top:1px solid var(--line);">
-            <div class="warnline info" style="font-size:12px;"><span class="g">i</span>
-              <div><b>dbo.Category</b> runs before <b>dbo.Company</b> &mdash; FK <span class="mono">FK_Company_Category</span>.</div></div>
-          </div>
         </div>
 
         <div>
-          <div class="pane-hd">Generated script
-            <span class="plain rt">sync_AppUat_20260821_1402.sql &middot; 214 lines</span></div>
+          <div class="pane-hd">Generated script<span class="plain rt">13 steps &middot; 2.0 kB</span></div>
           <div class="codewrap scrolly">
-            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="cm">-- DbDelta &middot; AppDev (DBSERVER-DEV) -&gt; AppUat (DBSERVER-UAT)</span></span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="cm">-- 7 schema changes, 147 data rows across 3 tables</span></span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">SET</span> XACT_ABORT <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">4</span><span class="cd"><span class="kw">SET</span> NOCOUNT <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">5</span><span class="cd"><span class="kw">BEGIN TRANSACTION</span>;</span></div><div class="cl"><span class="ln">6</span><span class="cd"> </span></div><div class="cl"><span class="ln">7</span><span class="cd"><span class="cm">-- 1/10  schema: dbo.Company</span></span></div><div class="cl"><span class="ln">8</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ALTER COLUMN</span> Segment <span class="kw">NVARCHAR</span>(40) <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">9</span><span class="cd"><span class="kw">ALTER TABLE</span> dbo.Company <span class="kw">ADD</span> RatingBand <span class="kw">TINYINT</span> <span class="kw">NULL</span>;</span></div><div class="cl"><span class="ln">10</span><span class="cd"> </span></div><div class="cl"><span class="ln">11</span><span class="cd"><span class="cm">-- 2/10  schema: dbo.CompanyRating (new)</span></span></div><div class="cl"><span class="ln">12</span><span class="cd"><span class="kw">CREATE TABLE</span> dbo.CompanyRating (</span></div><div class="cl"><span class="ln">13</span><span class="cd">  CompanyRatingId <span class="kw">INT</span> <span class="kw">IDENTITY</span>(1,1) <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">14</span><span class="cd">  CompanyId       <span class="kw">INT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">15</span><span class="cd">  Band            <span class="kw">TINYINT</span> <span class="kw">NOT NULL</span>,</span></div><div class="cl"><span class="ln">16</span><span class="cd">  <span class="kw">CONSTRAINT</span> PK_CompanyRating <span class="kw">PRIMARY KEY</span> (CompanyRatingId)</span></div><div class="cl"><span class="ln">17</span><span class="cd">);</span></div><div class="cl"><span class="ln">18</span><span class="cd"> </span></div><div class="cl"><span class="ln">19</span><span class="cd"><span class="cm">-- 8/10  data: dbo.Company &middot; 94 insert, 31 update, 2 delete</span></span></div><div class="cl"><span class="ln">20</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT dbo.Company <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">21</span><span class="cd"><span class="kw">INSERT INTO</span> dbo.Company (CompanyId, CompanyName, Segment, RatingBand)</span></div><div class="cl"><span class="ln">22</span><span class="cd"><span class="kw">VALUES</span> (14902, <span class="st">N'Acme Industrial'</span>, <span class="st">N'Retail North'</span>, 2),</span></div><div class="cl"><span class="ln">23</span><span class="cd">       (14903, <span class="st">N'Brightwater Ltd'</span>,      <span class="st">N'Wholesale'</span>,   1);</span></div><div class="cl"><span class="ln">24</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT dbo.Company <span class="kw">OFF</span>;</span></div><div class="cl"><span class="ln">25</span><span class="cd"> </span></div><div class="cl"><span class="ln">26</span><span class="cd"><span class="kw">UPDATE</span> t <span class="kw">SET</span> t.Segment = <span class="st">N'Retail North'</span>, t.RatingBand = 2</span></div><div class="cl"><span class="ln">27</span><span class="cd">  <span class="kw">FROM</span> dbo.Company t <span class="kw">WHERE</span> t.CompanyId = 1044;</span></div><div class="cl"><span class="ln">28</span><span class="cd"> </span></div><div class="cl"><span class="ln">29</span><span class="cd"><span class="kw">DELETE</span> <span class="kw">FROM</span> dbo.Company <span class="kw">WHERE</span> CompanyId <span class="kw">IN</span> (1220, 1221);</span></div><div class="cl"><span class="ln">30</span><span class="cd"> </span></div><div class="cl"><span class="ln">31</span><span class="cd"><span class="cm">-- 10/10  commit</span></span></div><div class="cl"><span class="ln">32</span><span class="cd"><span class="kw">COMMIT TRANSACTION</span>;</span></div></pre>
+            <pre class="code"><div class="cl"><span class="ln">1</span><span class="cd"><span class="cm">-- DbDelta &middot; AppDev -&gt; AppUat</span></span></div><div class="cl"><span class="ln">2</span><span class="cd"><span class="kw">SET</span> XACT_ABORT <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">3</span><span class="cd"><span class="kw">BEGIN TRANSACTION</span>;</span></div><div class="cl"><span class="ln">4</span><span class="cd"> </span></div><div class="cl"><span class="ln">5</span><span class="cd"><span class="kw">DELETE FROM</span> [dbo].[Category] <span class="kw">WHERE</span> [CategoryId] = 4;</span></div><div class="cl"><span class="ln">6</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT [dbo].[Category] <span class="kw">ON</span>;</span></div><div class="cl"><span class="ln">7</span><span class="cd"><span class="kw">INSERT INTO</span> [dbo].[Category] ([CategoryId], [Name])</span></div><div class="cl"><span class="ln">8</span><span class="cd"><span class="kw">VALUES</span> (3, N&#39;Energy&#39;);</span></div><div class="cl"><span class="ln">9</span><span class="cd"><span class="kw">SET</span> IDENTITY_INSERT [dbo].[Category] <span class="kw">OFF</span>;</span></div><div class="cl"><span class="ln">10</span><span class="cd">DBCC CHECKIDENT (&#39;dbo.Category&#39;, RESEED) <span class="kw">WITH</span> NO_INFOMSGS;</span></div><div class="cl"><span class="ln">11</span><span class="cd"> </span></div><div class="cl"><span class="ln">12</span><span class="cd"><span class="kw">COMMIT TRANSACTION</span>;</span></div></pre>
+          </div>
+
+          <div style="padding:14px 16px; display:flex; flex-direction:column; gap:12px;">
+            <div class="warnline warn"><span class="g">!</span>
+              <div><b>2 step(s) drop objects or columns.</b> Data yang terhapus tidak kembali dengan rollback
+                run berikutnya.
+                <ul style="margin:6px 0 8px; padding-left:18px;">
+                  <li>drop table dbo.SegmentLegacy</li>
+                  <li>delete 1 row(s) from dbo.Category</li>
+                  <li>dbo.Category: 1 of 3 target rows would be deleted (33.3%, over the 5% limit)</li>
+                </ul>
+                <label style="display:flex; gap:8px; align-items:center;"><span class="cb"></span>
+                  I have read these and want them applied</label>
+              </div></div>
+            <div><span class="lbl">Type the target database name to enable apply</span>
+              <div class="field" style="max-width:320px;"><span class="dim">AppUat</span></div></div>
           </div>
 
           <div class="actionbar">
-            <span class="guard"><span class="g add">&#10003;</span>Transfer 1.4 MB &middot; script 2.1 MB</span>
-            <span class="guard"><span class="g add">&#10003;</span>Deletes 2 of 12,391 rows &middot; 0.02% (limit 5%)</span>
             <span class="guard"><span class="g add">&#10003;</span>Single transaction &middot; rolls back whole</span>
-            <span class="guard"><span class="g add">&#10003;</span>Target unchanged since 14:02</span>
+            <span class="guard"><span class="g chg">!</span>2 destructive step(s)</span>
             <span class="push"></span>
-            <button class="btn">Copy</button>
+            <button class="btn">Back</button>
             <button class="btn primary">Download .sql</button>
-            <button class="btn danger">Apply to AppUat&hellip;</button>
+            <button class="btn" aria-disabled="true">Apply to AppUat</button>
           </div>
         </div>
       </div>
     </div>
-
-    <div class="modal-scrim">
-      <div class="modal">
-        <h4>Apply 13 steps to AppUat?</h4>
-        <div class="mb">
-          <div class="row" style="gap:8px;"><span class="badge uat">UAT</span><span class="mono">DBSERVER-UAT</span></div>
-          <p>Runs as one transaction. 7 schema changes and 249 rows across 5 tables, including <b>2 deletes</b>. Transfer 1.4 MB.</p>
-          <div><span class="lbl">Type the target database name to confirm</span>
-            <div class="field"><span class="dim">AppUat</span></div></div>
-        </div>
-        <div class="mf"><button class="btn">Cancel</button><button class="btn danger" aria-disabled="true">Apply</button></div>
-      </div>
-    </div>
-    <p class="caption">Apply tetap mati sampai nama database diketik benar.</p>
-
-    <div class="modal-scrim">
-      <div class="modal">
-        <h4>Target changed since the compare</h4>
-        <div class="mb">
-          <div class="warnline"><span class="g">!</span><div>2 of the 13 planned steps no longer match
-            <b>AppUat</b>. Applying this script would act on a database it no longer describes.</div></div>
-          <ul style="margin:0; padding-left:20px; display:flex; flex-direction:column; gap:4px;">
-            <li><span class="mono">dbo.Site</span> &mdash; column added by someone else</li>
-            <li><span class="mono">dbo.Company</span> &mdash; 4 planned rows already updated</li>
-          </ul>
-          <p>Cart-nya disimpan. Compare ulang akan mempertahankan pilihanmu dan hanya membuang langkah yang sudah tidak berlaku.</p>
-        </div>
-        <div class="mf"><button class="btn">Download anyway</button><button class="btn primary">Re-compare</button></div>
-      </div>
-    </div>
-    <p class="caption">Kalau target sudah bergeser: apply ditolak, cart tetap utuh.</p>
+    <p class="caption">Empat guard sebelum apply: server read-only, nama database diketik benar (case
+      sensitive), langkah destruktif diakui, dan target belum bergeser sejak compare.</p>
   </section>
 
   <!-- 6 -->
   <section class="screen" id="s6">
     <div class="screen-head"><span class="screen-num">06</span><h2>Run log</h2></div>
-    <p class="screen-note">Setiap compare dan setiap apply tercatat lengkap dengan script yang dipakai &mdash;
-      jadi run yang gagal bisa dibaca, diperbaiki, dan dijalankan ulang tanpa mengulang compare dari nol.</p>
-    <div class="ask"><b>Konfirmasi:</b> log disimpan lokal di <span class="mono">%APPDATA%\DbDelta\runs\</span>,
-      bukan di database mana pun &mdash; tool ini tidak pernah membuat tabel apa pun di DB kamu.</div>
+    <p class="screen-note">Setiap apply tercatat di <span class="mono">%APPDATA%\DbDelta\runs</span> sebagai
+      satu file JSON, lengkap dengan script yang dipakai. Tool ini tidak pernah membuat tabel apa pun di
+      database yang disambunginya.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span><span class="app-path">localhost:5199/runs</span>
-        <span class="dim mono push">18 runs &middot; 30 days</span></div>
+        <span class="dim mono push">3 run(s)</span></div>
       <div class="gridwrap">
         <table class="grid">
-          <thead><tr><th>When</th><th>Route</th><th>Action</th><th>Scope</th><th>Result</th><th>Took</th><th></th></tr></thead>
+          <thead><tr><th>When</th><th>Route</th><th>Action</th><th>Steps</th><th>Result</th><th>Took</th></tr></thead>
           <tbody>
-            <tr><td class="txt">21 Aug 14:06</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">10 steps</td>
-              <td><span class="badge dev">Committed</span></td><td class="num">3.1s</td><td class="collapsed">script &#9662;</td></tr>
-            <tr><td class="txt">21 Aug 14:02</td><td>AppDev &rarr; AppUat</td><td class="txt">Compare</td><td class="num">142 tables</td>
-              <td><span class="badge neutral">11 differ</span></td><td class="num">6.4s</td><td class="collapsed">script &#9662;</td></tr>
-            <tr class="rowfail"><td class="txt">20 Aug 17:41</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">4 steps</td>
-              <td><span class="badge prod">Rolled back</span></td><td class="num">0.9s</td><td class="collapsed">script &#9662;</td></tr>
-            <tr><td colspan="7" class="errmsg">Msg 547 &middot; The ALTER TABLE statement conflicted with the FOREIGN KEY constraint "FK_Site_Company".<br>
-              <span class="dim">Step 3/4 &middot; no changes were kept &middot; full script retained</span></td></tr>
-            <tr><td class="txt">20 Aug 16:20</td><td>AppUat &rarr; <span style="color:var(--del);">AppProd</span></td><td class="txt">Download</td><td class="num">6 steps</td>
-              <td><span class="badge uat">Script only</span></td><td class="num">&mdash;</td><td class="collapsed">script &#9662;</td></tr>
+            <tr><td class="txt">26 Aug 11:32</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">13</td>
+              <td><span class="badge dev">Committed</span></td><td class="num">42 ms</td></tr>
+            <tr class="rowfail"><td class="txt">26 Aug 11:04</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">9</td>
+              <td><span class="badge prod">RolledBack</span></td><td class="num">0.9 s</td></tr>
+            <tr><td colspan="6" class="errmsg">Msg 547 &middot; The ALTER TABLE statement conflicted with the
+              FOREIGN KEY constraint &quot;FK_Site_Company&quot;.<br>
+              <span class="dim">no changes were kept &middot; full script retained</span></td></tr>
+            <tr><td class="txt">26 Aug 10:58</td><td>AppDev &rarr; AppUat</td><td class="txt">Apply</td><td class="num">9</td>
+              <td><span class="badge uat">Drifted</span></td><td class="num">&mdash;</td></tr>
           </tbody>
         </table>
       </div>
       <div class="actionbar">
-        <span class="guard"><span class="g add">&#10003;</span>1 committed</span>
-        <span class="guard"><span class="g del">!</span>1 rolled back</span>
-        <span class="guard"><span class="g same">&#9671;</span>1 script only</span>
-        <span class="push"></span>
-        <button class="btn">Re-run failed script</button>
+        <span class="guard">Setiap run menyimpan script yang dipakai.</span>
       </div>
     </div>
   </section>
@@ -1044,122 +849,125 @@
   <!-- 7 -->
   <section class="screen" id="s7">
     <div class="screen-head"><span class="screen-num">07</span><h2>FK map</h2></div>
-    <p class="screen-note">Bukan ER diagram seluruh skema &mdash; 142 tabel jadi spageti tak terbaca. Ini diagram
-      <em>bertetangga</em>: pilih satu tabel, lihat lingkungan FK-nya sedalam 1&ndash;2 hop, dengan status sync plan
-      ditumpangkan di atasnya. Bisa dibuka dari baris mana pun di layar 2, 4, dan 5.</p>
-    <div class="ask"><b>Konfirmasi:</b> yang membedakan diagram ini dari tool ER biasa adalah dia
-      <em>tahu isi cart</em>. Jadi pertanyaan yang dijawab bukan &ldquo;apa relasi tabel ini&rdquo;, tapi
-      &ldquo;kalau tabel ini kusync dengan mode sekarang, apa yang ikut terbawa dan apa yang jebol&rdquo;.
-      Nullability FK ditampilkan karena itu yang menentukan orphan bisa ditolerir atau tidak.</div>
+    <p class="screen-note">Diagram bertetangga, bukan ER seluruh skema. Pilih tabel fokus dan kedalaman
+      1&ndash;3. Baris di atas fokus harus ada lebih dulu; baris di bawahnya jebol kalau baris yang
+      direferensikan hilang.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">FK map</span><span class="dim">&middot;</span>
-        <span class="mono">dbo.Contact</span><span class="modebadge seed">Top 100</span>
-        <span class="dim mono push">2 parents required &middot; 1 child breaking</span></div>
+        <span class="mono">FK map</span><span class="dim">&middot;</span><span class="mono">dbo.Company</span>
+        <span class="dim mono push">3 tables in view</span></div>
 
       <div class="scopebar">
         <span class="lbl" style="margin:0;">Focus</span>
-        <div class="field sel" style="width:170px;">dbo.Contact</div>
+        <div class="field sel" style="width:170px;">dbo.Company</div>
         <span class="lbl" style="margin:0;">Depth</span>
-        <div class="seg"><span class="on">1</span><span>2</span><span>All reachable</span></div>
-        <span class="lbl" style="margin:0;">Direction</span>
-        <div class="seg"><span class="on">Both</span><span>Parents</span><span>Children</span></div>
+        <span class="chip on">1</span><span class="chip">2</span><span class="chip">3</span>
       </div>
 
       <div class="diagram">
         <figure>
-          <svg viewBox="0 0 880 430" role="img"
-               aria-label="Foreign key neighbourhood of dbo.Contact seeded to its top 100 rows: parents dbo.ContactType and dbo.Company must exist first and are in the plan, nullable parent dbo.Country is left out, child dbo.ContactNote is schema only and stays empty, and child dbo.SiteContact is in the plan with 3.9 million rows referencing contacts outside the seed, so it will break.">
+          <svg viewBox="0 0 620 430" width="620" height="430" role="img"
+               aria-label="Foreign key neighbourhood of dbo.Company: parent dbo.Category via a nullable reference, child dbo.Contact via a NOT NULL reference.">
             <defs>
               <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                 <polygon points="0,0 10,5 0,10" style="fill:var(--ink-3)"></polygon>
               </marker>
-              <marker id="ar-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                <polygon points="0,0 10,5 0,10" style="fill:var(--accent)"></polygon>
-              </marker>
-              <marker id="ar-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                <polygon points="0,0 10,5 0,10" style="fill:var(--del)"></polygon>
-              </marker>
             </defs>
-
             <text class="band-lbl" x="8" y="12">PARENTS &middot; MUST EXIST FIRST</text>
+            <rect class="nd" x="215" y="26" width="190" height="54" rx="7"></rect>
+            <text class="nl" x="310" y="48">dbo.Category</text>
+            <text class="ns" x="310" y="65">identical, nothing to do</text>
 
-            <rect class="nd nd-req"  x="20"  y="26" width="180" height="52" rx="7"></rect>
-            <text class="nl" x="110" y="48">dbo.ContactType</text>
-            <text class="ns ns-req" x="110" y="65">pulled in as parent</text>
+            <line class="eg-opt" x1="310" y1="186" x2="310" y2="84" marker-end="url(#ar)"></line>
+            <text class="el" x="320" y="136" text-anchor="start">CategoryId &middot; NULL</text>
 
-            <rect class="nd nd-plan" x="350" y="26" width="180" height="52" rx="7"></rect>
-            <text class="nl" x="440" y="48">dbo.Company</text>
-            <text class="ns ns-req" x="440" y="65">in plan &middot; All rows</text>
+            <rect class="nd nd-focus" x="215" y="186" width="190" height="58" rx="7"></rect>
+            <text class="nl" x="310" y="210">dbo.Company</text>
+            <text class="ns" x="310" y="228">will be altered</text>
 
-            <rect class="nd nd-dim"  x="680" y="26" width="180" height="52" rx="7"></rect>
-            <text class="nl" x="770" y="48">dbo.Country</text>
-            <text class="ns" x="770" y="65">nullable &middot; left out</text>
-
-            <line class="eg-req" x1="385" y1="186" x2="125" y2="80" marker-end="url(#ar-a)"></line>
-            <text class="el" x="245" y="124">ContactTypeId &middot; NOT NULL</text>
-
-            <line class="eg-req" x1="440" y1="186" x2="440" y2="80" marker-end="url(#ar-a)"></line>
-            <text class="el" x="450" y="136" text-anchor="start">CompanyId &middot; NOT NULL</text>
-
-            <line class="eg-opt" x1="495" y1="186" x2="755" y2="80" marker-end="url(#ar)"></line>
-            <text class="el" x="638" y="124">CountryId &middot; NULL</text>
-
-            <rect class="nd nd-focus" x="350" y="186" width="180" height="58" rx="7"></rect>
-            <text class="nl" x="440" y="210">dbo.Contact</text>
-            <text class="ns" x="440" y="228">Top 100 &middot; 1.9 GB footprint</text>
-
-            <line class="eg-brk" x1="240" y1="350" x2="395" y2="246" marker-end="url(#ar-d)"></line>
-            <text class="el el-brk" x="300" y="292" text-anchor="end">ContactId &middot; NOT NULL</text>
-            <text class="el el-brk" x="300" y="306" text-anchor="end">3.9M rows point outside the seed</text>
-
-            <line class="eg" x1="640" y1="350" x2="485" y2="246" marker-end="url(#ar)"></line>
-            <text class="el" x="580" y="300" text-anchor="start">ContactId &middot; NOT NULL</text>
+            <line class="eg" x1="310" y1="346" x2="310" y2="248" marker-end="url(#ar)"></line>
+            <text class="el" x="320" y="300" text-anchor="start">CompanyId &middot; NOT NULL</text>
 
             <text class="band-lbl" x="8" y="334">CHILDREN &middot; BREAK IF REFERENCED ROWS ARE MISSING</text>
-
-            <rect class="nd nd-brk" x="140" y="350" width="180" height="52" rx="7"></rect>
-            <text class="nl" x="230" y="372">dbo.SiteContact</text>
-            <text class="ns ns-brk" x="230" y="389">in plan &middot; WILL BREAK</text>
-
-            <rect class="nd nd-dim" x="560" y="350" width="180" height="52" rx="7"></rect>
-            <text class="nl" x="650" y="372">dbo.ContactNote</text>
-            <text class="ns" x="650" y="389">Schema only &middot; stays empty</text>
+            <rect class="nd nd-plan" x="215" y="346" width="190" height="54" rx="7"></rect>
+            <text class="nl" x="310" y="368">dbo.Contact</text>
+            <text class="ns" x="310" y="385">will be created</text>
           </svg>
-          <figcaption>Seeding dbo.Contact to 100 rows satisfies both required parents, but dbo.SiteContact is
-            in the plan at full scope and 3.9M of its rows reference contacts the seed will not create.</figcaption>
+          <figcaption>Garis putus-putus = nullable, orphan bisa ditolerir. Garis penuh = NOT NULL, induk
+            wajib ada.</figcaption>
         </figure>
       </div>
 
       <div class="legend">
-        <div><svg width="30" height="10" role="img" aria-label="solid line with arrowhead"><line class="eg" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>NOT NULL &mdash; parent row is mandatory</div>
-        <div><svg width="30" height="10" role="img" aria-label="dashed line with arrowhead"><line class="eg-opt" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>Nullable &mdash; orphan tolerable</div>
-        <div><svg width="16" height="12" role="img" aria-label="accent filled box"><rect class="nd nd-plan" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>In plan</div>
-        <div><svg width="16" height="12" role="img" aria-label="dashed accent box"><rect class="nd nd-req" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Pulled in as prerequisite</div>
-        <div><svg width="16" height="12" role="img" aria-label="dashed grey box"><rect class="nd nd-dim" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Schema only or excluded</div>
-        <div><svg width="16" height="12" role="img" aria-label="red box"><rect class="nd nd-brk" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Will break</div>
+        <div><svg width="30" height="10" role="img" aria-label="solid line"><line class="eg" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>NOT NULL &mdash; parent row is mandatory</div>
+        <div><svg width="30" height="10" role="img" aria-label="dashed line"><line class="eg-opt" x1="1" y1="5" x2="21" y2="5"></line><polygon points="21,1 29,5 21,9" style="fill:var(--ink-3)"></polygon></svg>Nullable &mdash; orphan tolerable</div>
+        <div><svg width="16" height="12" role="img" aria-label="accent box"><rect class="nd nd-plan" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>In the plan</div>
+        <div><svg width="16" height="12" role="img" aria-label="plain box"><rect class="nd" x="1" y="1" width="14" height="10" rx="2" style="rx:2"></rect></svg>Untouched</div>
       </div>
 
       <div style="padding:14px 16px; border-top:1px solid var(--line);">
-        <div class="warnline"><span class="g">!</span>
-          <div><b>dbo.SiteContact</b> cannot be satisfied by a 100-row seed of <b>dbo.Contact</b>. Three ways out,
-            none of them guessed for you:
-            <ul style="margin:7px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:3px;">
-              <li>Set <span class="mono">dbo.SiteContact</span> to <b>Schema only</b> &mdash; structure without rows.</li>
-              <li>Seed it with a matching <b>Filter</b> so it only takes rows whose contact is in the seed.</li>
-              <li>Raise the <span class="mono">dbo.Contact</span> limit until it covers what SiteContact needs.</li>
-            </ul>
-          </div></div>
+        <div class="warnline info"><span class="g">i</span>
+          <ul style="margin:0; padding-left:18px; display:flex; flex-direction:column; gap:4px;">
+            <li>1 parent reference(s) are nullable, so leaving them out only orphans the column.</li>
+            <li>1 table(s) reference Company; seeding it with a limited row set would leave their rows
+              pointing at rows that were never created.</li>
+          </ul></div>
       </div>
 
       <div class="actionbar">
-        <span class="guard"><span class="g add">&#10003;</span>2 required parents satisfied</span>
-        <span class="guard"><span class="g del">!</span>1 child unsatisfiable</span>
-        <span class="guard"><span class="g same">&#9671;</span>No FK cycles in this neighbourhood</span>
-        <span class="push"></span>
-        <button class="btn">Export PNG</button>
-        <button class="btn primary">Fix in data compare &rarr;</button>
+        <span class="guard"><span class="g add">&#10003;</span>No FK cycles in this schema</span>
+      </div>
+    </div>
+    <p class="caption">Status node berasal dari schema diff (akan dibuat / akan diubah / identik), bukan dari
+      mode data per tabel.</p>
+  </section>
+
+  <!-- not built -->
+  <section class="screen" id="gap">
+    <div class="screen-head"><span class="screen-num">&mdash;</span><h2>Dirancang, tidak dibangun</h2></div>
+    <p class="screen-note">Mockup pertama menggambar hal-hal berikut sebagai kenyataan. Tidak satu pun ada di
+      aplikasi. Dicatat di sini supaya dokumen ini tidak menjanjikan yang tidak dimiliki &mdash; desainnya
+      masih tercatat di <span class="mono">docs/PLAN.md</span> kalau nanti dikerjakan.</p>
+
+    <div class="app">
+      <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
+        <span class="mono">gap ledger</span><span class="dim mono push">10 item</span></div>
+      <div class="gridwrap">
+        <table class="grid">
+          <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
+          <tbody>
+            <tr><td class="txt"><b>Dependency closure</b> &mdash; mencentang satu tabel menarik prasyaratnya
+              (&ldquo;+2 required&rdquo;)</td><td>2, 5</td>
+              <td class="txt">Graf FK-nya sudah ada dan sudah dipakai untuk urutan script, tapi tidak ada
+                yang menambahkan objek ke pilihan atas namamu.</td></tr>
+            <tr><td class="txt"><b>Scope escalation</b> &mdash; Picked items / Entire database</td><td>5</td>
+              <td class="txt">Scope lattice ada di <span class="mono">PlanNormalizer</span> dan teruji, tapi
+                tidak ada kontrol UI yang memanggilnya.</td></tr>
+            <tr><td class="txt"><b>Exclusion kelas satu</b> dengan tombol revoke</td><td>5</td>
+              <td class="txt">Tipe <span class="mono">Exclusion</span> ada di Core dan teruji; belum
+                tersambung ke session maupun UI.</td></tr>
+            <tr><td class="txt"><b>Checkbox per baris</b> di grid data</td><td>4</td>
+              <td class="txt">Pemilihan berhenti di tingkat tabel, sesuai keputusan yang diambil. Scope
+                <span class="mono">Row</span> sudah didukung model cart.</td></tr>
+            <tr><td class="txt"><b>Mode Filter</b> (predikat WHERE)</td><td>4</td>
+              <td class="txt">Didukung backend (<span class="mono">FilterPredicate</span>) tapi tidak ada
+                kotak input, jadi tidak bisa dipilih.</td></tr>
+            <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>4</td>
+              <td class="txt">Satu grid gabungan dengan kolom Change menggantikannya.</td></tr>
+            <tr><td class="txt"><b>Profil koneksi tersimpan</b></td><td>1</td>
+              <td class="txt">Tidak ada penyimpanan kredensial. Password harus diketik ulang tiap sesi.</td></tr>
+            <tr><td class="txt"><b>Readout ukuran database</b> (Data / Log / Rows)</td><td>1</td>
+              <td class="txt">Ada per tabel di layar 4, tidak di kartu koneksi.</td></tr>
+            <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>3</td>
+              <td class="txt">Emitter memang memilih strategi, tapi tidak melaporkan alasannya ke UI.</td></tr>
+            <tr><td class="txt"><b>Filter arah</b> (Parents / Children / Both)</td><td>7</td>
+              <td class="txt">Hanya fokus dan kedalaman yang bisa diatur.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="actionbar">
+        <span class="guard"><span class="g del">!</span>Jangan pakai mockup lama sebagai bukti sebuah fitur ada.</span>
       </div>
     </div>
   </section>
