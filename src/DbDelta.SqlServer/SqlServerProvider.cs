@@ -1,3 +1,4 @@
+using DbDelta.Core.Data;
 using DbDelta.Core.Providers;
 using Microsoft.Data.SqlClient;
 
@@ -13,6 +14,15 @@ public sealed class SqlServerProvider : IDatabaseProvider
         new SqlServerSchemaReader(connectionString);
 
     public IScriptEmitter CreateScriptEmitter() => new TSqlEmitter();
+
+    public IVolumeReader CreateVolumeReader(string connectionString) =>
+        new SqlServerVolumeReader(connectionString);
+
+    public IRowHashReader CreateRowHashReader(string connectionString) =>
+        new SqlServerRowHashReader(connectionString);
+
+    public IRowDetailReader CreateRowDetailReader(string connectionString) =>
+        new SqlServerRowDetailReader(connectionString);
 
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,

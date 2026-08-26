@@ -158,3 +158,74 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   if (!response.ok) throw new Error(await readError(response))
   return (await response.json()) as T
 }
+
+export interface TableRow {
+  qualifiedName: string
+  sourceRows: number
+  sourceBytes: number
+  targetRows: number
+  targetBytes: number
+  keyColumns: string[]
+  hasKey: boolean
+  onBothSides: boolean
+}
+
+export interface VolumeSummary {
+  sourceDataBytes: number
+  sourceLogBytes: number
+  sourceRows: number
+  targetDataBytes: number
+  targetLogBytes: number
+  targetRows: number
+  tables: TableRow[]
+}
+
+export interface CellDiff {
+  column: string
+  source: string | null
+  target: string | null
+}
+
+export interface RowDiffDto {
+  key: string
+  display: string
+  classification: 'Insert' | 'Update' | 'Delete'
+  changes: CellDiff[]
+  unchangedColumns: number
+}
+
+export type TableDataMode = 'SchemaOnly' | 'AllRows' | 'TopN' | 'Filter'
+
+export interface DataCompareResponse {
+  table: string
+  mode: TableDataMode
+  deletesSuppressed: boolean
+  keyColumns: string[]
+  comparedColumns: string[]
+  excludedColumns: CellDiff[]
+  insertCount: number
+  updateCount: number
+  deleteCount: number
+  sameCount: number
+  transferBytesEstimate: number
+  footprintBytes: number
+  rows: RowDiffDto[]
+  warning: string | null
+}
+
+export const dataApi = {
+  volume: async (compareId: string) => {
+    const response = await fetch(`/api/compare/${compareId}/volume`)
+    if (!response.ok) throw new Error('Could not read database sizes')
+    return (await response.json()) as VolumeSummary
+  },
+  compare: (compareId: string, table: string, mode: TableDataMode, topCount: number, filter: string | null) =>
+    postJson<DataCompareResponse>(`/api/compare/${compareId}/data`, { table, mode, topCount, filter }),
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}

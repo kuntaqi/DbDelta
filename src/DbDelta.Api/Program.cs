@@ -16,6 +16,7 @@ builder.Services.AddSingleton<IScriptExecutor, SqlServerScriptExecutor>();
 builder.Services.AddSingleton<RunLogStore>();
 builder.Services.AddScoped<CompareService>();
 builder.Services.AddScoped<ApplyService>();
+builder.Services.AddScoped<DataCompareService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -101,6 +102,41 @@ api.MapPost("/compare/{id}/apply", async (
     return session is null
         ? Results.NotFound()
         : Results.Ok(await service.ApplyAsync(session, request, cancellationToken));
+});
+
+api.MapGet("/compare/{id}/volume", async (
+    string id,
+    DataCompareService service,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    return session is null
+        ? Results.NotFound()
+        : Results.Ok(await service.VolumeAsync(session, cancellationToken));
+});
+
+api.MapPost("/compare/{id}/data", async (
+    string id,
+    DataCompareRequestDto request,
+    DataCompareService service,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    try
+    {
+        return Results.Ok(await service.CompareAsync(session, request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot compare that table");
+    }
 });
 
 api.MapGet("/runs", async (ApplyService service, CancellationToken cancellationToken) =>

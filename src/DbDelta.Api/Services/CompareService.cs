@@ -70,6 +70,7 @@ public sealed class CompareService
             Diff = diff,
             SourceServer = request.Source.Server,
             TargetServer = request.Target.Server,
+            SourceConnectionString = sourceConnection,
             TargetConnectionString = targetConnection,
             DurationMs = stopwatch.ElapsedMilliseconds,
             ComparedAt = DateTimeOffset.UtcNow

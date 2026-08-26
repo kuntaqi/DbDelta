@@ -17,6 +17,8 @@ public sealed class CompareSession
 
     public required string TargetServer { get; init; }
 
+    public required string SourceConnectionString { get; init; }
+
     public required string TargetConnectionString { get; init; }
 
     public required long DurationMs { get; init; }

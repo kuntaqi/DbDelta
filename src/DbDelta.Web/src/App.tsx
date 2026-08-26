@@ -12,8 +12,9 @@ import {
 } from './api'
 import { PlanScreen } from './PlanScreen'
 import { RunsScreen } from './RunsScreen'
+import { DataScreen } from './DataScreen'
 
-type Screen = 'connections' | 'overview' | 'detail' | 'plan' | 'runs'
+type Screen = 'connections' | 'overview' | 'detail' | 'data' | 'plan' | 'runs'
 
 const KIND_GLYPH: Record<ObjectSummary['kind'], { glyph: string; tone: string }> = {
   SourceOnly: { glyph: '+', tone: 'add' },
@@ -194,6 +195,14 @@ export default function App() {
             </button>
             <button
               type="button"
+              className={`step ${screen === 'data' ? 'on' : ''}`}
+              onClick={() => setScreen('data')}
+              disabled={!comparison}
+            >
+              4 Data compare
+            </button>
+            <button
+              type="button"
               className={`step ${screen === 'plan' ? 'on' : ''}`}
               onClick={() =>
                 comparison &&
@@ -207,10 +216,10 @@ export default function App() {
               }
               disabled={!comparison}
             >
-              4 Sync plan
+              5 Sync plan
             </button>
             <button type="button" className={`step ${screen === 'runs' ? 'on' : ''}`} onClick={() => setScreen('runs')}>
-              5 Run log
+              6 Run log
             </button>
           </nav>
         </div>
@@ -493,6 +502,8 @@ export default function App() {
             </div>
           </div>
         )}
+        {screen === 'data' && comparison && <DataScreen comparison={comparison} />}
+
         {screen === 'plan' && comparison && script && (
           <PlanScreen
             comparison={comparison}
