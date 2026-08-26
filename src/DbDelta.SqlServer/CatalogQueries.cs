@@ -160,6 +160,28 @@ internal static class CatalogQueries
         ORDER BY s.name, tr.name;
         """;
 
+    // Views and routines depend on each other through their SQL bodies. Reading the catalog is the
+    // only reliable way to learn that order without parsing T-SQL; referenced_id is null when the
+    // reference cannot be resolved, so those rows are skipped rather than guessed at.
+    public const string ProgrammableDependencies = """
+        SELECT DISTINCT
+            s.name  AS [SchemaName],
+            o.name  AS [Name],
+            rs.name AS [ReferencedSchema],
+            ro.name AS [ReferencedName],
+            ro.type AS [ReferencedType]
+        FROM sys.sql_expression_dependencies d
+        JOIN sys.objects o  ON o.object_id = d.referencing_id
+        JOIN sys.schemas s  ON s.schema_id = o.schema_id
+        JOIN sys.objects ro ON ro.object_id = d.referenced_id
+        JOIN sys.schemas rs ON rs.schema_id = ro.schema_id
+        WHERE o.is_ms_shipped = 0
+          AND ro.is_ms_shipped = 0
+          AND o.type IN ('V', 'P', 'FN', 'IF', 'TF')
+          AND ro.type IN ('V', 'P', 'FN', 'IF', 'TF')
+          AND o.object_id <> ro.object_id;
+        """;
+
     public const string Sequences = """
         SELECT
             s.name                              AS [SchemaName],

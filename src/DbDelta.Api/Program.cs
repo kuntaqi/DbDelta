@@ -39,7 +39,8 @@ api.MapPost("/probe", async (
     }
     catch (SqlException ex)
     {
-        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot reach that database");
+        var (title, detail) = ConnectionProblem.Describe(ex, request.Server, request.Database);
+        return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
     }
 });
 
@@ -54,7 +55,11 @@ api.MapPost("/compare", async (
     }
     catch (SqlException ex)
     {
-        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot reach that database");
+        var failing = ex.Number == 4060 && ex.Message.Contains(request.Target.Database, StringComparison.OrdinalIgnoreCase)
+            ? request.Target
+            : request.Source;
+        var (title, detail) = ConnectionProblem.Describe(ex, failing.Server, failing.Database);
+        return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
     }
 });
 

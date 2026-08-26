@@ -168,13 +168,27 @@ public sealed class SchemaReaderTests
     {
         var schema = await ReadSourceAsync();
 
-        var view = Assert.Single(schema.Views);
+        var view = schema.Views.Single(v => v.Identity.Name == "vCompanySegment");
         Assert.Equal("sales.vCompanySegment", view.Identity.QualifiedName);
         Assert.Contains("SELECT", view.Definition, StringComparison.OrdinalIgnoreCase);
 
         var routine = Assert.Single(schema.Routines);
         Assert.Equal("dbo.usp_GetCompany", routine.Identity.QualifiedName);
         Assert.Equal(RoutineKind.Procedure, routine.Kind);
+    }
+
+    // Views depend on each other through their SQL bodies, and only the catalog knows that. Without
+    // this the emitter cannot order a view after the view it selects from.
+    [SkippableFact]
+    public async Task A_views_dependency_on_another_view_is_captured()
+    {
+        var schema = await ReadSourceAsync();
+
+        var dependent = schema.Views.Single(v => v.Identity.Name == "vActiveSegments");
+        var referenced = Assert.Single(dependent.DependsOn);
+
+        Assert.Equal("sales.vCompanySegment", referenced.QualifiedName);
+        Assert.Empty(schema.Views.Single(v => v.Identity.Name == "vCompanySegment").DependsOn);
     }
 
     [SkippableFact]

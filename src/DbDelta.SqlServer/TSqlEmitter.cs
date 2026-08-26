@@ -1,5 +1,6 @@
 using DbDelta.Core.Comparison;
 using DbDelta.Core.Model;
+using DbDelta.Core.Planning;
 using DbDelta.Core.Providers;
 using DbDelta.Core.Scripting;
 
@@ -452,7 +453,27 @@ public sealed class TSqlEmitter : IScriptEmitter
         List<ObjectDiff> changes,
         DatabaseSchema source)
     {
-        foreach (var change in changes.Where(c => c.Kind is DiffKind.SourceOnly or DiffKind.Different))
+        var programmables = changes
+            .Where(c => c.Kind is DiffKind.SourceOnly or DiffKind.Different)
+            .Where(c => c.Identity.Type is ObjectType.View or ObjectType.Routine or ObjectType.Trigger)
+            .ToList();
+
+        // Alphabetical order matched dependency order by luck in the first schema this ran against.
+        // A view selecting from another view has to come after it, and only the catalog knows that.
+        var dependsOn = source.Views.ToDictionary(v => v.Identity, v => v.DependsOn);
+        foreach (var routine in source.Routines)
+        {
+            dependsOn[routine.Identity] = routine.DependsOn;
+        }
+
+        var ordered = TopologicalSorter.Sort(
+            programmables.Select(c => c.Identity).ToList(),
+            identity => dependsOn.TryGetValue(identity, out var list) ? list : []);
+
+        var byIdentity = programmables.ToDictionary(c => c.Identity);
+        var sequence = ordered.Ordered.Concat(ordered.Cyclic).Select(i => byIdentity[i]).ToList();
+
+        foreach (var change in sequence)
         {
             var definition = change.Identity.Type switch
             {

@@ -10,5 +10,7 @@ public sealed class RoutineDefinition
 
     public ProviderExtras Extras { get; init; } = ProviderExtras.Empty;
 
+    public IReadOnlyList<ObjectIdentity> DependsOn { get; init; } = [];
+
     public override string ToString() => $"{Kind} {Identity.QualifiedName}";
 }

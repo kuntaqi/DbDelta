@@ -184,7 +184,10 @@ before the view it selects from. Three mechanisms, in order of preference:
 - Split tables from their FKs: create all tables bare, then add every FK afterwards. This sidesteps FK cycles
   entirely rather than needing `NOCHECK` bracketing, which matters because cycles are far more likely across a
   whole database than across a few picked tables.
-- Order programmable objects with `sys.sql_expression_dependencies` rather than parsing SQL bodies.
+- Order programmable objects with `sys.sql_expression_dependencies` rather than parsing SQL bodies. Done:
+  the reader captures `DependsOn` per view/routine and the emitter topologically sorts them. Worth knowing
+  why this needed a real test — alphabetical order happened to match dependency order in the first schema
+  it ran against, so the gap stayed invisible until a dependent view was named to sort *before* its base.
 - Fall back to retry-until-stable for anything left: emit, collect failures, retry. This converges because the
   real dependency graph is a DAG, and it beats guessing.
 

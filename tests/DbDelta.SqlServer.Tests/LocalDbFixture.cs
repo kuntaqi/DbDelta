@@ -66,6 +66,15 @@ public sealed class LocalDbFixture : IAsyncLifetime
         return ConnectionStringFor(name);
     }
 
+    // A database that exists but holds nothing, which is the provisioning case rather than a diff.
+    public async Task<string> CreateEmptyTargetAsync(string suffix)
+    {
+        var name = $"{TargetDatabase}_{suffix}";
+        await DropAsync(name);
+        await ExecuteOnMasterAsync($"CREATE DATABASE [{name}];");
+        return ConnectionStringFor(name);
+    }
+
     public async Task DropScratchAsync(string suffix) => await DropAsync($"{TargetDatabase}_{suffix}");
 
     private static async Task CreateAsync(string database, string script)
@@ -174,6 +183,9 @@ public sealed class LocalDbFixture : IAsyncLifetime
         );
         GO
         INSERT INTO dbo.Digest (DigestId, A, B) VALUES (1, NULL, N'x'), (2, N'x', NULL), (3, N'', N'x');
+        GO
+        CREATE VIEW sales.vActiveSegments AS
+            SELECT CompanyId, Segment FROM sales.vCompanySegment WHERE Segment IS NOT NULL;
         GO
         CREATE PROCEDURE dbo.usp_GetCompany @Id INT AS
             SELECT * FROM dbo.Company WHERE CompanyId = @Id;

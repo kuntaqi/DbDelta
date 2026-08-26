@@ -41,9 +41,14 @@ public sealed class EmitterTests
 
         var (_, _, script) = await BuildAsync();
 
-        var view = Assert.Single(script.InPhase(ScriptPhase.Programmables));
-        Assert.StartsWith("EXEC sp_executesql N'", view.Sql, StringComparison.Ordinal);
-        Assert.Contains("CREATE OR ALTER", view.Sql, StringComparison.Ordinal);
+        var programmables = script.InPhase(ScriptPhase.Programmables).ToList();
+
+        Assert.NotEmpty(programmables);
+        Assert.All(programmables, step =>
+        {
+            Assert.StartsWith("EXEC sp_executesql N'", step.Sql, StringComparison.Ordinal);
+            Assert.Contains("CREATE OR ALTER", step.Sql, StringComparison.Ordinal);
+        });
     }
 
     [SkippableFact]

@@ -28,13 +28,30 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         await ReadForeignKeysAsync(connection, tables, cancellationToken).ConfigureAwait(false);
         await ReadCheckConstraintsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
 
+        var dependencies = await ReadDependenciesAsync(connection, cancellationToken).ConfigureAwait(false);
+        var views = await ReadViewsAsync(connection, cancellationToken).ConfigureAwait(false);
+        var routines = await ReadRoutinesAsync(connection, cancellationToken).ConfigureAwait(false);
+
         return new DatabaseSchema
         {
             DatabaseName = info.DatabaseName,
             Collation = info.Collation,
             Tables = tables.Values.Select(t => t.Build()).ToList(),
-            Views = await ReadViewsAsync(connection, cancellationToken).ConfigureAwait(false),
-            Routines = await ReadRoutinesAsync(connection, cancellationToken).ConfigureAwait(false),
+            Views = views.Select(v => new ViewDefinition
+            {
+                Identity = v.Identity,
+                Definition = v.Definition,
+                Extras = v.Extras,
+                DependsOn = DependenciesOf(dependencies, v.Identity)
+            }).ToList(),
+            Routines = routines.Select(r => new RoutineDefinition
+            {
+                Identity = r.Identity,
+                Kind = r.Kind,
+                Definition = r.Definition,
+                Extras = r.Extras,
+                DependsOn = DependenciesOf(dependencies, r.Identity)
+            }).ToList(),
             Triggers = await ReadTriggersAsync(connection, cancellationToken).ConfigureAwait(false),
             Sequences = await ReadSequencesAsync(connection, cancellationToken).ConfigureAwait(false)
         };
@@ -348,6 +365,35 @@ public sealed class SqlServerSchemaReader : ISchemaReader
 
         return sequences;
     }
+
+    // Keyed on schema-qualified name rather than ObjectType, because the same body can reference a
+    // view and a procedure and the emitter only cares that one comes before the other.
+    private static async Task<ILookup<string, ObjectIdentity>> ReadDependenciesAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var pairs = new List<(string Referencing, ObjectIdentity Referenced)>();
+
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.ProgrammableDependencies, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var referencing = $"{Str(reader, "SchemaName")}.{Str(reader, "Name")}";
+            var type = Str(reader, "ReferencedType").Trim() == "V" ? ObjectType.View : ObjectType.Routine;
+
+            pairs.Add((
+                referencing,
+                new ObjectIdentity(type, Str(reader, "ReferencedSchema"), Str(reader, "ReferencedName"))));
+        }
+
+        return pairs.ToLookup(p => p.Referencing, p => p.Referenced, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<ObjectIdentity> DependenciesOf(
+        ILookup<string, ObjectIdentity> dependencies,
+        ObjectIdentity identity) =>
+        dependencies[identity.QualifiedName].ToList();
 
     private static IdentitySpec? ReadIdentity(SqlDataReader reader)
     {
