@@ -156,7 +156,9 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   Start it with `SqlLocalDB start MSSQLLocalDB` if a test reports it unavailable.
 - LocalDB caps a database at 10 GB and accepts local connections only, so volume behaviour at real
   scale cannot be proven here — only that the queries are correct.
-- Connection profiles belong in `%APPDATA%\DbDelta\profiles.json`, never in the repo. `.gitignore` already
-  excludes `profiles.json`, `appsettings.Local.json`, `runs/` and `*.sync.sql`.
+- Connection profiles belong in `%APPDATA%\DbDelta\profiles.json`, never in the repo, and **store no
+  password** — server, port, database, auth mode and the trust flag only. A SQL login password is asked
+  for each session and kept in memory for that session. `.gitignore` already excludes `profiles.json`,
+  `appsettings.Local.json`, `runs/` and `*.sync.sql`.
 - Never point a write operation at a production server. `Safety:ReadOnlyServers` in config exists for this
   and its apply path is hard-blocked, not merely warned.

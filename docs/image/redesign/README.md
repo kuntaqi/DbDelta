@@ -48,8 +48,11 @@ session.* Profiles themselves are sanctioned — `CLAUDE.md` reserves `%APPDATA%
 hold the password. The mockup's caption ("passwords are re-asked, never stored in the repo") applies the
 wrong test: the repo was never the concern, the disk is.
 
-Related documentation defect: `docs/PLAN.md`'s UI-screens list still names "saved profiles" on screen 1,
-which contradicts the ledger. One of the two should be corrected.
+This has since been settled in `docs/PLAN.md` — see *Connection profiles carry everything except the
+secret*. A profile holds server, port, database, auth mode and the trust flag; the password is asked for
+every session and kept in memory only. The plan's earlier leaning towards encrypting passwords with
+Windows DPAPI is dropped. So the feature in these mockups is adoptable; the caption's claim is what needs
+rewording.
 
 **2. A database-size readout on the connection card** (`10`–`13`, and the route bar on every screen).
 Ledger item 8 decided the opposite: size belongs **per table on the data screen, not on the connection

@@ -270,7 +270,8 @@ state overlay, no interaction, poor layout on graphs.
 
 ## UI screens
 
-1. **Connections** — source | target side by side, saved profiles, Test, environment badge.
+1. **Connections** — source | target side by side, Test, environment badge, and saved profiles that
+   hold no password (see *Connection profiles carry everything except the secret*). Not built yet.
 2. **Schema compare** — object-type tree with counts and per-object ticks; clicking a row opens that
    object's difference inline beneath it: one table of what differs with both sides' values, side-by-side
    DDL with changed lines marked, and the statements that will run on the target.
@@ -319,10 +320,37 @@ connections is the only prerequisite anywhere in the app.
 
 ## Open questions
 
-- Where do saved connection profiles live? Leaning: `%APPDATA%\DbDelta\profiles.json`, passwords
-  via Windows DPAPI, never in the repo.
+- Resolved: saved connection profiles live in `%APPDATA%\DbDelta\profiles.json` and **store no password
+  at all**. The earlier leaning — passwords encrypted with Windows DPAPI — is dropped. See *Connection
+  profiles carry everything except the secret*.
 - Resolved: whole-DB ordering is a topological sort with tables created bare and FKs added afterwards,
   so `NOCHECK` bracketing is no longer needed for cycles. See *Empty target*.
+
+### Connection profiles carry everything except the secret
+
+Retyping a server, a port, a database name and an auth mode every session is the largest avoidable
+friction in the tool, and a profile fixes it. A stored password does not belong in that trade.
+
+So a profile holds the **non-secret** half of a connection — server, port, database, auth mode, and the
+trust-certificate flag — in `%APPDATA%\DbDelta\profiles.json`, never in the repo (`.gitignore` already
+excludes it). Under Windows auth that is the whole connection and nothing is missing. Under a SQL login
+the password is asked for each session and kept in memory for that session only.
+
+An earlier draft leaned on Windows DPAPI to encrypt the password into the same file. That is dropped.
+DPAPI protects the file against another user on the same machine; it does nothing about the case that
+actually matters here — a tool that writes to production-adjacent servers holding a credential it can
+replay without anyone present. Retyping a password is a few seconds against a risk that lasts as long as
+the file does. "The repo does not contain it" was never the right test, either: the disk is the concern,
+not the repository.
+
+Two consequences worth stating:
+
+- **Recently-compared pairs are derivable, profiles are not the same thing.** The run log already persists
+  to `%APPDATA%\DbDelta\runs\*.json`, so a "recently compared" list can be built from what actually ran
+  without storing anything new. A profile is a saved *intent* to connect; a run is a record that one
+  happened.
+- **A profile is not a session.** Compare sessions — including key overrides and plan picks — live in API
+  memory and are lost on restart. A profile shortens the retyping; it does not restore a comparison.
 
 ### The whole-database scan is a screen, not a compare
 
