@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DbDelta.Core/DbDelta.Core.csproj" />
+    <Project Path="src/DbDelta.SqlServer/DbDelta.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DbDelta.Core.Tests/DbDelta.Core.Tests.csproj" />
+  </Folder>
+</Solution>
