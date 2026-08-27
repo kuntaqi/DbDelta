@@ -70,6 +70,9 @@ public sealed class SqlServerRowHashReader : IRowHashReader
         // windows: if the target is missing rows its window reaches further and the overlap is wrong.
         var top = side == RowSetSide.Source && request.Mode == TableDataMode.TopN ? "TOP (@top) " : string.Empty;
 
+        // The predicate goes in as written, having been held to columns, constants and operators by
+        // FilterPredicateValidator before a request carrying one is ever built. It cannot be parameterised:
+        // it is an expression, not a value. See that validator for why the check is where it is.
         var where = request.Mode == TableDataMode.Filter && !string.IsNullOrWhiteSpace(request.FilterPredicate)
             ? $"\n    WHERE {request.FilterPredicate}"
             : string.Empty;

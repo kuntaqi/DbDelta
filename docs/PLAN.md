@@ -335,11 +335,42 @@ Data scope is chosen per table, not once for the whole run:
 | `Filter` | rows matching a `WHERE` predicate | yes | yes | **suppressed** |
 | `Schema only` | structure, no data | — | — | — |
 
-`Filter` is implemented end to end in the backend — `DataCompareRequest.FilterPredicate` reaches the row-hash
-reader's `WHERE` clause, and `SuppressDeletes` already covers it — but the data screen offers only `All rows`,
-`Top N` and `Schema only`, so there is no way to type a predicate and the mode is unreachable. It is a text box
-away, and it is deliberately still absent: a raw predicate concatenated into the reader's SQL is the one place
-in this tool where user text becomes SQL, and it needs a decision about that before it gets a control.
+### The filter predicate, and why it took a decision before it took a text box
+
+`Filter` worked end to end in the backend long before it had a control. What was missing was not the input;
+it was an answer to what a predicate is allowed to be, because it is the one place in this tool where text a
+person typed becomes SQL the tool executes.
+
+**Calling that "injection" would be the wrong frame.** This is a single-user local tool and the user already
+holds the credentials to both databases; they could open SSMS and do worse. No privilege boundary is being
+crossed. The guarantee actually at risk is a different one, and it is one this document makes twice:
+
+> a compare is a read, on both sides, always.
+
+The source is never written to, and a read-only target can never be applied to — but a predicate runs during
+a *compare*, before either guard is anywhere near it. Nothing else in the tool could execute DDL against a
+production target. An unchecked predicate could, and not through malice: a pasted fragment with a stray
+semicolon is enough.
+
+**So the alphabet is checked and the grammar is not.** Every identifier has to be a column of the table being
+compared, and everything else has to be a literal, an operator, or a keyword from a short list — `AND`, `OR`,
+`NOT`, `IN`, `IS`, `NULL`, `LIKE`, `BETWEEN`, `ESCAPE`. That one identifier rule is what makes a function
+call, a subquery, a second statement and a comment all fail, without a rule of their own for each. Whether
+what survives is *well-formed* is SQL Server's question, and it answers it with a better message than a
+hand-written parser would — so `Segment Segment AND AND` passes the validator and is refused by the server.
+
+Three consequences worth stating:
+
+- **Functions are refused, including harmless ones.** `At > DATEADD(day, -7, GETDATE())` does not pass. That
+  is a real loss, and the way back is an allowlist of provably side-effect-free built-ins rather than a
+  general exception. A date literal covers most of what it was wanted for.
+- **The columns checked against are the ones on both sides.** A predicate naming a source-only column would
+  pass a source-side check and fail on the target, which is a worse way to find out.
+- **The refusal names what is available.** An unknown identifier is far more often a typo than an attack, so
+  the message lists the columns rather than only rejecting the one that was wrong.
+
+The control commits on a button or Enter rather than on each keystroke: a predicate is not usable half typed,
+and comparing per character would run a query per character and show an error for every unfinished word.
 
 **Deletes must be suppressed whenever the row set is limited.** Under `All rows`, a row present on the
 target but absent from the source means *delete*. Under `Top N` it only means *outside the top 100* — so
@@ -672,7 +703,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
-| `Filter` row mode | `FilterPredicate` reaches the reader's `WHERE`; deletes already suppressed | No input control — and it needs a decision about user text becoming SQL before it gets one |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
 | Saved connection profiles | Shape settled: `%APPDATA%\DbDelta\profiles.json`, no password | Nothing reads or writes the file |
 | `UserDefinedType` | A member of the `ObjectType` enum | No reader, no model type, no collection on `DatabaseSchema` — UDTs compare as absent |

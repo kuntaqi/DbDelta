@@ -317,12 +317,20 @@ export interface SelectedTable {
 }
 
 export const planApi = {
-  select: (compareId: string, table: string, selected: boolean, mode: TableDataMode, topCount: number) =>
+  select: (
+    compareId: string,
+    table: string,
+    selected: boolean,
+    mode: TableDataMode,
+    topCount: number,
+    filter: string | null,
+  ) =>
     postJson<{ selected: SelectedTable[] }>(`/api/compare/${compareId}/data/select`, {
       table,
       selected,
       mode,
       topCount,
+      filter,
     }),
   selection: async (compareId: string) => {
     const response = await fetch(`/api/compare/${compareId}/data/select`)

@@ -18,6 +18,7 @@ import {
 const MODES: { value: TableDataMode; label: string }[] = [
   { value: 'AllRows', label: 'All rows' },
   { value: 'TopN', label: 'Top N' },
+  { value: 'Filter', label: 'Filter' },
   { value: 'SchemaOnly', label: 'Schema only' },
 ]
 
@@ -42,6 +43,11 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
   const [selected, setSelected] = useState<TableRow | null>(null)
   const [mode, setMode] = useState<TableDataMode>('AllRows')
   const [topCount, setTopCount] = useState(100)
+  // Two values, because a predicate is not usable half typed: the draft is what is in the box, the
+  // committed one is what has been compared with. Comparing on every keystroke would run a query per
+  // character and show a validation error for every unfinished word.
+  const [filterDraft, setFilterDraft] = useState('')
+  const [filter, setFilter] = useState('')
   const [result, setResult] = useState<DataCompareResponse | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -93,7 +99,7 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
     setBusy(true)
     setError(null)
     try {
-      const response = await planApi.select(comparison.id, selected.qualifiedName, next, mode, topCount)
+      const response = await planApi.select(comparison.id, selected.qualifiedName, next, mode, topCount, mode === 'Filter' ? filter : null)
       setInPlan(response.selected)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -149,17 +155,24 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
       return
     }
 
+    // Filter mode with nothing committed yet is not "compare everything" — it is a question that has not
+    // been asked. Comparing all rows here would answer a different one.
+    if (mode === 'Filter' && filter.length === 0) {
+      setResult(null)
+      return
+    }
+
     setBusy(true)
     setError(null)
     dataApi
-      .compare(comparison.id, selected.qualifiedName, mode, topCount, null)
+      .compare(comparison.id, selected.qualifiedName, mode, topCount, mode === 'Filter' ? filter : null)
       .then(setResult)
       .catch((e) => {
         setResult(null)
         setError(e instanceof Error ? e.message : String(e))
       })
       .finally(() => setBusy(false))
-  }, [comparison.id, selected, mode, topCount, keyChoice])
+  }, [comparison.id, selected, mode, topCount, filter, keyChoice])
 
   const selectedFootprint =
     volume?.tables.filter((t) => t.onBothSides).reduce((sum, t) => sum + t.sourceBytes, 0) ?? 0
@@ -477,6 +490,46 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                   )}
                 </div>
 
+                {mode === 'Filter' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div className="row" style={{ flexWrap: 'wrap' }}>
+                      <span className="lbl" style={{ margin: 0 }}>WHERE</span>
+                      <input
+                        className="field mono"
+                        style={{ flex: 1, minWidth: 260 }}
+                        placeholder="Segment = 'Retail' AND RatingBand >= 3"
+                        value={filterDraft}
+                        spellCheck={false}
+                        onChange={(e) => setFilterDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') setFilter(filterDraft.trim())
+                        }}
+                        aria-label="Filter predicate"
+                      />
+                      <button
+                        type="button"
+                        className="chip"
+                        disabled={filterDraft.trim() === filter}
+                        onClick={() => setFilter(filterDraft.trim())}
+                      >
+                        Apply filter
+                      </button>
+                    </div>
+                    <p className="dim" style={{ margin: 0, fontSize: 11.5 }}>
+                      Columns and constants only &mdash; no functions or subqueries, because a compare has to
+                      stay a read on both sides. The predicate runs against source and target alike, so
+                      deletes are suppressed: a row outside the filter is not a row that was removed.
+                    </p>
+                  </div>
+                )}
+
+                {mode === 'Filter' && filter.length === 0 && (
+                  <div className="warnline info">
+                    <span className="g">i</span>
+                    <div>Nothing compared yet. Type a predicate and apply it.</div>
+                  </div>
+                )}
+
                 {result && result.excludedColumns.length > 0 && (
                   <div className="row" style={{ flexWrap: 'wrap', gap: 7 }}>
                     <span className="lbl" style={{ margin: 0 }}>Compared</span>
@@ -605,7 +658,8 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
           <button
             type="button"
             className={`btn ${picked ? '' : 'primary'}`}
-            disabled={mode === 'SchemaOnly' || busy}
+            // A filter with no result behind it — never applied, or refused — has nothing to add to the plan.
+            disabled={mode === 'SchemaOnly' || busy || (mode === 'Filter' && result === null)}
             onClick={() => toggle(!picked)}
           >
             {picked ? 'Remove from plan' : 'Add this table to plan'}

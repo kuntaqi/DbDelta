@@ -423,8 +423,36 @@ public sealed class DataCompareService
             return Selection(session);
         }
 
+        if (mode == TableDataMode.Filter)
+        {
+            Check(session, table, request.Filter);
+        }
+
         session.DataSelections[table.Identity] = new DataSelection(mode, request.TopCount, request.Filter);
         return Selection(session);
+    }
+
+    // The gate. A predicate reaches SQL from here and from the compare below, and nowhere else, so this is
+    // where it is held to what a filter is allowed to be. Refusing at selection time also means a bad
+    // predicate cannot sit in a plan waiting to fail at apply.
+    private static void Check(CompareSession session, TableDefinition source, string? filter)
+    {
+        var target = session.Target.Tables.FirstOrDefault(t => t.Identity == source.Identity);
+
+        // Columns of both sides, because the predicate runs against both. One that exists only on the
+        // source would pass here and fail on the target, which is a worse way to find out.
+        var columns = target is null
+            ? source.Columns.Select(c => c.Name).ToList()
+            : source.Columns.Select(c => c.Name)
+                .Intersect(target.Columns.Select(c => c.Name), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        var validation = FilterPredicateValidator.Validate(filter, columns);
+
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(validation.Error);
+        }
     }
 
     public static DataSelectionResponse Selection(CompareSession session)
@@ -599,6 +627,11 @@ public sealed class DataCompareService
         {
             throw new InvalidOperationException(
                 $"{request.Table} has no primary key. Choose key columns before comparing its data.");
+        }
+
+        if (mode == TableDataMode.Filter)
+        {
+            Check(session, source, request.Filter);
         }
 
         var compareRequest = new DataCompareRequest

@@ -752,7 +752,7 @@
             </div>
             <div class="row" style="flex-wrap:wrap;">
               <span class="lbl" style="margin:0;">Data mode</span>
-              <span class="chip on">All rows</span><span class="chip">Top N</span><span class="chip">Schema only</span>
+              <span class="chip on">All rows</span><span class="chip">Top N</span><span class="chip">Filter</span><span class="chip">Schema only</span>
             </div>
             <div class="tiles">
               <div class="tile"><div class="k">Insert</div><div class="v" style="color:var(--add);">1</div><div class="s">missing on target</div></div>
@@ -786,6 +786,11 @@
     </div>
     <p class="caption">Mode <b>Top N</b> mengubah kartu Delete jadi &ldquo;&mdash; suppressed&rdquo; dengan
       spanduk yang menjelaskan kenapa: row set terbatas tidak bisa membuktikan sebuah baris terhapus.</p>
+
+    <p class="caption">Mode <b>Filter</b> menampilkan satu kotak <span class="mono">WHERE</span> beserta tombol
+      Apply filter &mdash; predikat setengah jadi tidak dipakai, jadi tidak ada compare per ketikan. Isinya
+      dibatasi kolom dan konstanta: fungsi dan subquery ditolak karena compare harus tetap sekadar membaca di
+      kedua sisi. Predikatnya berlaku untuk source dan target sekaligus, jadi delete tetap disuppress.</p>
 
     <p class="screen-note">Tabel tanpa primary key tidak lagi mati. Ada dua keadaan yang berbeda, dan
       layarnya membedakan keduanya.</p>
@@ -1051,7 +1056,7 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">7 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">6 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
@@ -1059,9 +1064,6 @@
             <tr><td class="txt"><b>Checkbox per baris</b> di grid data</td><td>4</td>
               <td class="txt">Pemilihan berhenti di tingkat tabel, sesuai keputusan yang diambil. Scope
                 <span class="mono">Row</span> sudah didukung model cart.</td></tr>
-            <tr><td class="txt"><b>Mode Filter</b> (predikat WHERE)</td><td>4</td>
-              <td class="txt">Didukung backend (<span class="mono">FilterPredicate</span>) tapi tidak ada
-                kotak input, jadi tidak bisa dipilih.</td></tr>
             <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>4</td>
               <td class="txt">Satu grid gabungan dengan kolom Change menggantikannya.</td></tr>
             <tr><td class="txt"><b>Profil koneksi tersimpan</b></td><td>1</td>
