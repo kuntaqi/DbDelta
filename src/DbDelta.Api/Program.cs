@@ -24,6 +24,7 @@ builder.Services.AddScoped<CompareService>();
 builder.Services.AddScoped<ApplyService>();
 builder.Services.AddScoped<DataCompareService>();
 builder.Services.AddScoped<FkMapService>();
+builder.Services.AddScoped<InstanceService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -51,6 +52,48 @@ api.MapPost("/probe", async (
     catch (SqlException ex)
     {
         var (title, detail) = Explain(ex, request, connections);
+        return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
+    }
+});
+
+api.MapPost("/instance", async (
+    ConnectionRequest request,
+    ConnectionFactory connections,
+    InstanceService service,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await service.SurveyAsync(request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
+    }
+    catch (SqlException ex)
+    {
+        var (title, detail) = Explain(ex, request, connections);
+        return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
+    }
+});
+
+api.MapPost("/instance/describe", async (
+    InstanceDetailRequest request,
+    ConnectionFactory connections,
+    InstanceService service,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await service.DescribeAsync(request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
+    }
+    catch (SqlException ex)
+    {
+        var (title, detail) = Explain(ex, request.Connection, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
     }
 });

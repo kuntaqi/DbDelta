@@ -21,8 +21,9 @@ import { PlanScreen } from './PlanScreen'
 import { RunsScreen } from './RunsScreen'
 import { DataScreen } from './DataScreen'
 import { FkMapScreen } from './FkMapScreen'
+import { InstanceScreen } from './InstanceScreen'
 
-type Screen = 'connections' | 'schema' | 'data' | 'plan' | 'runs' | 'fk'
+type Screen = 'connections' | 'instance' | 'schema' | 'data' | 'plan' | 'runs' | 'fk'
 
 const NEEDS_COMPARE = 'Compare two connections first — every screen here reads from that comparison.'
 
@@ -492,6 +493,15 @@ export default function App() {
             <button type="button" className={`step ${screen === 'connections' ? 'on' : ''}`} onClick={() => setScreen('connections')}>
               Connections
             </button>
+            {/* Needs a connection, not a comparison — so it is never disabled, unlike everything after it. */}
+            <button
+              type="button"
+              className={`step ${screen === 'instance' ? 'on' : ''}`}
+              onClick={() => setScreen('instance')}
+              title="Every database on one server"
+            >
+              Instance
+            </button>
             <button
               type="button"
               className={`step ${screen === 'schema' ? 'on' : ''}`}
@@ -646,6 +656,21 @@ export default function App() {
               </button>
             </div>
           </div>
+        )}
+
+        {screen === 'instance' && (
+          <InstanceScreen
+            source={source}
+            target={target}
+            onUseAsSource={(database) => {
+              setSource({ ...source, connectionString: null, database })
+              setScreen('connections')
+            }}
+            onUseAsTarget={(database) => {
+              setTarget({ ...target, connectionString: null, database })
+              setScreen('connections')
+            }}
+          />
         )}
 
         {screen === 'schema' && comparison && (

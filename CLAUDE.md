@@ -13,15 +13,21 @@ per-table sync and real guardrails does not exist (Redgate Data Compare is paid)
 ## Status — read before writing any code
 
 The app runs. `dotnet run --project src/DbDelta.Api` serves it on http://localhost:5199 once the SPA has
-been built once (see *Running it*). All six screens work against real databases: connect, compare
-schema and data, pick what goes in the plan, review the script, apply it under guards, read the run log.
+been built once (see *Running it*). All seven screens work against real databases: connect, survey a whole
+instance, compare schema and data, pick what goes in the plan, review the script, apply it under guards,
+read the run log.
+
+**The Instance screen lists every database name on a server**, which is exactly the infrastructure topology
+the naming constraint below exists to keep out of this repo. Never paste its output or screenshot it into
+`docs/`, a mockup, or a test fixture; its tests assert containment, never the whole list.
 
 **Nothing is selected for you.** Schema objects are ticked on Schema compare, table data is picked per
 table on the data screen. An empty plan yields an empty script and a refused apply.
 
-**The screens are tabs, not a wizard.** A compared pair of connections is the only prerequisite; after that
-every screen is reachable from every other, in any order. Docs still number the screens 1–6 for reference;
-the app does not, because numbering implied an order it never enforced.
+**The screens are tabs, not a wizard.** A compared pair of connections is the only prerequisite — except
+Instance, which needs just a connection — and after that every screen is reachable from every other, in any
+order. Docs still number the screens for reference; the app does not, because numbering implied an order it
+never enforced.
 
 **Schema compare is one screen, not two.** The object list and one object's difference used to be separate
 screens (Overview and Schema detail); the difference now opens inline under the object's own row, so ticking

@@ -559,8 +559,13 @@ one; the fragility is in the matching, not in a known hole.
 ## UI screens
 
 They are numbered here for reference only. In the app they are tabs, not steps: a compared pair of
-connections is the only prerequisite, and after that every screen reaches every other in any order.
+connections is the only prerequisite, and after that every screen reaches every other in any order. The
+exception is **Instance**, which needs a connection but not a comparison, so it sits beside Connections and
+is never disabled.
 
+0. **Instance** — every user database on one server: state, size, and on a second pass collation and object
+   counts. Needs a connection, not a comparison. Picking a row fills in a connection. See *Surveying an
+   instance*.
 1. **Connections** — source | target side by side, Test, environment badge, connection-string and
    full-detail entry with port and SQL login, and saved profiles per card: a chip per profile to load one, a
    name box to save under, and Delete. Loading fills everything except the password, which under a SQL login
@@ -666,6 +671,40 @@ Two consequences worth stating:
   happened.
 - **A profile is not a session.** Compare sessions — including key overrides and plan picks — live in API
   memory and are lost on restart. A profile shortens the retyping; it does not restore a comparison.
+
+### Surveying an instance: what one query knows, and what costs a connection
+
+Every other screen starts from a compared pair, which meant there was no way to ask *what is on this server*
+without already knowing which two databases to compare. The Instance screen starts from a server instead.
+
+**It is two passes, and the split is the cost.** Listing the databases is one query against server-level
+catalogs and answers instantly however many there are — name, state, recovery model, read-only flag, and the
+data and log sizes, which come free from `sys.master_files` because the server already tracks its own files.
+`HAS_DBACCESS` answers without connecting, so a database that cannot be opened is still listed and still
+says so. Collation and object counts cost a connection each, so they are a second pass the user asks for:
+measured at about a tenth of a second per database, 2.3 s for 23. This is the same reasoning that makes the
+whole-database scan a button rather than something that happens on load.
+
+**Collation is in the expensive pass for a reason that took measuring.** It is the property this tool cares
+most about — a mismatch makes every row hash untrustworthy — so it belongs in the cheap list if it can be
+had there. It cannot. On the instance this was built against, `sys.databases.collation_name` reads NULL for
+all 23 user databases even as `sysadmin`, and `DATABASEPROPERTYEX` returns NULL when handed a column where
+it answers correctly for a literal. The reliable source is a query run while connected, which is what
+`CatalogQueries.Probe` already did for one database.
+
+**And the survey earned its keep on the first run**: three different collations on one instance, one of them
+a different language family entirely. A pair-at-a-time UI can never show that — you would have to compare
+the right two databases to discover it, which is exactly the thing you would be doing wrong. So the screen
+raises it as a warning rather than leaving it in a column to be noticed.
+
+Picking a database fills in the source or target connection and hands back to Connections; comparing stays a
+separate click. A survey that silently started a comparison would be a survey with a side effect.
+
+**One consequence about this repo rather than the tool.** This screen displays every database name on an
+instance, which is precisely the infrastructure topology the naming constraint in `CLAUDE.md` exists to keep
+out of these files. It is therefore the one screen never to paste output from or screenshot into the repo —
+not a mockup, not a test fixture, not a doc. The tests here assert *containment* (the fixture's own two
+databases are present, the system databases are not) and never the whole list, for the same reason.
 
 ### The whole-database scan is a screen, not a compare
 

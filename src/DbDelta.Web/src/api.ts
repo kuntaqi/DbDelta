@@ -208,6 +208,37 @@ export const profileApi = {
   },
 }
 
+export interface InstanceDatabase {
+  name: string
+  state: string
+  recoveryModel: string
+  dataBytes: number
+  logBytes: number
+  isReadOnly: boolean
+  accessible: boolean
+  collation: string | null
+  tables: number | null
+  views: number | null
+  routines: number | null
+  problem: string | null
+}
+
+export interface InstanceSurveyResponse {
+  server: string
+  environment: EnvironmentClass
+  readOnly: boolean
+  databases: InstanceDatabase[]
+  warning: string | null
+}
+
+export const instanceApi = {
+  survey: (connection: ConnectionRequest) =>
+    postJson<InstanceSurveyResponse>('/api/instance', connection),
+  // An empty list means every database; naming them describes only those.
+  describe: (connection: ConnectionRequest, databases: string[]) =>
+    postJson<InstanceSurveyResponse>('/api/instance/describe', { connection, databases }),
+}
+
 export const applyApi = {
   apply: (compareId: string, confirmation: string, allowDestructive: boolean) =>
     postJson<ApplyResponse>(`/api/compare/${compareId}/apply`, { confirmation, allowDestructive }),

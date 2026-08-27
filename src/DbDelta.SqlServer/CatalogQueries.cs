@@ -189,6 +189,56 @@ internal static class CatalogQueries
           AND o.object_id <> ro.object_id;
         """;
 
+    // Every user database on the instance, from one connection. sys.master_files carries the file sizes for
+    // all of them, so size costs nothing extra — and size in pages, hence the * 8192.
+    //
+    // database_id > 4 drops master, model, msdb and tempdb: none of them is something this tool would ever
+    // sync. source_database_id IS NULL drops snapshots, which are a view of another database rather than one
+    // of their own. HAS_DBACCESS answers without connecting, so a database that cannot be opened is still
+    // listed and still says so.
+    public const string Databases = """
+        SELECT
+            d.name                  AS [Name],
+            d.state_desc            AS [State],
+            d.recovery_model_desc   AS [RecoveryModel],
+            d.is_read_only          AS [IsReadOnly],
+            CONVERT(bit, ISNULL(HAS_DBACCESS(d.name), 0)) AS [Accessible],
+            ISNULL(SUM(CASE WHEN mf.type = 0 THEN CONVERT(bigint, mf.size) ELSE 0 END), 0) * 8192 AS [DataBytes],
+            ISNULL(SUM(CASE WHEN mf.type = 1 THEN CONVERT(bigint, mf.size) ELSE 0 END), 0) * 8192 AS [LogBytes]
+        FROM sys.databases d
+        LEFT JOIN sys.master_files mf ON mf.database_id = d.database_id
+        WHERE d.database_id > 4 AND d.source_database_id IS NULL
+        GROUP BY d.name, d.state_desc, d.recovery_model_desc, d.is_read_only, d.database_id
+        ORDER BY d.name;
+        """;
+
+    // The same list without sizes, for a login that can see sys.databases but not sys.master_files. Losing
+    // the sizes is worth far less than losing the list.
+    public const string DatabasesWithoutSizes = """
+        SELECT
+            d.name                  AS [Name],
+            d.state_desc            AS [State],
+            d.recovery_model_desc   AS [RecoveryModel],
+            d.is_read_only          AS [IsReadOnly],
+            CONVERT(bit, ISNULL(HAS_DBACCESS(d.name), 0)) AS [Accessible],
+            CONVERT(bigint, 0)      AS [DataBytes],
+            CONVERT(bigint, 0)      AS [LogBytes]
+        FROM sys.databases d
+        WHERE d.database_id > 4 AND d.source_database_id IS NULL
+        ORDER BY d.name;
+        """;
+
+    // Run while connected to the database in question. DATABASEPROPERTYEX answers correctly for DB_NAME()
+    // where it returns NULL for a column of sys.databases, which is the reason collation costs a connection.
+    public const string DatabaseDetail = """
+        SELECT
+            CONVERT(nvarchar(128), DATABASEPROPERTYEX(DB_NAME(), 'Collation')) AS [Collation],
+            (SELECT COUNT(*) FROM sys.tables WHERE is_ms_shipped = 0)          AS [Tables],
+            (SELECT COUNT(*) FROM sys.views WHERE is_ms_shipped = 0)           AS [Views],
+            (SELECT COUNT(*) FROM sys.objects
+              WHERE type IN ('P', 'FN', 'IF', 'TF') AND is_ms_shipped = 0)     AS [Routines];
+        """;
+
     // Alias and CLR types together, told apart by is_assembly_type. A CLR type is read so it can be
     // reported rather than emitted: syncing one means syncing the assembly behind it.
     //
