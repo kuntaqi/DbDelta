@@ -165,6 +165,10 @@ public sealed class LocalDbFixture : IAsyncLifetime
     private const string SourceScript = """
         CREATE SCHEMA sales;
         GO
+        CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL;
+        GO
+        CREATE TYPE dbo.IdList AS TABLE (Id INT NOT NULL, Note NVARCHAR(40) NULL);
+        GO
         CREATE TABLE dbo.Category (
             CategoryId  INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Category PRIMARY KEY,
             Name        NVARCHAR(50) NOT NULL CONSTRAINT UQ_Category_Name UNIQUE
@@ -188,6 +192,7 @@ public sealed class LocalDbFixture : IAsyncLifetime
             ContactId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Contact PRIMARY KEY,
             CompanyId   INT NOT NULL CONSTRAINT FK_Contact_Company REFERENCES dbo.Company(CompanyId),
             Email       NVARCHAR(320) NOT NULL,
+            Phone       dbo.PhoneNumber NULL,
             CONSTRAINT CK_Contact_Email CHECK (Email LIKE '%@%')
         );
         GO

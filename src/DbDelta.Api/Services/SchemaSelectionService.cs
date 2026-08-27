@@ -1,4 +1,5 @@
 using DbDelta.Api.Contracts;
+using DbDelta.Core.Model;
 using DbDelta.Core.Planning;
 
 namespace DbDelta.Api.Services;
@@ -101,7 +102,7 @@ public static class SchemaSelectionService
             session.Diff.Differing.Count(),
             session.DataSelections.Count,
             closure.Required.Select(r => Required(session, r)).ToList(),
-            [.. closure.Unsatisfiable, .. closure.Blocked.Select(Conflict)],
+            [.. closure.Unsatisfiable, .. closure.Blocked.Select(Conflict), .. Unsupported(session)],
             session.IsWholeDatabase ? "Database" : "Picked",
             Exclusions(session));
     }
@@ -121,6 +122,43 @@ public static class SchemaSelectionService
             session.Diff,
             session.SchemaPlan().Units.Select(u => u.Id.Object).Distinct(),
             session.Exclusions.Select(e => e.Unit.Object).ToHashSet());
+    }
+
+    // Two changes the emitter will not make, and both would otherwise be silent: a type that differs
+    // produces no statement because T-SQL has no ALTER TYPE, and a CLR type produces none because the
+    // assembly behind it is not something this tool can carry. A plan that quietly does less than it
+    // shows is the failure being avoided here.
+    public static IReadOnlyList<string> Unsupported(CompareSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var messages = new List<string>();
+
+        foreach (var unit in session.SchemaPlan().Units
+            .Where(u => u.Id.Object.Type == ObjectType.UserDefinedType))
+        {
+            var name = unit.Id.Object.QualifiedName;
+
+            if (unit.Id.Kind == ChangeUnitKind.AlterObject)
+            {
+                messages.Add(
+                    $"{name} differs, and SQL Server has no ALTER TYPE. Changing it means dropping every "
+                    + "column that uses it, recreating the type and putting the columns back — so nothing "
+                    + "is emitted for it and the target keeps the type it has.");
+                continue;
+            }
+
+            var type = session.Source.UserDefinedTypes.FirstOrDefault(t => t.Identity == unit.Id.Object);
+
+            if (unit.Id.Kind == ChangeUnitKind.CreateObject && type?.Kind == UserDefinedTypeKind.Clr)
+            {
+                messages.Add(
+                    $"{name} is a CLR type. Creating it needs the assembly behind it, which this tool does "
+                    + "not read or install, so nothing is emitted for it.");
+            }
+        }
+
+        return messages;
     }
 
     public static IReadOnlyList<ExcludedObjectDto> Exclusions(CompareSession session)

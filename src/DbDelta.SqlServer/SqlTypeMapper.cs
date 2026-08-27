@@ -36,9 +36,23 @@ public static class SqlTypeMapper
 
     // sys.columns.max_length is a byte count, and -1 means MAX. Reporting the raw value would make
     // NVARCHAR(20) look like NVARCHAR(40) and produce a phantom diff against a correct target.
-    public static DataTypeSpec Map(string typeName, short maxLength, byte precision, byte scale)
+    public static DataTypeSpec Map(
+        string typeName,
+        short maxLength,
+        byte precision,
+        byte scale,
+        bool isUserDefined = false,
+        string? schema = null)
     {
         ArgumentNullException.ThrowIfNull(typeName);
+
+        // A reference to an alias type carries no size: the size is part of the type's own definition.
+        // Reading sys.columns.max_length for one and writing it back would produce dbo.PhoneNumber(20),
+        // which is not valid T-SQL — the column simply says what type it is.
+        if (isUserDefined)
+        {
+            return new DataTypeSpec(typeName, IsUserDefined: true, Schema: schema);
+        }
 
         var canonical = Canonical(typeName);
 

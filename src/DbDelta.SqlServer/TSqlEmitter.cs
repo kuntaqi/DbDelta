@@ -36,9 +36,18 @@ public sealed class TSqlEmitter : IScriptEmitter
             .Select(c => c.Identity)
             .ToHashSet();
 
+        // A type created by this script is not visible to a statement compiled in the same batch: SQL
+        // Server resolves data types when it compiles, not when it runs. Whatever uses one has to be its
+        // own batch, which is the same reason CREATE VIEW is wrapped further down.
+        var newTypes = changes
+            .Where(c => c.Kind == DiffKind.SourceOnly && c.Identity.Type == ObjectType.UserDefinedType)
+            .Select(c => c.Identity)
+            .ToHashSet();
+
         EmitSchemas(steps, changes, sourceTables);
         EmitDrops(steps, changes, target);
-        EmitTableCreations(steps, changes, sourceTables);
+        EmitTypes(steps, changes, source, target);
+        EmitTableCreations(steps, changes, sourceTables, newTypes);
         EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred);
         EmitProgrammables(steps, changes, source);
 
@@ -70,6 +79,67 @@ public sealed class TSqlEmitter : IScriptEmitter
                 $"ensure schema {schema}",
                 TSqlWriter.CreateSchemaIfMissing(schema)));
         }
+    }
+
+    // Creates and drops only. There is no ALTER TYPE in T-SQL, so a type that differs is left alone and
+    // said so about elsewhere — emitting a DROP and CREATE would fail the moment a column used it, and
+    // succeeding would mean this tool had silently dropped and rebuilt those columns.
+    private static void EmitTypes(
+        List<ScriptStep> steps,
+        List<ObjectDiff> changes,
+        DatabaseSchema source,
+        DatabaseSchema target)
+    {
+        foreach (var change in changes.Where(c => c.Identity.Type == ObjectType.UserDefinedType))
+        {
+            if (change.Kind == DiffKind.TargetOnly)
+            {
+                steps.Add(new ScriptStep(
+                    ScriptPhase.DropTypes,
+                    $"drop type {change.Identity.QualifiedName}",
+                    $"DROP TYPE {SqlServerQuoter.Instance.Qualify(change.Identity)};",
+                    Destructive: true));
+
+                continue;
+            }
+
+            if (change.Kind != DiffKind.SourceOnly)
+            {
+                continue;
+            }
+
+            var type = source.UserDefinedTypes.FirstOrDefault(t => t.Identity == change.Identity);
+
+            // A CLR type is a name for something living in an assembly this tool never reads and could
+            // not install. Emitting CREATE TYPE for one would produce a statement that cannot work.
+            if (type is null || type.Kind == UserDefinedTypeKind.Clr)
+            {
+                continue;
+            }
+
+            steps.Add(new ScriptStep(
+                ScriptPhase.CreateTypes,
+                $"create type {change.Identity.QualifiedName}",
+                CreateType(type)));
+        }
+    }
+
+    private static string CreateType(UserDefinedTypeDefinition type)
+    {
+        var name = SqlServerQuoter.Instance.Qualify(type.Identity);
+
+        if (type.Kind == UserDefinedTypeKind.Table)
+        {
+            var columns = type.Columns
+                .OrderBy(c => c.OrdinalPosition)
+                .Select(c => "    " + TSqlWriter.ColumnDefinition(c, includeDefault: false));
+
+            return $"CREATE TYPE {name} AS TABLE (\n{string.Join(",\n", columns)}\n);";
+        }
+
+        var nullability = type.IsNullable ? "NULL" : "NOT NULL";
+
+        return $"CREATE TYPE {name} FROM {SqlTypeText.Declare(type.BaseType!)} {nullability};";
     }
 
     private static void EmitDrops(
@@ -137,7 +207,8 @@ public sealed class TSqlEmitter : IScriptEmitter
     private static void EmitTableCreations(
         List<ScriptStep> steps,
         List<ObjectDiff> changes,
-        Dictionary<ObjectIdentity, TableDefinition> sourceTables)
+        Dictionary<ObjectIdentity, TableDefinition> sourceTables,
+        HashSet<ObjectIdentity> newTypes)
     {
         foreach (var change in changes.Where(c => c.Kind == DiffKind.SourceOnly && c.Identity.Type == ObjectType.Table))
         {
@@ -149,7 +220,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.CreateTables,
                 $"create table {table.Identity.QualifiedName}",
-                TSqlWriter.CreateTable(table)));
+                Batch(TSqlWriter.CreateTable(table), UsesNewType(table, newTypes))));
 
             if (table.PrimaryKey is not null)
             {
@@ -499,6 +570,13 @@ public sealed class TSqlEmitter : IScriptEmitter
                 TSqlWriter.ExecuteAsBatch(TSqlWriter.CreateOrAlter(definition))));
         }
     }
+
+    // Does any column name a type this script is creating? If so the statement cannot be compiled with
+    // the rest of the batch, because the type does not exist yet at compile time.
+    private static bool UsesNewType(TableDefinition table, HashSet<ObjectIdentity> newTypes) =>
+        table.Columns.Any(c => c.DataType.IsUserDefined
+            && newTypes.Contains(new ObjectIdentity(
+                ObjectType.UserDefinedType, c.DataType.Schema ?? table.Identity.Schema, c.DataType.Name)));
 
     private static string Batch(string sql, bool defer) =>
         defer ? TSqlWriter.ExecuteAsBatch(sql) : sql;

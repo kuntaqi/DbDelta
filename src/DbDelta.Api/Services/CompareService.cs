@@ -165,7 +165,7 @@ public sealed class CompareService
             combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql, s.Destructive)).ToList(),
             rows.DeleteWarnings,
             closure.Required.Select(r => SchemaSelectionService.Required(session, r)).ToList(),
-            [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. rows.ClosureWarnings],
+            [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. SchemaSelectionService.Unsupported(session), .. rows.ClosureWarnings],
             rows.RequiredRows
                 .Select(r => new RequiredRowsDto(
                     r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))

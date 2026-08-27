@@ -73,15 +73,52 @@ contract change has to be mirrored by hand in two places.
 ### Neutral schema model
 
 `Table`, `Column`, `PrimaryKey`, `UniqueConstraint`, `Index`, `ForeignKey`, `CheckConstraint`,
-`View`, `Routine` (proc/function), `Trigger`, `Sequence`. Each carries a `ProviderExtras` bag for
-engine-only attributes (filegroup, fillfactor, collation…) so the reader loses nothing even though the
-comparer ignores what it doesn't understand.
+`View`, `Routine` (proc/function), `Trigger`, `Sequence`, `UserDefinedType`. Each carries a `ProviderExtras`
+bag for engine-only attributes (filegroup, fillfactor, collation…) so the reader loses nothing even though
+the comparer ignores what it doesn't understand.
 
-Two entries in that first list are not what they looked like. A default is a property of its column
+One entry in that list is not what it looks like: a default is a property of its column
 (`ColumnDefinition.DefaultConstraintName` plus the expression), not a top-level object, so it is compared as
-part of the column rather than on its own. `UserDefinedType` exists in the `ObjectType` enum and nowhere
-else — the reader does not read UDTs and `DatabaseSchema` has no collection for them, so a database using
-them compares as if they were not there. That is a gap, not a decision.
+part of the column rather than on its own.
+
+### User-defined types, and the three different things that name covers
+
+`UserDefinedType` was in the `ObjectType` enum and nowhere else for a long time, which was worse than being
+absent. The *name* of a type still reached the emitter through the columns declared with it, so a script
+could name a type it never created — and, because `sys.columns.max_length` was read for such a column, name
+it as `PhoneNumber(20)`, which is not valid T-SQL for a type reference at all.
+
+Three things share the name, and only two are made of SQL:
+
+| Kind | What it is | What the tool does |
+|---|---|---|
+| `Alias` | `CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL` | read, compared, created, dropped |
+| `Table` | `CREATE TYPE dbo.IdList AS TABLE (…)`, for table-valued parameters | read, compared, created, dropped |
+| `Clr` | a type backed by an assembly | read so it can be *reported*, never emitted |
+
+Four decisions fell out of building it:
+
+- **A reference to a type carries no size.** The size lives in the type's definition; the column just says
+  what type it is. So `DataTypeSpec` gained `IsUserDefined` and a schema, and renders `dbo.PhoneNumber`
+  rather than borrowing the length the catalog reports for the column.
+- **A type is a prerequisite like a foreign key's parent.** Ticking `dbo.Contact` pulls in
+  `dbo.PhoneNumber` when the target lacks it, for the same reason and through the same closure.
+- **A table using a type this script creates has to be its own batch.** SQL Server resolves data types when
+  it *compiles*, not when it runs, so a `CREATE TABLE` sitting in the same batch as the `CREATE TYPE` it
+  depends on fails with "Cannot find data type". This is the same constraint that already forces
+  `CREATE VIEW` into `EXEC sp_executesql`, arriving from the other direction — there it is the statement
+  that must start a batch, here it is the statement that must not share one.
+- **A type that differs gets no statement, and says so.** T-SQL has no `ALTER TYPE`. Changing one means
+  dropping every column that uses it, recreating the type, and putting the columns back — not something to
+  do on someone's behalf. So the difference is reported in full and nothing is emitted, which is reported
+  too: a plan that quietly does less than it displays is the failure this whole item was about.
+
+A CLR type is reported the same way for a different reason: creating it needs the assembly behind it, and
+this tool neither reads nor installs one.
+
+One limit, stated rather than discovered later: a routine taking a table-valued parameter does not pull the
+table type in through closure. `sys.sql_expression_dependencies` records what a *body* references, and a
+parameter's type is not a body reference, so nothing sees the link.
 
 ### Data compare — how it scales
 
@@ -169,6 +206,7 @@ schema half of the check runs. That is the API-only path; the plan screen fetche
 | A table being altered | only the foreign keys being *added* | the rest were satisfied when the target was built |
 | A view or routine | everything its body reads — tables included | `CREATE OR ALTER` compiles the body, so a missing table fails the statement, not just the order |
 | A trigger | the table it sits on | a trigger cannot be created before its table |
+| Any table being written | the user-defined type of each column | a column cannot be declared with a type the target does not have |
 
 Two decisions inside that are worth stating, because both could reasonably have gone the other way.
 
@@ -705,13 +743,16 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
 | Saved connection profiles | Shape settled: `%APPDATA%\DbDelta\profiles.json`, no password | Nothing reads or writes the file |
-| `UserDefinedType` | A member of the `ObjectType` enum | No reader, no model type, no collection on `DatabaseSchema` — UDTs compare as absent |
 | Direction filter on the FK map | `Walk` already takes a direction, called twice | No control; both directions are always drawn |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
-Everything with teeth is now built: both closures, the drift check, and the staged path. What is
-left cannot make the tool write the wrong thing or refuse work it could do — it can only make the tool more
-tiring to use, or leave a database shape it does not understand. The nearest to consequential is
-`UserDefinedType`, which is silent rather than merely absent: a database using UDTs compares as though they
-were not there.
+Nothing left here is silent. Both closures, the drift check, the staged path, the filter and user-defined
+types are built, and each of those was on this list because it could make the tool do the wrong thing
+quietly. What remains announces itself: a connection retyped every session, a diagram without a direction
+control, types that a second engine has never met, and a contract mirrored by hand. All of them are things a
+person notices immediately and none of them changes what gets written to a database.
+
+The honest caveat on that: it is a claim about the gaps *known* to be gaps. The two bugs found while building
+the last few items — a script silently emitting only its first 500 rows, and a staging table's cleanup
+counted as data loss — were on nobody's list until something was built next to them.

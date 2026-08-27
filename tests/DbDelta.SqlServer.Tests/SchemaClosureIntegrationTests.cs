@@ -33,8 +33,10 @@ public sealed class SchemaClosureIntegrationTests
             // dbo.Contact references dbo.Company, which references dbo.Category. Only the first is ticked.
             var closure = SchemaClosure.Expand(source, target, diff, [Contact]);
 
+            // dbo.PhoneNumber comes along too: dbo.Contact.Phone is declared with it, and a column's type
+            // is a prerequisite in the same way a foreign key's parent is.
             Assert.Equal(
-                ["dbo.Company", "dbo.Category"],
+                ["dbo.PhoneNumber", "dbo.Company", "dbo.Category"],
                 closure.Required.Select(r => r.Identity.QualifiedName));
             Assert.Empty(closure.Unsatisfiable);
 

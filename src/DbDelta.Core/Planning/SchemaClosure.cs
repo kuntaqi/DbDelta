@@ -134,6 +134,24 @@ public static class SchemaClosure
             yield break;
         }
 
+        // A column can name a type as well as a table. An alias type is not a built-in, so a column using
+        // one cannot be written before the type exists — the same shape of prerequisite as a foreign key,
+        // one level down.
+        var columns = change.Kind == DiffKind.SourceOnly
+            ? table.Columns
+            : table.Columns.Where(c => IsColumnBeingAdded(change, c.Name)).ToList();
+
+        foreach (var column in columns.Where(c => c.DataType.IsUserDefined))
+        {
+            var type = new ObjectIdentity(
+                ObjectType.UserDefinedType, column.DataType.Schema ?? identity.Schema, column.DataType.Name);
+
+            if (!onTarget.Contains(type))
+            {
+                yield return (type, $"{identity.Name}.{column.Name} is of that type");
+            }
+        }
+
         // A created table brings every one of its keys; an altered one brings only the keys being added,
         // since the rest were satisfied when the target was built.
         var keys = change.Kind == DiffKind.SourceOnly
@@ -203,6 +221,12 @@ public static class SchemaClosure
         }
     }
 
+    private static bool IsColumnBeingAdded(ObjectDiff change, string name) =>
+        change.DifferingChildren.Any(c =>
+            c.Identity.Type == ObjectType.Column
+            && c.Kind == DiffKind.SourceOnly
+            && string.Equals(c.Identity.Name, name, StringComparison.OrdinalIgnoreCase));
+
     private static bool IsBeingAdded(ObjectDiff change, string name) =>
         change.DifferingChildren.Any(c =>
             c.Identity.Type == ObjectType.ForeignKey
@@ -217,7 +241,8 @@ public static class SchemaClosure
             .Concat(target.Views.Select(v => v.Identity))
             .Concat(target.Routines.Select(r => r.Identity))
             .Concat(target.Triggers.Select(t => t.Identity))
-            .Concat(target.Sequences.Select(s => s.Identity)))
+            .Concat(target.Sequences.Select(s => s.Identity))
+            .Concat(target.UserDefinedTypes.Select(t => t.Identity)))
         {
             present.Add(identity);
         }

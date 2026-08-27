@@ -127,3 +127,19 @@ CREATE TABLE dbo.Metric (
     At       DATETIME2 NULL
 );
 GO
+
+-- A user-defined type, and a column declared with it. Ticking dbo.Person alone has to pull the type in:
+-- a column cannot be declared with a type the target does not have. The target gets neither, so both are
+-- creates.
+USE DbDelta_Demo_Src;
+GO
+CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL;
+GO
+CREATE TABLE dbo.Person (
+    PersonId INT NOT NULL CONSTRAINT PK_Person PRIMARY KEY,
+    FullName NVARCHAR(120) NOT NULL,
+    Phone    dbo.PhoneNumber NULL
+);
+GO
+INSERT INTO dbo.Person (PersonId, FullName, Phone) VALUES (1, N'Ada Lovelace', N'+61 2 5550 1234');
+GO

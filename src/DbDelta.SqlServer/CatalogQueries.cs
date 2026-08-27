@@ -18,6 +18,8 @@ internal static class CatalogQueries
             c.name              AS [ColumnName],
             c.column_id         AS [OrdinalPosition],
             ty.name             AS [TypeName],
+            ty.is_user_defined  AS [IsUserDefined],
+            tys.name            AS [TypeSchemaName],
             c.max_length        AS [MaxLength],
             c.precision         AS [Precision],
             c.scale             AS [Scale],
@@ -32,6 +34,7 @@ internal static class CatalogQueries
         JOIN sys.schemas s          ON s.schema_id = t.schema_id
         JOIN sys.columns c          ON c.object_id = t.object_id
         JOIN sys.types ty           ON ty.user_type_id = c.user_type_id
+        JOIN sys.schemas tys        ON tys.schema_id = ty.schema_id
         LEFT JOIN sys.identity_columns ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
         LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
         LEFT JOIN sys.default_constraints dc
@@ -184,6 +187,50 @@ internal static class CatalogQueries
           AND o.type IN ('V', 'P', 'FN', 'IF', 'TF')
           AND ro.type IN ('U', 'V', 'P', 'FN', 'IF', 'TF')
           AND o.object_id <> ro.object_id;
+        """;
+
+    // Alias and CLR types together, told apart by is_assembly_type. A CLR type is read so it can be
+    // reported rather than emitted: syncing one means syncing the assembly behind it.
+    //
+    // system_type_id is joined back to sys.types to name the base type, and the join needs
+    // user_type_id = system_type_id to land on the built-in row rather than another alias of it.
+    public const string ScalarTypes = """
+        SELECT
+            s.name              AS [SchemaName],
+            t.name              AS [TypeName],
+            bt.name             AS [BaseTypeName],
+            t.max_length        AS [MaxLength],
+            t.precision         AS [Precision],
+            t.scale             AS [Scale],
+            t.is_nullable       AS [IsNullable],
+            t.is_assembly_type  AS [IsAssemblyType]
+        FROM sys.types t
+        JOIN sys.schemas s      ON s.schema_id = t.schema_id
+        LEFT JOIN sys.types bt  ON bt.user_type_id = t.system_type_id AND bt.is_user_defined = 0
+        WHERE t.is_user_defined = 1 AND t.is_table_type = 0
+        ORDER BY s.name, t.name;
+        """;
+
+    public const string TableTypes = """
+        SELECT
+            s.name              AS [SchemaName],
+            tt.name             AS [TypeName],
+            c.name              AS [ColumnName],
+            c.column_id         AS [OrdinalPosition],
+            ty.name             AS [ColumnTypeName],
+            c.max_length        AS [MaxLength],
+            c.precision         AS [Precision],
+            c.scale             AS [Scale],
+            c.is_nullable       AS [IsNullable],
+            ty.is_user_defined  AS [IsUserDefined],
+            tys.name            AS [TypeSchemaName]
+        FROM sys.table_types tt
+        JOIN sys.schemas s      ON s.schema_id = tt.schema_id
+        JOIN sys.columns c      ON c.object_id = tt.type_table_object_id
+        JOIN sys.types ty       ON ty.user_type_id = c.user_type_id
+        JOIN sys.schemas tys    ON tys.schema_id = ty.schema_id
+        WHERE tt.is_user_defined = 1
+        ORDER BY s.name, tt.name, c.column_id;
         """;
 
     public const string Sequences = """

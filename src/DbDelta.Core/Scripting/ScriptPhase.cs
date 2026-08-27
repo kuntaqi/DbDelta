@@ -8,6 +8,10 @@ public enum ScriptPhase
     DropForeignKeys,
     DropProgrammables,
     DropTables,
+    // A type cannot be dropped while a column still uses it, and cannot be used before it exists, so it
+    // brackets the tables on both sides.
+    DropTypes,
+    CreateTypes,
     CreateTables,
     AlterColumns,
     Keys,

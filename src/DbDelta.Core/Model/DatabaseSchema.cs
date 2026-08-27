@@ -20,13 +20,16 @@ public sealed class DatabaseSchema
 
     public IReadOnlyList<SequenceDefinition> Sequences { get; init; } = [];
 
+    public IReadOnlyList<UserDefinedTypeDefinition> UserDefinedTypes { get; init; } = [];
+
     public bool IsEmpty =>
         Tables.Count == 0
         && Views.Count == 0
         && Routines.Count == 0
         && Triggers.Count == 0
-        && Sequences.Count == 0;
+        && Sequences.Count == 0
+        && UserDefinedTypes.Count == 0;
 
     public int ObjectCount =>
-        Tables.Count + Views.Count + Routines.Count + Triggers.Count + Sequences.Count;
+        Tables.Count + Views.Count + Routines.Count + Triggers.Count + Sequences.Count + UserDefinedTypes.Count;
 }

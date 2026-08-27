@@ -20,6 +20,7 @@ public sealed class SchemaComparer
         objects.AddRange(CompareRoutines(source.Routines, target.Routines));
         objects.AddRange(CompareTriggers(source.Triggers, target.Triggers));
         objects.AddRange(CompareSequences(source.Sequences, target.Sequences));
+        objects.AddRange(CompareUserDefinedTypes(source.UserDefinedTypes, target.UserDefinedTypes));
 
         return new SchemaDiff
         {
@@ -311,6 +312,44 @@ public sealed class SchemaComparer
             yield return Result(identity, properties);
         }
     }
+
+    // A type has no ALTER in T-SQL, so a difference here does not mean "change it" — it means "drop every
+    // column that uses it, recreate the type, put them back". That is not a thing to do on someone's
+    // behalf, so the difference is reported in full and the emitter refuses to act on it.
+    private IEnumerable<ObjectDiff> CompareUserDefinedTypes(
+        IReadOnlyList<UserDefinedTypeDefinition> source,
+        IReadOnlyList<UserDefinedTypeDefinition> target)
+    {
+        foreach (var (src, tgt, identity) in Pair(source, target, t => t.Identity))
+        {
+            if (!_options.ShouldCompareSchema(identity.Schema))
+            {
+                continue;
+            }
+
+            if (src is null || tgt is null)
+            {
+                yield return Presence(identity, src, tgt);
+                continue;
+            }
+
+            var properties = new List<PropertyDiff>();
+            Add(properties, "Kind", src.Kind.ToString(), tgt.Kind.ToString());
+            Add(properties, "BaseType", src.BaseType?.ToString(), tgt.BaseType?.ToString());
+            Add(properties, "Nullable", src.IsNullable, tgt.IsNullable);
+
+            // A table type's shape is its columns, compared as one string rather than as children:
+            // there is no statement that could alter one of them on its own.
+            Add(properties, "Columns", Shape(src), Shape(tgt));
+
+            yield return Result(identity, properties);
+        }
+    }
+
+    private static string Shape(UserDefinedTypeDefinition type) =>
+        string.Join(", ", type.Columns
+            .OrderBy(c => c.OrdinalPosition)
+            .Select(c => $"{c.Name} {c.DataType} {(c.IsNullable ? "NULL" : "NOT NULL")}"));
 
     private IEnumerable<ObjectDiff> CompareSequences(
         IReadOnlyList<SequenceDefinition> source,

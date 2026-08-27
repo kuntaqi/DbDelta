@@ -13,7 +13,7 @@ internal static class TSqlWriter
             return $"{Q.Quote(column.Name)} AS {column.ComputedExpression}";
         }
 
-        var text = $"{Q.Quote(column.Name)} {column.DataType}";
+        var text = $"{Q.Quote(column.Name)} {SqlTypeText.Declare(column.DataType)}";
 
         if (column.Identity is not null)
         {

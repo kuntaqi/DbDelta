@@ -151,8 +151,7 @@ internal static class TSqlStagedWriter
             return quoted;
         }
 
-        // DataTypeSpec renders its own declaration, which is exactly the shape CONVERT wants.
-        var declaration = type.ToString();
+        var declaration = SqlTypeText.Declare(type);
 
         // Text out of a binary column was written as hex, so it has to come back the same way rather
         // than being read as the characters "0x…".

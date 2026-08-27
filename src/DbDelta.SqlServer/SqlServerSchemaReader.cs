@@ -61,7 +61,8 @@ public sealed class SqlServerSchemaReader : ISchemaReader
                 DependsOn = DependenciesOf(dependencies, r.Identity)
             }).ToList(),
             Triggers = await ReadTriggersAsync(connection, cancellationToken).ConfigureAwait(false),
-            Sequences = await ReadSequencesAsync(connection, cancellationToken).ConfigureAwait(false)
+            Sequences = await ReadSequencesAsync(connection, cancellationToken).ConfigureAwait(false),
+            UserDefinedTypes = await ReadUserDefinedTypesAsync(connection, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -85,7 +86,9 @@ public sealed class SqlServerSchemaReader : ISchemaReader
                     Str(reader, "TypeName"),
                     reader.GetInt16(reader.GetOrdinal("MaxLength")),
                     reader.GetByte(reader.GetOrdinal("Precision")),
-                    reader.GetByte(reader.GetOrdinal("Scale"))),
+                    reader.GetByte(reader.GetOrdinal("Scale")),
+                    reader.GetBoolean(reader.GetOrdinal("IsUserDefined")),
+                    Str(reader, "TypeSchemaName")),
                 IsNullable = reader.GetBoolean(reader.GetOrdinal("IsNullable")),
                 Collation = NullableStr(reader, "CollationName"),
                 Identity = ReadIdentity(reader),
@@ -342,6 +345,81 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         }
 
         return triggers;
+    }
+
+    // Two queries because the catalog keeps them apart: sys.types holds alias and CLR types, sys.table_types
+    // holds table types and their columns live in sys.columns like any other table's.
+    private static async Task<List<UserDefinedTypeDefinition>> ReadUserDefinedTypesAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var types = new List<UserDefinedTypeDefinition>();
+
+        await using (var reader = await ExecuteAsync(connection, CatalogQueries.ScalarTypes, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var assembly = reader.GetBoolean(reader.GetOrdinal("IsAssemblyType"));
+                var baseType = NullableStr(reader, "BaseTypeName");
+
+                types.Add(new UserDefinedTypeDefinition
+                {
+                    Identity = new ObjectIdentity(
+                        ObjectType.UserDefinedType, Str(reader, "SchemaName"), Str(reader, "TypeName")),
+                    Kind = assembly ? UserDefinedTypeKind.Clr : UserDefinedTypeKind.Alias,
+                    BaseType = assembly || baseType is null
+                        ? null
+                        : SqlTypeMapper.Map(
+                            baseType,
+                            reader.GetInt16(reader.GetOrdinal("MaxLength")),
+                            reader.GetByte(reader.GetOrdinal("Precision")),
+                            reader.GetByte(reader.GetOrdinal("Scale"))),
+                    IsNullable = reader.GetBoolean(reader.GetOrdinal("IsNullable"))
+                });
+            }
+        }
+
+        var tableTypes = new Dictionary<ObjectIdentity, List<ColumnDefinition>>();
+
+        await using (var reader = await ExecuteAsync(connection, CatalogQueries.TableTypes, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var identity = new ObjectIdentity(
+                    ObjectType.UserDefinedType, Str(reader, "SchemaName"), Str(reader, "TypeName"));
+
+                if (!tableTypes.TryGetValue(identity, out var columns))
+                {
+                    columns = [];
+                    tableTypes[identity] = columns;
+                }
+
+                columns.Add(new ColumnDefinition
+                {
+                    Name = Str(reader, "ColumnName"),
+                    OrdinalPosition = reader.GetInt32(reader.GetOrdinal("OrdinalPosition")),
+                    DataType = SqlTypeMapper.Map(
+                        Str(reader, "ColumnTypeName"),
+                        reader.GetInt16(reader.GetOrdinal("MaxLength")),
+                        reader.GetByte(reader.GetOrdinal("Precision")),
+                        reader.GetByte(reader.GetOrdinal("Scale")),
+                        reader.GetBoolean(reader.GetOrdinal("IsUserDefined")),
+                        Str(reader, "TypeSchemaName")),
+                    IsNullable = reader.GetBoolean(reader.GetOrdinal("IsNullable"))
+                });
+            }
+        }
+
+        types.AddRange(tableTypes.Select(pair => new UserDefinedTypeDefinition
+        {
+            Identity = pair.Key,
+            Kind = UserDefinedTypeKind.Table,
+            Columns = pair.Value.OrderBy(c => c.OrdinalPosition).ToList()
+        }));
+
+        return types.OrderBy(t => t.Identity.QualifiedName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static async Task<List<SequenceDefinition>> ReadSequencesAsync(
