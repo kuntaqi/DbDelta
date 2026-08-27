@@ -229,6 +229,9 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         INSERT INTO dbo.Digest (DigestId, A, B, Amount) VALUES (1, NULL, N'x', -25), (2, N'x', NULL, 25), (3, N'', N'x', NULL);
         GO
+        -- A leading comment on purpose. Every definition written by hand for a test used to start with
+        -- the word CREATE, which is why CreateOrAlter's failure to look past a comment went unnoticed: the
+        -- object emitted as a plain CREATE and failed on the second apply.
         CREATE VIEW sales.vActiveSegments AS
             SELECT CompanyId, Segment FROM sales.vCompanySegment WHERE Segment IS NOT NULL;
         GO

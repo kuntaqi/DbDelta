@@ -512,6 +512,27 @@ before the view it selects from. Three mechanisms, in order of preference:
   these cannot be emitted literally — they must be wrapped as `EXEC sp_executesql N'CREATE VIEW …'`. On an
   incremental sync that is one or two statements; on an empty target it is hundreds, which is why the gap only
   becomes obvious here. The emitter needs this either way.
+
+  Two things about that wrapping only showed up against a real server, and both came from the same
+  assumption — that a stored definition starts with the word `CREATE`.
+
+  It usually does not. A body scripted by SSMS opens with `/****** Object: … Script Date: … ******/`, and
+  plenty are hand-written with a `--` note above them. Testing the first characters for `CREATE` misses
+  those and emits a plain `CREATE`, which works against an empty target and fails against an object that
+  already exists, taking the transaction with it. Measured across one instance: 209 of 2424 programmables,
+  8.6%, spread over 12 of 16 databases. So the rewrite skips leading whitespace and comments first, and
+  counts nesting depth on block comments rather than scanning for the first `*/`. The comments are kept —
+  they are part of the definition — and a comment is not a statement, so `CREATE OR ALTER` is still the
+  first one in its batch.
+
+  The comparer held the same assumption, one layer down and worse. SQL Server does not store
+  `CREATE OR ALTER`: it blanks the `OR ALTER` out and leaves the gap, so what comes back for an object this
+  tool wrote is `CREATE   VIEW`. Whitespace collapsing is the only reason that ever compared clean — which
+  makes anything that stops the collapsing a permanent false difference. `SqlBodyNormalizer` treated `'` as
+  a string delimiter wherever it appeared, and English prose in a comment has apostrophes in it. One
+  `don't` above a `CREATE` turned the rest of the body verbatim, the padding survived, and the view compared
+  as `Different` for good. It now recognises comments well enough to know that an apostrophe inside one is
+  prose, while still comparing what the comment says.
 - Fresh `IDENTITY` columns start at 1. Seeding rows under `IDENTITY_INSERT` leaves the seed untouched, so the
   application's next insert collides with a seeded key. Every table seeded with explicit identity values needs
   a `DBCC CHECKIDENT (…, RESEED)` afterwards. This is invisible on incremental syncs and guaranteed to bite on

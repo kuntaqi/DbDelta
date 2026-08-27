@@ -8,6 +8,13 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The T-SQL writers stay internal: they are how this provider builds statements, not an API anyone
+         else should call. But CreateOrAlter was wrong for months in a way no end-to-end test could show,
+         so the string rewrites are worth testing directly rather than only through an emitted script. -->
+    <InternalsVisibleTo Include="DbDelta.SqlServer.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
