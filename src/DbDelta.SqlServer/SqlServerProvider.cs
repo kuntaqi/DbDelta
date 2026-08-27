@@ -25,6 +25,9 @@ public sealed class SqlServerProvider : IDatabaseProvider
     public IRowDetailReader CreateRowDetailReader(string connectionString) =>
         new SqlServerRowDetailReader(connectionString);
 
+    public IRowByValueReader CreateRowByValueReader(string connectionString) =>
+        new SqlServerRowByValueReader(connectionString);
+
     public IDataScriptEmitter CreateDataScriptEmitter() => new TSqlDataEmitter();
 
     public ITableFingerprintReader CreateFingerprintReader(string connectionString) =>

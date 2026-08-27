@@ -1,4 +1,3 @@
-using System.Globalization;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
 using Microsoft.Data.SqlClient;
@@ -69,7 +68,7 @@ public sealed class SqlServerRowDetailReader : IRowDetailReader
             for (var i = 0; i < columns.Count; i++)
             {
                 var ordinal = i + 1;
-                values[columns[i]] = reader.IsDBNull(ordinal) ? null : Text(reader.GetValue(ordinal));
+                values[columns[i]] = reader.IsDBNull(ordinal) ? null : SqlValueText.Of(reader.GetValue(ordinal));
             }
 
             rows.Add(new RowValues(reader.GetString(0), values));
@@ -77,21 +76,4 @@ public sealed class SqlServerRowDetailReader : IRowDetailReader
 
         return rows;
     }
-
-    // These values feed both the grid and the generated script, so the text has to round-trip. The
-    // default ToString for a DateTime is culture-shaped and for a double drops digits, either of which
-    // would write different data than the source holds.
-    private static string Text(object value) => value switch
-    {
-        DateTime date => date.ToString("yyyy-MM-ddTHH:mm:ss.fffffff", CultureInfo.InvariantCulture),
-        DateTimeOffset offset => offset.ToString("yyyy-MM-ddTHH:mm:ss.fffffffzzz", CultureInfo.InvariantCulture),
-        TimeSpan time => time.ToString("c", CultureInfo.InvariantCulture),
-        byte[] bytes => "0x" + Convert.ToHexString(bytes),
-        bool flag => flag ? "1" : "0",
-        double number => number.ToString("R", CultureInfo.InvariantCulture),
-        float number => number.ToString("R", CultureInfo.InvariantCulture),
-        decimal number => number.ToString(CultureInfo.InvariantCulture),
-        Guid guid => guid.ToString(),
-        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
-    };
 }

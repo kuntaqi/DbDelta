@@ -8,4 +8,5 @@ public sealed record ScriptResponse(
     IReadOnlyList<StepDto> Steps,
     IReadOnlyList<string> DeleteWarnings,
     IReadOnlyList<RequiredObjectDto> Required,
-    IReadOnlyList<string> Unsatisfiable);
+    IReadOnlyList<string> Unsatisfiable,
+    IReadOnlyList<RequiredRowsDto> RequiredRows);

@@ -823,6 +823,9 @@
     <p class="screen-note">Semua yang dicentang di layar 2 dan 3 keluar di sini sebagai satu script
       berurutan. Delete baris berjalan anak-dulu, insert induk-dulu. Apply butuh nama database diketik,
       dan langkah destruktif butuh centang tersendiri.</p>
+    <p class="screen-note">Dua hal di script ini tidak dipilih siapa pun: objek yang ditarik closure, dan
+      baris induk yang ditarik karena baris yang ditulis menunjuk ke sana. Keduanya disebut namanya beserta
+      alasannya &mdash; script yang isinya lebih banyak daripada yang dicentang harus bisa dijelaskan.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
@@ -851,6 +854,23 @@
           </div>
 
           <div style="padding:14px 16px; display:flex; flex-direction:column; gap:12px;">
+            <div class="warnline info"><span class="g add">+</span>
+              <div><b>1 object(s) here were not ticked.</b> Ada di script karena sesuatu yang dicentang
+                membutuhkannya lebih dulu.
+                <ul style="margin:6px 0 0; padding-left:18px;">
+                  <li><span class="mono">dbo.Category</span> &mdash; FK_CompanyRating_Category references it
+                    and the target does not have it</li>
+                </ul></div></div>
+
+            <div class="warnline info"><span class="g add">+</span>
+              <div><b>1 row(s) were pulled in as parents.</b> Baris yang di-seed tapi induknya tidak ada di
+                target akan gagal di foreign key, jadi induknya masuk lebih dulu.
+                <ul style="margin:6px 0 0; padding-left:18px;">
+                  <li>1 row(s) of <span class="mono">dbo.Category</span> &mdash;
+                    <span class="mono">dbo.Company</span> references them through
+                    <span class="mono">FK_Company_Category</span></li>
+                </ul></div></div>
+
             <div class="warnline warn"><span class="g">!</span>
               <div><b>2 step(s) drop objects or columns.</b> Data yang terhapus tidak kembali dengan rollback
                 run berikutnya.

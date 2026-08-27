@@ -280,11 +280,34 @@ dependency machinery the cart already has. Closure runs upward only — pulling 
 full database-subsetting problem and would quietly drag in most of the database. When a seed's children
 cannot be satisfied, the tool reports which FKs are affected rather than guessing.
 
-**Half built.** `TableDependencyGraph.ParentClosure` exists and is tested, but the only caller is its test —
-`DataStepsAsync` emits exactly the tables that were picked, in dependency order, and pulls in no parent rows.
-So `Top N` on a child table today produces inserts that can fail the FK on apply, which the transaction then
-rolls back whole. Failing loudly inside a transaction is the tolerable version of this bug, not a defence of
-it. The closure is the missing call; reporting unsatisfiable FKs is the missing message.
+**Built at row level, and it is not the table graph that does it.** `TableDependencyGraph.ParentClosure`
+answers which *tables* sit above a seed, which is the wrong unit here: seeding 100 of 40,000 companies does
+not need all of `dbo.Category`, it needs the handful of category rows those 100 point at. So `ParentClosure`
+reads the foreign key values out of the rows about to be written, asks the target which of those parent rows
+it already has, and fetches only the rest from the source. Those become inserts on the parent table, which
+the existing dependency order then places ahead of the rows that need them.
+
+Three things follow from working on values rather than tables:
+
+- **It applies to every mode, not just seeding.** An insert under `All rows` can reference a parent the target
+  lacks exactly as easily as one under `Top N`. The constraint does not care which mode produced the row.
+- **Updates count too.** An update that moves a foreign key column onto a value the target does not have fails
+  the same way an insert does. Deletes cannot break an outbound key, so they are ignored.
+- **A NULL asks for nothing.** SQL Server does not enforce a foreign key when one of its columns is NULL, so a
+  row with a NULL there references nothing and pulling a parent in for it would be inventing one.
+
+Rows are addressed by literal column values rather than by the compare's canonical key, through a separate
+`IRowByValueReader`. The canonical key is a server-side expression over `DATALENGTH` per column, and a child's
+foreign key value is not a key the merge join ever produced — rebuilding that form on this side would mean
+reimplementing the server's length semantics per type, which is a silent-wrongness risk for no gain. Asking by
+value avoids it, using the same `TSqlLiteral` that writes the `INSERT` statements, so a value that round-trips
+into the script round-trips into the lookup.
+
+Two limits are deliberate. Closure stops at `Safety:MaxClosureRows` (5000) and says what it stopped short of,
+because a plan that quietly grew by 80,000 rows is not a plan anybody reviewed. And a parent already in the
+plan is only usable if the plan carries the columns the key points at; when it does not, the FK is reported
+rather than followed, since without those columns a planned row cannot be told apart from one still to pull in
+and the guess would emit the row twice.
 
 ### Empty target: the case that stresses everything else
 
@@ -437,8 +460,8 @@ connections is the only prerequisite anywhere in the app.
    LocalDB is absent.
 3. **Done.** API endpoints + React shell + screens 1–2 (schema path end to end).
 4. **Done.** Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list.
-5. **Partly.** Data compare engine (key+hash) and per-table modes + screens 3–4 are done; **parent closure is
-   not wired**, and `Filter` mode has no control.
+5. **Partly.** Data compare engine (key+hash), per-table modes and parent closure + screens 3–4 are done;
+   `Filter` mode has no control.
 6. **Done.** Apply path + safety guards + screen 5, with a schema-only drift check.
 7. **Done.** FK map (screen 6), as hand-authored inline SVG.
 8. **Not started.** PostgreSQL provider stub proving the abstraction holds. `src/DbDelta.PostgreSql/` does not
@@ -574,7 +597,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Scope escalation, `Database ⊃ Table ⊃ Row` | `PlanNormalizer`, `SelectionScope`, `PlanCompiler`, all tested | No API or UI calls them; the app composes its script from a `HashSet` of ticks instead |
 | First-class exclusions with revoke | `Exclusion`, `CompiledPlan.AppliedExclusions`, tested | Nothing creates one, the session cannot hold one, no screen shows one |
-| Parent closure for seeded tables | `TableDependencyGraph.ParentClosure`, tested | Never called from the data path, so `Top N` on a child can emit inserts that fail their FK |
 | Row hashes in the drift check | `ITableFingerprintReader`, used by the whole-database scan | `DriftAsync` re-reads schema only; moved rows under a selected table do not abort the apply |
 | Staged bulk path past the size cliff | `MaxReviewableScriptBytes`, measured and flagged | No `SqlBulkCopy` / `BULK INSERT` path, and the measurement happens after the whole script is built rather than before |
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
@@ -586,7 +608,8 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
-One of these is a correctness gap rather than an absent convenience: parent closure for seeded rows can
-produce a script that fails on apply. The transaction rolls it back, so the failure is loud, but a tool
-whose premise is "review the script first" should not be emitting scripts it could have known were
-incomplete. Schema closure was the other one and is now built — the same argument applies to what is left.
+Both closures — schema and parent-row — used to head this list, and both are now built. What is left that
+still bears on correctness rather than convenience is the drift check: it re-reads the target's schema but
+not the rows under a selected table, so a plan can apply against data that moved after it was compared. The
+apply is transactional, so the failure mode is a wrong write rather than a broken one, which is the harder
+kind to notice.

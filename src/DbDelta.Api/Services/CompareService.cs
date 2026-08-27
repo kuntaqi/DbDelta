@@ -210,8 +210,8 @@ public sealed class CompareService
         var closure = Closure(session);
         var script = new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection);
         var steps = script.Steps.ToList();
-        var (dataSteps, deleteWarnings) = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
-        steps.AddRange(dataSteps);
+        var rows = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
+        steps.AddRange(rows.Steps);
 
         var combined = new SyncScript
         {
@@ -228,44 +228,62 @@ public sealed class CompareService
             bytes,
             bytes > _safety.MaxReviewableScriptBytes,
             combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList(),
-            deleteWarnings,
+            rows.DeleteWarnings,
             closure.Required.Select(r => Required(session, r)).ToList(),
-            closure.Unsatisfiable);
+            [.. closure.Unsatisfiable, .. rows.ClosureWarnings],
+            rows.RequiredRows
+                .Select(r => new RequiredRowsDto(
+                    r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))
+                .ToList());
     }
 
     // Deletes walk the foreign key graph child-first and inserts parent-first. Both directions in one
     // pass would break one of them, so the two phases are filled in opposite orders.
-    private async Task<(List<ScriptStep> Steps, List<string> DeleteWarnings)> DataStepsAsync(
+    private async Task<DataScriptResult> DataStepsAsync(
         CompareSession session,
         DataCompareService data,
         CancellationToken cancellationToken)
     {
-        var steps = new List<ScriptStep>();
-        var warnings = new List<string>();
-
         if (session.DataSelections.Count == 0)
         {
-            return (steps, warnings);
+            return DataScriptResult.Empty;
         }
 
         var order = TableDependencyGraph.Build(session.Source.Tables).OrderForData();
         var ranked = order.Ordered.Concat(order.Cyclic).ToList();
 
-        var selected = ranked
-            .Where(session.DataSelections.ContainsKey)
-            .Select(table => (Table: table, Selection: session.DataSelections[table]))
-            .ToList();
+        var picked = new List<TableDataChanges>();
 
-        var emitted = new List<(ObjectIdentity Table, IReadOnlyList<ScriptStep> Steps)>();
-
-        foreach (var (table, selection) in selected)
+        foreach (var table in ranked.Where(session.DataSelections.ContainsKey))
         {
-            var changes = await data.ChangesAsync(session, table, selection, cancellationToken).ConfigureAwait(false);
-            if (changes is null)
-            {
-                continue;
-            }
+            var changes = await data
+                .ChangesAsync(session, table, session.DataSelections[table], cancellationToken)
+                .ConfigureAwait(false);
 
+            if (changes is not null)
+            {
+                picked.Add(changes);
+            }
+        }
+
+        // The rows about to be written may point at parents the target does not have, and the plan has to
+        // carry those before it carries the rows that need them.
+        var closure = await new ParentClosure(
+                _provider.CreateRowByValueReader(session.SourceConnectionString),
+                _provider.CreateRowByValueReader(session.TargetConnectionString),
+                _safety.MaxClosureRows)
+            .ExpandAsync(session.Source, session.Target, picked, session.KeyFor, cancellationToken)
+            .ConfigureAwait(false);
+
+        var byTable = closure.Tables.ToDictionary(t => t.Table.Identity);
+        var warnings = new List<string>();
+        var emitted = new List<IReadOnlyList<ScriptStep>>();
+
+        // Ordered again over the whole set rather than over what was picked: closure can add a table
+        // nobody selected, and it has to land ahead of the table that needed it.
+        foreach (var table in ranked.Where(byTable.ContainsKey))
+        {
+            var changes = byTable[table];
             var deletes = changes.Changes.Count(c => c.Classification == RowClassification.Delete);
 
             // Two deletes out of five rows is a different decision from two out of five million, so the
@@ -281,20 +299,28 @@ public sealed class CompareService
                 }
             }
 
-            emitted.Add((table, _provider.CreateDataScriptEmitter().Emit(changes)));
+            emitted.Add(_provider.CreateDataScriptEmitter().Emit(changes));
         }
 
-        foreach (var (_, produced) in Enumerable.Reverse(emitted))
+        var steps = new List<ScriptStep>();
+
+        foreach (var produced in Enumerable.Reverse(emitted))
         {
             steps.AddRange(produced.Where(s => s.Phase == ScriptPhase.DataDeletes));
         }
 
-        foreach (var (_, produced) in emitted)
+        foreach (var produced in emitted)
         {
             steps.AddRange(produced.Where(s => s.Phase == ScriptPhase.DataUpserts));
         }
 
-        return (steps, warnings);
+        return new DataScriptResult
+        {
+            Steps = steps,
+            DeleteWarnings = warnings,
+            RequiredRows = closure.Added,
+            ClosureWarnings = closure.Warnings
+        };
     }
 
     private static IReadOnlyList<string> Warnings(CompareSession session)

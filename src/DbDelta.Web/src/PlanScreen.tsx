@@ -135,6 +135,29 @@ export function PlanScreen({
               </div>
             )}
 
+            {script.requiredRows.length > 0 && (
+              <div className="warnline info">
+                <span className="g add">+</span>
+                <div>
+                  <b>
+                    {script.requiredRows.reduce((sum, r) => sum + r.rowCount, 0)} row(s) were pulled in as
+                    parents.
+                  </b>{' '}
+                  A seeded row whose parent is not on the target fails on the key, so the parents go in
+                  first.
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {script.requiredRows.map((item, index) => (
+                      <li key={`${item.table}-${item.foreignKeyName}-${index}`}>
+                        {item.rowCount} row(s) of <span className="mono">{item.table}</span> &mdash;{' '}
+                        <span className="mono">{item.requiredBy}</span> references them through{' '}
+                        <span className="mono">{item.foreignKeyName}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {script.exceedsReviewableSize && (
               <div className="warnline warn">
                 <span className="g">!</span>

@@ -109,7 +109,9 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    statement twice. `Exclusion` exists in Core and is tested, but nothing in the API or UI creates one yet.
 3. **Limited row modes must suppress deletes.** Under `Top N` or `Filter`, a row absent from the source only
    means "outside the limit" — honouring deletes would wipe the target while "seeding" it. Correctness rule,
-   not a preference.
+   not a preference. The other half of the same rule is closure: a picked object pulls in what it references
+   (`SchemaClosure`), and a written row pulls in the parent rows it points at (`ParentClosure`). Both are
+   derived from the selection on every read, never stored in it, so unticking removes what it alone required.
 4. **`CREATE VIEW`/`PROCEDURE`/`FUNCTION`/`TRIGGER`/`SCHEMA` must each begin a T-SQL batch.** The script is
    deliberately one transaction with no `GO`, so these need `EXEC sp_executesql` wrapping. Also
    `DBCC CHECKIDENT … RESEED` after seeding any identity table.
@@ -120,7 +122,7 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
 2. SQL Server schema reader + T-SQL emitter
 3. API endpoints + React shell + screens 1–2 (schema path end to end)
 4. Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list
-5. Data compare engine, per-table modes + screens 3–4 (parent closure designed, not built)
+5. Data compare engine, per-table modes, row-level parent closure + screens 3–4
 6. Apply path + safety guards + screen 5
 7. FK map (screen 6)
 8. PostgreSQL provider stub proving the abstraction holds

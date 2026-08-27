@@ -75,6 +75,30 @@ public sealed class LocalDbFixture : IAsyncLifetime
         return ConnectionStringFor(name);
     }
 
+    // The shared target has no dbo.Contact, so a child two hops from the root cannot be compared against
+    // it. This one carries the table but none of its rows, which is the seeding case.
+    public async Task<string> CreateChildTargetAsync(string suffix)
+    {
+        var connectionString = await CreateScratchTargetAsync(suffix);
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new SqlCommand(
+            """
+            CREATE TABLE dbo.Contact (
+                ContactId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Contact PRIMARY KEY,
+                CompanyId   INT NOT NULL CONSTRAINT FK_Contact_Company REFERENCES dbo.Company(CompanyId),
+                Email       NVARCHAR(320) NOT NULL
+            );
+            """,
+            connection);
+
+        await command.ExecuteNonQueryAsync();
+
+        return connectionString;
+    }
+
     public async Task DropScratchAsync(string suffix) => await DropAsync($"{TargetDatabase}_{suffix}");
 
     private static async Task CreateAsync(string database, string script)
@@ -190,6 +214,17 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         CREATE PROCEDURE dbo.usp_GetCompany @Id INT AS
             SELECT * FROM dbo.Company WHERE CompanyId = @Id;
+        GO
+        -- Rows for parent closure to walk. Contoso sits in category 3, which the target does not have,
+        -- and the contact sits on Contoso: seeding the contact needs both, two hops up.
+        SET IDENTITY_INSERT dbo.Company ON;
+        INSERT INTO dbo.Company (CompanyId, CompanyName, Segment, CategoryId, RatingBand, Total)
+        VALUES (1, N'Northwind', N'Retail', 1, 3, 100.00), (2, N'Contoso', N'Energy', 3, 4, 250.00);
+        SET IDENTITY_INSERT dbo.Company OFF;
+        GO
+        SET IDENTITY_INSERT dbo.Contact ON;
+        INSERT INTO dbo.Contact (ContactId, CompanyId, Email) VALUES (1, 2, N'ops@contoso.example');
+        SET IDENTITY_INSERT dbo.Contact OFF;
         GO
         """;
 

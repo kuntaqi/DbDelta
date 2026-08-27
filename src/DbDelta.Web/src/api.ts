@@ -92,6 +92,15 @@ export interface RequiredObject {
   reason: string
 }
 
+// Rows nobody picked: the parents a picked row points at. Counted per foreign key, because "3 rows of
+// dbo.Category" says nothing about why they are in the plan.
+export interface RequiredRows {
+  table: string
+  rowCount: number
+  requiredBy: string
+  foreignKeyName: string
+}
+
 export interface ScriptResponse {
   sql: string
   stepCount: number
@@ -101,6 +110,7 @@ export interface ScriptResponse {
   deleteWarnings: string[]
   required: RequiredObject[]
   unsatisfiable: string[]
+  requiredRows: RequiredRows[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {

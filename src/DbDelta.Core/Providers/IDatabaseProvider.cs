@@ -19,6 +19,8 @@ public interface IDatabaseProvider
 
     IRowDetailReader CreateRowDetailReader(string connectionString);
 
+    IRowByValueReader CreateRowByValueReader(string connectionString);
+
     IDataScriptEmitter CreateDataScriptEmitter();
 
     ITableFingerprintReader CreateFingerprintReader(string connectionString);

@@ -87,3 +87,13 @@ GO
 INSERT INTO dbo.Region (RegionId, Name) VALUES (1, N'North'), (2, N'South');
 INSERT INTO dbo.Site (RegionId, SiteName) VALUES (1, N'North depot'), (2, N'South depot'), (1, N'North annex');
 GO
+
+-- Company rows for parent closure to walk. Contoso sits in category 3, which the target does not have,
+-- so picking dbo.Company's data pulls that one category row in ahead of the companies that need it.
+USE DbDelta_Demo_Src;
+GO
+SET IDENTITY_INSERT dbo.Company ON;
+INSERT INTO dbo.Company (CompanyId, CompanyName, Segment, CategoryId, RatingBand, Total)
+VALUES (1, N'Northwind', N'Retail', 1, 3, 100.00), (2, N'Contoso', N'Energy', 3, 4, 250.00);
+SET IDENTITY_INSERT dbo.Company OFF;
+GO
