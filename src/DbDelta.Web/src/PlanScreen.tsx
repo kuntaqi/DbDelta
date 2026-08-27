@@ -108,6 +108,33 @@ export function PlanScreen({
               </div>
             )}
 
+            {script.unsatisfiable.map((message) => (
+              <div className="warnline warn" key={message}>
+                <span className="g">!</span>
+                <div>
+                  {message} This script will fail on apply and roll back — compare again with the source
+                  that has it, or drop the object that needs it from the plan.
+                </div>
+              </div>
+            ))}
+
+            {script.required.length > 0 && (
+              <div className="warnline info">
+                <span className="g add">+</span>
+                <div>
+                  <b>{script.required.length} object(s) here were not ticked.</b> They are in the script
+                  because something ticked needs them present first.
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {script.required.map((item) => (
+                      <li key={item.id}>
+                        <span className="mono">{item.qualifiedName}</span> &mdash; {item.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {script.exceedsReviewableSize && (
               <div className="warnline warn">
                 <span className="g">!</span>

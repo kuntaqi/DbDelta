@@ -160,9 +160,13 @@ internal static class CatalogQueries
         ORDER BY s.name, tr.name;
         """;
 
-    // Views and routines depend on each other through their SQL bodies. Reading the catalog is the
-    // only reliable way to learn that order without parsing T-SQL; referenced_id is null when the
-    // reference cannot be resolved, so those rows are skipped rather than guessed at.
+    // Views and routines depend on each other, and on tables, through their SQL bodies. Reading the
+    // catalog is the only reliable way to learn that without parsing T-SQL; referenced_id is null when
+    // the reference cannot be resolved, so those rows are skipped rather than guessed at.
+    //
+    // Tables are on the referenced side because a view is not only ordered against what it reads, it
+    // cannot be created at all if the table it selects from is missing. Emission order never needed
+    // them — tables are created in an earlier phase regardless — but closure does.
     public const string ProgrammableDependencies = """
         SELECT DISTINCT
             s.name  AS [SchemaName],
@@ -178,7 +182,7 @@ internal static class CatalogQueries
         WHERE o.is_ms_shipped = 0
           AND ro.is_ms_shipped = 0
           AND o.type IN ('V', 'P', 'FN', 'IF', 'TF')
-          AND ro.type IN ('V', 'P', 'FN', 'IF', 'TF')
+          AND ro.type IN ('U', 'V', 'P', 'FN', 'IF', 'TF')
           AND o.object_id <> ro.object_id;
         """;
 

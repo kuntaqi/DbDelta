@@ -103,13 +103,11 @@ Selections accumulate across screens — tick objects on Schema compare, pick ta
 data screen, and both land in one plan. There is no separate "add to plan" step to forget. Three properties
 make it more than a passive basket:
 
-- **Closure, not literal selection.** Ticking `dbo.Company` should pull in what it needs: `dbo.Category`
-  goes first because of `FK_Company_Category`. The plan can therefore contain more than was clicked,
-  and the UI must show what was added on your behalf and why — a silently larger plan is a trap.
-  **Not built.** The FK graph exists and already decides script order, but `include` filters the emitter
-  literally: tick `dbo.Company` alone against an empty target and the script creates it without `dbo.Category`,
-  and the FK add fails. Closure is the one unbuilt item here that can produce a broken script rather than
-  merely a smaller one.
+- **Closure, not literal selection.** Ticking `dbo.Company` pulls in what it needs: `dbo.Category` goes
+  first because of `FK_Company_Category`. The plan therefore contains more than was clicked, and both the
+  schema screen and the plan screen name what was added and why — a silently larger plan is a trap. An
+  object pulled in shows `required by dbo.Company` on its own row, where the tick it did not get would be.
+  See *What closure follows* for what counts as a prerequisite.
 - **Tool-decided order.** Steps are topologically sorted by dependency, not by click order — FKs for tables,
   `sys.sql_expression_dependencies` for views and routines, since those depend through their SQL bodies rather
   than through constraints. Tables are created bare and their FKs added afterwards, which avoids FK cycles
@@ -124,6 +122,38 @@ make it more than a passive basket:
 
 Plan state lives in the API session (`CompareSessionStore`), not only in browser memory, so a refresh doesn't
 lose the picking work. It does not survive an API restart, and is not meant to.
+
+### What closure follows
+
+`SchemaClosure` walks four kinds of reference and adds what the target does not already have:
+
+| Picked object | Follows | Because |
+|---|---|---|
+| A table being created | every foreign key's referenced table | the FK is added at the end of the script and fails if the parent is not there |
+| A table being altered | only the foreign keys being *added* | the rest were satisfied when the target was built |
+| A view or routine | everything its body reads — tables included | `CREATE OR ALTER` compiles the body, so a missing table fails the statement, not just the order |
+| A trigger | the table it sits on | a trigger cannot be created before its table |
+
+Two decisions inside that are worth stating, because both could reasonably have gone the other way.
+
+**Only what is missing, not everything that differs.** A parent that exists on the target but differs is
+left alone. The reference resolves against what is already there, so pulling it in would grow the plan
+with alterations nobody asked for — a view over ten slightly-stale tables would drag all ten in. The one
+exception is a parent that lacks the exact columns the key points at: that is a missing object wearing a
+different shape, and the ALTER that adds the column has to be in the plan.
+
+**Derived, never stored.** Prerequisites are recomputed from the ticks on every read rather than written
+into the selection. Writing them in would mean unticking `dbo.Company` leaves `dbo.Category` behind in the
+plan, with nothing left to explain why it is there.
+
+A prerequisite the comparison cannot supply — a key pointing at a table missing from the source too — is
+reported rather than dropped. Nothing can be emitted for it, so the script will fail on that FK, and saying
+so up front is the only warning available.
+
+This also changed what the schema reader captures. `sys.sql_expression_dependencies` was filtered to
+programmable objects on both sides, because emission order was the only consumer and tables are created in
+an earlier phase anyway. Closure needs the table edges too, so the referenced side now includes `U`. The
+topological sort is unaffected: it already ignores dependencies outside the set it is sorting.
 
 ### Scope escalation: picking rows, then deciding "just do the whole database"
 
@@ -542,7 +572,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Dependency closure on schema selection | `TableDependencyGraph`, already ordering the script | Nothing adds prerequisites to the selection; `include` filters literally, so a lone tick can emit an FK to a table that was never created |
 | Scope escalation, `Database ⊃ Table ⊃ Row` | `PlanNormalizer`, `SelectionScope`, `PlanCompiler`, all tested | No API or UI calls them; the app composes its script from a `HashSet` of ticks instead |
 | First-class exclusions with revoke | `Exclusion`, `CompiledPlan.AppliedExclusions`, tested | Nothing creates one, the session cannot hold one, no screen shows one |
 | Parent closure for seeded tables | `TableDependencyGraph.ParentClosure`, tested | Never called from the data path, so `Top N` on a child can emit inserts that fail their FK |
@@ -557,6 +586,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
-Two of these are correctness gaps rather than absent conveniences — schema closure and parent closure can
-both produce a script that fails on apply. The transaction rolls it back, so the failure is loud, but a tool
-whose premise is "review the script first" should not be emitting scripts it could have known were incomplete.
+One of these is a correctness gap rather than an absent convenience: parent closure for seeded rows can
+produce a script that fails on apply. The transaction rolls it back, so the failure is loud, but a tool
+whose premise is "review the script first" should not be emitting scripts it could have known were
+incomplete. Schema closure was the other one and is now built — the same argument applies to what is left.

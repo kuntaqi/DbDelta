@@ -177,18 +177,26 @@ public sealed class SchemaReaderTests
         Assert.Equal(RoutineKind.Procedure, routine.Kind);
     }
 
-    // Views depend on each other through their SQL bodies, and only the catalog knows that. Without
-    // this the emitter cannot order a view after the view it selects from.
+    // Views depend on each other and on tables through their SQL bodies, and only the catalog knows
+    // that. The view-to-view edges are what let the emitter order a view after the view it selects
+    // from; the table edges are what let closure pull in a table the view cannot be created without.
+    // Only direct references are recorded, so vActiveSegments names the view it reads and not the
+    // table behind it.
     [SkippableFact]
-    public async Task A_views_dependency_on_another_view_is_captured()
+    public async Task A_views_dependencies_on_views_and_on_tables_are_both_captured()
     {
         var schema = await ReadSourceAsync();
 
         var dependent = schema.Views.Single(v => v.Identity.Name == "vActiveSegments");
-        var referenced = Assert.Single(dependent.DependsOn);
+        Assert.Equal(
+            ["sales.vCompanySegment"],
+            dependent.DependsOn.Select(d => d.QualifiedName));
 
-        Assert.Equal("sales.vCompanySegment", referenced.QualifiedName);
-        Assert.Empty(schema.Views.Single(v => v.Identity.Name == "vCompanySegment").DependsOn);
+        var referenced = schema.Views.Single(v => v.Identity.Name == "vCompanySegment");
+        var table = Assert.Single(referenced.DependsOn);
+
+        Assert.Equal(ObjectType.Table, table.Type);
+        Assert.Equal("dbo.Company", table.QualifiedName);
     }
 
     [SkippableFact]

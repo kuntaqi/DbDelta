@@ -393,7 +393,12 @@ public sealed class SqlServerSchemaReader : ISchemaReader
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var referencing = $"{Str(reader, "SchemaName")}.{Str(reader, "Name")}";
-                var type = Str(reader, "ReferencedType").Trim() == "V" ? ObjectType.View : ObjectType.Routine;
+                var type = Str(reader, "ReferencedType").Trim() switch
+                {
+                    "U" => ObjectType.Table,
+                    "V" => ObjectType.View,
+                    _ => ObjectType.Routine
+                };
 
                 pairs.Add((
                     referencing,

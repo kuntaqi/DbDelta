@@ -82,6 +82,16 @@ export interface StepDto {
   sql: string
 }
 
+// An object the plan carries because something ticked needs it, not because it was ticked. Both halves
+// matter: without the reason, a plan that grew on your behalf cannot be argued with.
+export interface RequiredObject {
+  id: string
+  type: string
+  qualifiedName: string
+  requiredBy: string
+  reason: string
+}
+
 export interface ScriptResponse {
   sql: string
   stepCount: number
@@ -89,6 +99,8 @@ export interface ScriptResponse {
   exceedsReviewableSize: boolean
   steps: StepDto[]
   deleteWarnings: string[]
+  required: RequiredObject[]
+  unsatisfiable: string[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -336,6 +348,8 @@ export interface SchemaSelectionResponse {
   selected: string[]
   differing: number
   dataTables: number
+  required: RequiredObject[]
+  unsatisfiable: string[]
 }
 
 export const schemaApi = {

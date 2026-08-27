@@ -8,7 +8,9 @@ import {
   type ObjectDetail,
   type ObjectSummary,
   type ProbeResponse,
+  type RequiredObject,
   schemaApi,
+  type SchemaSelectionResponse,
   type ScriptResponse,
 } from './api'
 import { PlanScreen } from './PlanScreen'
@@ -324,10 +326,20 @@ export default function App() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [script, setScript] = useState<ScriptResponse | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [required, setRequired] = useState<RequiredObject[]>([])
+  const [unsatisfiable, setUnsatisfiable] = useState<string[]>([])
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Prerequisites come back with every selection change rather than being tracked here, because the
+  // server recomputes them from the ticks: unticking the only object that needed one drops it again.
+  function applySelection(value: SchemaSelectionResponse) {
+    setPicked(new Set(value.selected))
+    setRequired(value.required)
+    setUnsatisfiable(value.unsatisfiable)
+  }
 
   async function run<T>(action: () => Promise<T>, then: (value: T) => void) {
     setBusy(true)
@@ -364,6 +376,7 @@ export default function App() {
     )
   }
 
+  const requiredById = new Map(required.map((r) => [r.id, r]))
   const visible = comparison?.objects.filter((o) => showSame || o.kind !== 'Same') ?? []
   const grouped = visible.reduce<Record<string, ObjectSummary[]>>((acc, object) => {
     ;(acc[object.type] ??= []).push(object)
@@ -512,6 +525,8 @@ export default function App() {
                       setDetail(null)
                       setExpanded(null)
                       setPicked(new Set())
+                      setRequired([])
+                      setUnsatisfiable([])
                       setScript(null)
                       setScreen('schema')
                     },
@@ -552,6 +567,34 @@ export default function App() {
                 </div>
               )}
 
+              {/* The plan can hold more than was clicked, so the difference is stated rather than left to
+                  be noticed on the script screen. */}
+              {required.length > 0 && (
+                <div className="warnline info">
+                  <span className="g add">+</span>
+                  <div>
+                    <b>
+                      {required.length} object(s) are in the plan because something you ticked needs them.
+                    </b>{' '}
+                    They go in ahead of what required them.
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                      {required.map((item) => (
+                        <li key={item.id}>
+                          <span className="mono">{item.qualifiedName}</span> &mdash; {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {unsatisfiable.map((message) => (
+                <div className="warnline warn" key={message}>
+                  <span className="g">!</span>
+                  <div>{message}</div>
+                </div>
+              ))}
+
               <div className="tiles">
                 {comparison.counts.map((count) => (
                   <div className={`tile ${count.changed > 0 ? 'chg' : ''}`} key={count.type}>
@@ -576,7 +619,7 @@ export default function App() {
                   onClick={() =>
                     run(
                       () => schemaApi.selectAll(comparison.id, true),
-                      (value) => setPicked(new Set(value.selected)),
+                      (value) => applySelection(value),
                     )
                   }
                 >
@@ -589,7 +632,7 @@ export default function App() {
                   onClick={() =>
                     run(
                       () => schemaApi.selectAll(comparison.id, false),
-                      (value) => setPicked(new Set(value.selected)),
+                      (value) => applySelection(value),
                     )
                   }
                 >
@@ -626,7 +669,7 @@ export default function App() {
                               onChange={(e) =>
                                 run(
                                   () => schemaApi.select(comparison.id, object.id, e.target.checked),
-                                  (value) => setPicked(new Set(value.selected)),
+                                  (value) => applySelection(value),
                                 )
                               }
                               aria-label={`Include ${object.qualifiedName} in the sync plan`}
@@ -645,6 +688,17 @@ export default function App() {
                             <span className="nm">{object.qualifiedName}</span>
                           </button>
                           <span className="why">{object.summary}</span>
+                          {/* An unticked row that is in the plan anyway has to say so where the tick is,
+                              not only in the summary above the list. */}
+                          {requiredById.has(object.id) && !picked.has(object.id) && (
+                            <span
+                              className="chip on"
+                              style={{ marginLeft: 8, fontSize: 11 }}
+                              title={requiredById.get(object.id)!.reason}
+                            >
+                              required by {requiredById.get(object.id)!.requiredBy}
+                            </span>
+                          )}
                           <span className="dim mono" style={{ fontSize: 11, marginLeft: 8 }}>
                             {expanded === object.id ? '▾' : '▸'}
                           </span>
@@ -731,9 +785,13 @@ export default function App() {
             <div className="actionbar">
               <span className="guard">
                 <span className={`g ${picked.size > 0 ? 'add' : 'same'}`}>{picked.size > 0 ? '✓' : '◇'}</span>
+                {/* The plan is the ticks plus what they require, so counting only the ticks would
+                    understate what is about to run. */}
                 {picked.size === 0
                   ? 'Nothing picked. Tick the objects you want in the plan — none are selected for you.'
-                  : `${picked.size} object(s) in the plan`}
+                  : required.length === 0
+                    ? `${picked.size} object(s) in the plan`
+                    : `${picked.size + required.length} object(s) in the plan — ${picked.size} ticked, ${required.length} required`}
               </span>
               {expanded && detail && (
                 <span className="dim" style={{ fontSize: 11.5 }}>

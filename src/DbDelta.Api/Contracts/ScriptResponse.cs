@@ -6,4 +6,6 @@ public sealed record ScriptResponse(
     int ByteSize,
     bool ExceedsReviewableSize,
     IReadOnlyList<StepDto> Steps,
-    IReadOnlyList<string> DeleteWarnings);
+    IReadOnlyList<string> DeleteWarnings,
+    IReadOnlyList<RequiredObjectDto> Required,
+    IReadOnlyList<string> Unsatisfiable);

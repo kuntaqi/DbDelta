@@ -42,21 +42,36 @@ internal static class Build
             Indexes = indexes ?? []
         };
 
-    public static ViewDefinition View(string name, string definition, string schema = "dbo") =>
+    public static ViewDefinition View(
+        string name,
+        string definition,
+        string schema = "dbo",
+        IReadOnlyList<ObjectIdentity>? dependsOn = null) =>
         new()
         {
             Identity = new ObjectIdentity(ObjectType.View, schema, name),
-            Definition = definition
+            Definition = definition,
+            DependsOn = dependsOn ?? []
+        };
+
+    public static TriggerDefinition Trigger(string name, string table, string schema = "dbo") =>
+        new()
+        {
+            Identity = new ObjectIdentity(ObjectType.Trigger, schema, name),
+            Table = TableId(table, schema),
+            Definition = $"CREATE TRIGGER [{schema}].[{name}] ON [{schema}].[{table}] AFTER INSERT AS SELECT 1;"
         };
 
     public static DatabaseSchema Schema(
         string databaseName,
         IReadOnlyList<TableDefinition>? tables = null,
-        IReadOnlyList<ViewDefinition>? views = null) =>
+        IReadOnlyList<ViewDefinition>? views = null,
+        IReadOnlyList<TriggerDefinition>? triggers = null) =>
         new()
         {
             DatabaseName = databaseName,
             Tables = tables ?? [],
-            Views = views ?? []
+            Views = views ?? [],
+            Triggers = triggers ?? []
         };
 }

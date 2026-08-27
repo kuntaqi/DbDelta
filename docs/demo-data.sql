@@ -71,3 +71,19 @@ GO
 INSERT INTO dbo.Ledger (Ref, Amount) VALUES (N'A1', 10), (N'A2', 99);
 INSERT INTO dbo.AuditTrail (EventId, Area, Note) VALUES (1, N'load', N'first'), (2, N'load', NULL), (3, N'sync', N'third');
 GO
+
+-- Both source-only, and Site's key points at Region: ticking Site alone is the case dependency
+-- closure exists for. Without it the script creates Site and then adds an FK to a table that is not
+-- there, which fails on apply and rolls the whole transaction back.
+USE DbDelta_Demo_Src;
+GO
+CREATE TABLE dbo.Region (RegionId INT NOT NULL CONSTRAINT PK_Region PRIMARY KEY, Name NVARCHAR(60) NOT NULL);
+CREATE TABLE dbo.Site (
+    SiteId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Site PRIMARY KEY,
+    RegionId INT NOT NULL CONSTRAINT FK_Site_Region REFERENCES dbo.Region(RegionId),
+    SiteName NVARCHAR(120) NOT NULL
+);
+GO
+INSERT INTO dbo.Region (RegionId, Name) VALUES (1, N'North'), (2, N'South');
+INSERT INTO dbo.Site (RegionId, SiteName) VALUES (1, N'North depot'), (2, N'South depot'), (1, N'North annex');
+GO

@@ -174,11 +174,27 @@ public sealed class CompareService
     {
         ArgumentNullException.ThrowIfNull(session);
 
+        var closure = Closure(session);
+
         return new SchemaSelectionResponse(
             session.SchemaSelections.Select(session.IdOf).OrderBy(id => id, StringComparer.Ordinal).ToList(),
             session.Diff.Differing.Count(),
-            session.DataSelections.Count);
+            session.DataSelections.Count,
+            closure.Required.Select(r => Required(session, r)).ToList(),
+            closure.Unsatisfiable);
     }
+
+    // Recomputed on every read rather than kept on the session. Prerequisites are a consequence of the
+    // ticks, so storing them would let one survive the untick of the only object that wanted it.
+    private static ClosureResult Closure(CompareSession session) =>
+        SchemaClosure.Expand(session.Source, session.Target, session.Diff, session.SchemaSelections);
+
+    private static RequiredObjectDto Required(CompareSession session, RequiredObject required) =>
+        new(session.IdOf(required.Identity),
+            required.Identity.Type.ToString(),
+            required.Identity.QualifiedName,
+            required.RequiredBy.QualifiedName,
+            required.Reason);
 
     public async Task<ScriptResponse> ScriptAsync(
         CompareSession session,
@@ -188,8 +204,11 @@ public sealed class CompareService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(data);
 
-        var identities = session.SchemaSelections.ToHashSet();
-        var script = new TSqlEmitterAdapter(_provider).Emit(session, identities);
+        // What was ticked is not always what has to run. A table picked without the table its foreign key
+        // points at emits an FK to something that does not exist, so the plan is expanded before emission
+        // and what the expansion added is reported alongside the script.
+        var closure = Closure(session);
+        var script = new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection);
         var steps = script.Steps.ToList();
         var (dataSteps, deleteWarnings) = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
         steps.AddRange(dataSteps);
@@ -209,7 +228,9 @@ public sealed class CompareService
             bytes,
             bytes > _safety.MaxReviewableScriptBytes,
             combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList(),
-            deleteWarnings);
+            deleteWarnings,
+            closure.Required.Select(r => Required(session, r)).ToList(),
+            closure.Unsatisfiable);
     }
 
     // Deletes walk the foreign key graph child-first and inserts parent-first. Both directions in one

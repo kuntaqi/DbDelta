@@ -553,6 +553,11 @@
       kedua sisinya, lalu DDL berdampingan dengan baris berbeda ditandai, lalu perintah yang benar-benar akan
       dijalankan di target. Mencentang untuk plan dan membuka perbedaan adalah dua hal terpisah &mdash;
       checkbox tidak pernah membuka panel, dan hanya satu objek terbuka pada satu waktu.</p>
+    <p class="screen-note">Plan bisa berisi lebih banyak daripada yang dicentang. Mencentang
+      <span class="mono">dbo.CompanyRating</span> ikut menarik <span class="mono">dbo.Category</span>, karena
+      foreign key-nya menunjuk ke sana dan target belum punya. Yang ditarik ditandai di barisnya sendiri
+      &mdash; tempat centang yang tidak ia dapat &mdash; dan diringkas di atas daftar, karena plan yang
+      diam-diam membesar itu jebakan.</p>
 
     <div class="app">
       <div class="app-bar">
@@ -568,6 +573,14 @@
           <div>Source is <span class="mono">SQL_Latin1_General_CP1_CI_AS</span> and target is
             <span class="mono">Latin1_General_CI_AS</span>. Perbandingan string berbeda di antaranya, jadi
             hasil data compare tidak bisa dipercaya sampai ini diselesaikan.</div></div>
+
+        <div class="warnline info"><span class="g add">+</span>
+          <div><b>1 object(s) are in the plan because something you ticked needs them.</b> They go in ahead
+            of what required them.
+            <ul style="margin:6px 0 0; padding-left:18px;">
+              <li><span class="mono">dbo.Category</span> &mdash; FK_CompanyRating_Category references it and
+                the target does not have it</li>
+            </ul></div></div>
 
         <div class="tiles">
           <div class="tile chg"><div class="k">Tables</div><div class="v">18</div><div class="s">of 263 differ</div></div>
@@ -631,6 +644,10 @@
         <li class="it indent"><span class="cb on">&#10003;</span><span class="g add">+</span>
           <span class="nm">dbo.CompanyRating</span><span class="why">only on source</span>
           <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
+        <li class="it indent"><span class="cb"></span><span class="g add">+</span>
+          <span class="nm">dbo.Category</span><span class="why">only on source</span>
+          <span class="chip on" style="margin-left:8px; font-size:11px;">required by dbo.CompanyRating</span>
+          <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
         <li class="it indent"><span class="cb"></span><span class="g del">&minus;</span>
           <span class="nm">dbo.SegmentLegacy</span><span class="why">only on target</span>
           <span class="dim mono" style="font-size:11px; margin-left:8px;">&#9656;</span></li>
@@ -641,7 +658,8 @@
       </ul>
 
       <div class="actionbar">
-        <span class="guard"><span class="g add">&#10003;</span>2 object(s) in the plan</span>
+        <span class="guard"><span class="g add">&#10003;</span>3 object(s) in the plan &mdash; 2 ticked,
+          1 required</span>
         <span class="push"></span>
         <button class="btn">Back to connections</button>
       </div>
@@ -981,15 +999,11 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">10 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">9 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
           <tbody>
-            <tr><td class="txt"><b>Dependency closure</b> &mdash; mencentang satu tabel menarik prasyaratnya
-              (&ldquo;+2 required&rdquo;)</td><td>2, 5</td>
-              <td class="txt">Graf FK-nya sudah ada dan sudah dipakai untuk urutan script, tapi tidak ada
-                yang menambahkan objek ke pilihan atas namamu.</td></tr>
             <tr><td class="txt"><b>Scope escalation</b> &mdash; Picked items / Entire database</td><td>5</td>
               <td class="txt">Scope lattice ada di <span class="mono">PlanNormalizer</span> dan teruji, tapi
                 tidak ada kontrol UI yang memanggilnya.</td></tr>
