@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   api,
   environmentName,
@@ -7,6 +7,8 @@ import {
   type EnvironmentClass,
   type ObjectDetail,
   type ObjectSummary,
+  type ConnectionProfile,
+  profileApi,
   type ProbeResponse,
   type ExcludedObject,
   type RequiredObject,
@@ -110,15 +112,27 @@ function ConnectionCard({
   value,
   probe,
   busy,
+  profiles,
+  profileName,
   onChange,
   onTest,
+  onLoad,
+  onSave,
+  onDelete,
+  onProfileNameChange,
 }: {
   role: string
   value: ConnectionRequest
   probe: ProbeResponse | null
   busy: boolean
+  profiles: ConnectionProfile[]
+  profileName: string
   onChange: (next: ConnectionRequest) => void
   onTest: () => void
+  onLoad: (profile: ConnectionProfile) => void
+  onSave: () => void
+  onDelete: () => void
+  onProfileNameChange: (name: string) => void
 }) {
   const environment = probe?.environment ?? 0
   const pasted = value.connectionString !== undefined && value.connectionString !== null
@@ -257,6 +271,50 @@ function ConnectionCard({
           </>
         )}
 
+        {/* A profile is the non-secret half of a connection. Loading one leaves the password blank on
+            purpose under a SQL login — it is asked for once a session and never written down. */}
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <span className="lbl" style={{ margin: 0 }}>Saved</span>
+          {profiles.length === 0 && (
+            <span className="dim" style={{ fontSize: 11.5 }}>
+              Nothing saved yet. Name one below to stop retyping it.
+            </span>
+          )}
+          {profiles.map((profile) => (
+            <button
+              key={profile.name}
+              type="button"
+              className="chip"
+              title={`${profile.server}${profile.port ? `,${profile.port}` : ''} · ${profile.database} · ${profile.authentication}`}
+              onClick={() => onLoad(profile)}
+            >
+              {profile.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <input
+            className="field"
+            style={{ maxWidth: 160 }}
+            placeholder="Profile name"
+            value={profileName}
+            onChange={(e) => onProfileNameChange(e.target.value)}
+            aria-label={`${role} profile name`}
+          />
+          <button type="button" className="chip" disabled={profileName.trim() === ''} onClick={onSave}>
+            Save profile
+          </button>
+          <button
+            type="button"
+            className="chip"
+            disabled={!profiles.some((p) => p.name.toLowerCase() === profileName.trim().toLowerCase())}
+            onClick={onDelete}
+          >
+            Delete
+          </button>
+        </div>
+
         <div className="row">
           <button type="button" className="btn" onClick={onTest} disabled={busy}>
             Test connection
@@ -332,6 +390,9 @@ export default function App() {
   const [unsatisfiable, setUnsatisfiable] = useState<string[]>([])
   const [scope, setScope] = useState<SelectionScope>('Picked')
   const [excluded, setExcluded] = useState<ExcludedObject[]>([])
+  const [profiles, setProfiles] = useState<ConnectionProfile[]>([])
+  const [sourceProfileName, setSourceProfileName] = useState('')
+  const [targetProfileName, setTargetProfileName] = useState('')
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -345,6 +406,34 @@ export default function App() {
     setUnsatisfiable(value.unsatisfiable)
     setScope(value.scope)
     setExcluded(value.excluded)
+  }
+
+  useEffect(() => {
+    profileApi
+      .list()
+      .then(setProfiles)
+      .catch(() => setProfiles([]))
+  }, [])
+
+  // Loading a profile fills in everything except the password, which is the one thing a profile never
+  // holds. Under a SQL login it stays blank and has to be typed — that is the trade, stated in the UI.
+  function load(profile: ConnectionProfile, apply: (next: ConnectionRequest) => void, name: (n: string) => void) {
+    apply({
+      connectionString: null,
+      server: profile.server,
+      port: profile.port,
+      database: profile.database,
+      authentication: profile.authentication,
+      username: profile.username,
+      password: null,
+      trustServerCertificate: profile.trustServerCertificate,
+    })
+
+    name(profile.name)
+  }
+
+  function saveProfile(name: string, connection: ConnectionRequest) {
+    run(() => profileApi.save({ ...connection, name }), setProfiles)
   }
 
   async function run<T>(action: () => Promise<T>, then: (value: T) => void) {
@@ -476,8 +565,14 @@ export default function App() {
                   value={source}
                   probe={sourceProbe}
                   busy={busy}
+                  profiles={profiles}
+                  profileName={sourceProfileName}
                   onChange={setSource}
                   onTest={() => run(() => api.probe(source), setSourceProbe)}
+                  onLoad={(profile) => load(profile, setSource, setSourceProfileName)}
+                  onSave={() => saveProfile(sourceProfileName, source)}
+                  onDelete={() => run(() => profileApi.remove(sourceProfileName), setProfiles)}
+                  onProfileNameChange={setSourceProfileName}
                 />
                 <div className="arrowcol">
                   <span className="mono dim" style={{ fontSize: 20 }}>&rarr;</span>
@@ -501,8 +596,14 @@ export default function App() {
                   value={target}
                   probe={targetProbe}
                   busy={busy}
+                  profiles={profiles}
+                  profileName={targetProfileName}
                   onChange={setTarget}
                   onTest={() => run(() => api.probe(target), setTargetProbe)}
+                  onLoad={(profile) => load(profile, setTarget, setTargetProfileName)}
+                  onSave={() => saveProfile(targetProfileName, target)}
+                  onDelete={() => run(() => profileApi.remove(targetProfileName), setProfiles)}
+                  onProfileNameChange={setTargetProfileName}
                 />
               </div>
 

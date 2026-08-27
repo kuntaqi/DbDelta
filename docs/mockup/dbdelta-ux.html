@@ -487,6 +487,10 @@
               <div><span class="lbl">Authentication</span>
                 <div class="row" style="gap:6px;"><span class="chip on">Windows</span><span class="chip">SQL login</span></div></div>
               <label class="dim" style="font-size:12px;"><span class="cb on">&#10003;</span> Trust the server certificate</label>
+              <div class="row" style="flex-wrap:wrap;"><span class="lbl" style="margin:0;">Saved</span>
+                <span class="chip">Dev</span><span class="chip">UAT</span></div>
+              <div class="row" style="flex-wrap:wrap;"><div class="field" style="max-width:160px;"><span class="dim">Profile name</span></div>
+                <span class="chip">Save profile</span><span class="chip">Delete</span></div>
               <div class="row"><button class="btn">Test connection</button>
                 <span class="guard"><span class="g add">&#10003;</span>263 tables &middot; 503 views</span></div>
               <div class="dim" style="font-size:11.5px;">Standard Edition (64-bit) &middot; 17.0.4025.3 &middot; Latin1_General_CI_AS</div>
@@ -508,6 +512,10 @@
                 <div class="field" style="height:auto; padding:8px 10px; line-height:1.5;">Server=DBSERVER-UAT,1433;Database=AppUat;Integrated Security=true;TrustServerCertificate=true</div></div>
               <p class="dim" style="margin:0; font-size:11.5px;">Dipakai apa adanya. Nama server tetap dibaca
                 kembali darinya, jadi server read-only tetap terblokir.</p>
+              <div class="row" style="flex-wrap:wrap;"><span class="lbl" style="margin:0;">Saved</span>
+                <span class="chip">Dev</span><span class="chip on">UAT</span></div>
+              <div class="row" style="flex-wrap:wrap;"><div class="field" style="max-width:160px;">UAT</div>
+                <span class="chip">Save profile</span><span class="chip">Delete</span></div>
               <div class="row"><button class="btn">Test connection</button>
                 <span class="guard"><span class="g add">&#10003;</span>280 tables &middot; 498 views</span></div>
             </div>
@@ -540,6 +548,12 @@
       </div>
     </div>
     <p class="caption">Kegagalan koneksi dijelaskan per jenis, bukan diteruskan sebagai error mentah.</p>
+
+    <p class="caption">Profil menyimpan separuh koneksi yang bukan rahasia &mdash; server, port, database, mode
+      auth, username, dan flag trust certificate &mdash; di <span class="mono">%APPDATA%\DbDelta\profiles.json</span>,
+      <strong>tanpa password</strong>. Memuat profil mengisi semuanya kecuali password: di bawah SQL login
+      kolom itu sengaja tetap kosong dan ditanyakan sekali per sesi. Connection string yang ditempel pun bisa
+      disimpan sebagai profil &mdash; string-nya dibongkar, password-nya dibuang, bukan disimpan utuh.</p>
   </section>
 
   <!-- 2 -->
@@ -1056,7 +1070,7 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">6 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">5 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
@@ -1066,10 +1080,6 @@
                 <span class="mono">Row</span> sudah didukung model cart.</td></tr>
             <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>4</td>
               <td class="txt">Satu grid gabungan dengan kolom Change menggantikannya.</td></tr>
-            <tr><td class="txt"><b>Profil koneksi tersimpan</b></td><td>1</td>
-              <td class="txt">Belum dibangun, tapi tetap direncanakan &mdash; tanpa password. Profil menyimpan
-                server, port, database, dan mode auth saja; password ditanyakan ulang tiap sesi dan hanya
-                tinggal di memori. Lihat <span class="mono">docs/PLAN.md</span>.</td></tr>
             <tr><td class="txt"><b>Readout ukuran database</b> (Data / Log / Rows)</td><td>1</td>
               <td class="txt">Ada per tabel di layar 3, tidak di kartu koneksi.</td></tr>
             <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>3</td>

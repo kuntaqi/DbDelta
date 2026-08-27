@@ -554,10 +554,10 @@ one; the fragility is in the matching, not in a known hole.
 They are numbered here for reference only. In the app they are tabs, not steps: a compared pair of
 connections is the only prerequisite, and after that every screen reaches every other in any order.
 
-1. **Connections** — source | target side by side, Test, environment badge. Built, including connection-string
-   and full-detail entry with port and SQL login. **Saved profiles are not built** (see *Connection profiles
-   carry everything except the secret*) — the fields are retyped every session, which is the friction that
-   section exists to remove.
+1. **Connections** — source | target side by side, Test, environment badge, connection-string and
+   full-detail entry with port and SQL login, and saved profiles per card: a chip per profile to load one, a
+   name box to save under, and Delete. Loading fills everything except the password, which under a SQL login
+   stays blank on purpose (see *Connection profiles carry everything except the secret*).
 2. **Schema compare** — object-type tree with counts and per-object ticks; clicking a row opens that
    object's difference inline beneath it: one table of what differs with both sides' values, side-by-side
    DDL with changed lines marked, and the statements that will run on the target.
@@ -626,14 +626,22 @@ connections is the only prerequisite anywhere in the app.
 Retyping a server, a port, a database name and an auth mode every session is the largest avoidable
 friction in the tool, and a profile fixes it. A stored password does not belong in that trade.
 
-**This is a resolved decision, not a built feature.** Nothing writes or reads `profiles.json` today; the
-connections screen is retyped every session. What is settled is the shape, so that when it is built there is
-nothing left to decide.
+So a profile holds the **non-secret** half of a connection — server, port, database, auth mode, username,
+and the trust-certificate flag — in `%APPDATA%\DbDelta\profiles.json`, never in the repo (`.gitignore`
+already excludes it). Under Windows auth that is the whole connection and nothing is missing. Under a SQL
+login the password is asked for each session and kept in memory for that session only.
 
-So a profile holds the **non-secret** half of a connection — server, port, database, auth mode, and the
-trust-certificate flag — in `%APPDATA%\DbDelta\profiles.json`, never in the repo (`.gitignore` already
-excludes it). Under Windows auth that is the whole connection and nothing is missing. Under a SQL login
-the password is asked for each session and kept in memory for that session only.
+The username is on that list, which is one item more than this section first named. A username cannot be
+replayed on its own — it is not the credential, it is the other half of *which connection is this* — and
+leaving it out would mean a SQL-login profile still had two things to retype instead of one. The risk the
+no-password rule exists for is a file that lets the tool write to a server with nobody present, and a
+username does not create it.
+
+**The rule is held by the shape of the request, not by the store's discipline.** `SaveProfileRequest` has no
+password field at all, so "a profile stores no password" is not something any code has to remember to do. A
+pasted connection string is the one path that could smuggle one in, and it is taken apart rather than stored
+— server, port, database, auth mode and login out, password dropped. Refusing to save a pasted string would
+have been safe and needlessly unhelpful.
 
 An earlier draft leaned on Windows DPAPI to encrypt the password into the same file. That is dropped.
 DPAPI protects the file against another user on the same machine; it does nothing about the case that
@@ -742,16 +750,15 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
-| Saved connection profiles | Shape settled: `%APPDATA%\DbDelta\profiles.json`, no password | Nothing reads or writes the file |
 | Direction filter on the FK map | `Walk` already takes a direction, called twice | No control; both directions are always drawn |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
 Nothing left here is silent. Both closures, the drift check, the staged path, the filter and user-defined
 types are built, and each of those was on this list because it could make the tool do the wrong thing
-quietly. What remains announces itself: a connection retyped every session, a diagram without a direction
-control, types that a second engine has never met, and a contract mirrored by hand. All of them are things a
-person notices immediately and none of them changes what gets written to a database.
+quietly. What remains announces itself: a diagram without a direction control, an abstraction a second engine
+has never met, and a contract mirrored by hand. All of them are things a person notices immediately and none
+of them changes what gets written to a database.
 
 The honest caveat on that: it is a claim about the gaps *known* to be gaps. The two bugs found while building
 the last few items — a script silently emitting only its first 500 rows, and a staging table's cleanup

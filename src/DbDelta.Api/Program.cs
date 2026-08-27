@@ -19,6 +19,7 @@ builder.Services.AddSingleton<ServerClassifier>();
 builder.Services.AddSingleton<CompareSessionStore>();
 builder.Services.AddSingleton<IScriptExecutor, SqlServerScriptExecutor>();
 builder.Services.AddSingleton<RunLogStore>();
+builder.Services.AddSingleton<ProfileStore>();
 builder.Services.AddScoped<CompareService>();
 builder.Services.AddScoped<ApplyService>();
 builder.Services.AddScoped<DataCompareService>();
@@ -348,6 +349,34 @@ api.MapGet("/compare/{id}/fk", (
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot map that table");
     }
 });
+
+api.MapGet("/profiles", async (ProfileStore profiles, CancellationToken cancellationToken) =>
+    Results.Ok(await profiles.ListAsync(cancellationToken)));
+
+api.MapPost("/profiles", async (
+    SaveProfileRequest request,
+    ProfileStore profiles,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await profiles.SaveAsync(request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot save that profile");
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Cannot save that profile");
+    }
+});
+
+api.MapDelete("/profiles/{name}", async (
+    string name,
+    ProfileStore profiles,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await profiles.DeleteAsync(name, cancellationToken)));
 
 api.MapGet("/runs", async (ApplyService service, CancellationToken cancellationToken) =>
     Results.Ok(await service.RunsAsync(cancellationToken)));

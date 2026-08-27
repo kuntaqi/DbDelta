@@ -181,6 +181,33 @@ export interface RunLogEntryDto {
   serverMessage: string | null
 }
 
+// The non-secret half of a connection, kept so it does not have to be retyped. Under a SQL login the
+// password is still asked for every session: it is deliberately not in here.
+export interface ConnectionProfile {
+  name: string
+  server: string
+  port: number | null
+  database: string
+  authentication: AuthMode
+  username: string | null
+  trustServerCertificate: boolean
+}
+
+export const profileApi = {
+  list: async () => {
+    const response = await fetch('/api/profiles')
+    if (!response.ok) throw new Error('Could not read the saved profiles')
+    return (await response.json()) as ConnectionProfile[]
+  },
+  save: (profile: { name: string } & ConnectionRequest) =>
+    postJson<ConnectionProfile[]>('/api/profiles', profile),
+  remove: async (name: string) => {
+    const response = await fetch('/api/profiles/' + encodeURIComponent(name), { method: 'DELETE' })
+    if (!response.ok) throw new Error('Could not delete that profile')
+    return (await response.json()) as ConnectionProfile[]
+  },
+}
+
 export const applyApi = {
   apply: (compareId: string, confirmation: string, allowDestructive: boolean) =>
     postJson<ApplyResponse>(`/api/compare/${compareId}/apply`, { confirmation, allowDestructive }),
