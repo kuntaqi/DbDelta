@@ -9,7 +9,13 @@ public sealed class TSqlDataEmitter : IDataScriptEmitter
     // producing a statement the server rejects.
     private const int RowsPerInsert = 1000;
 
-    public IReadOnlyList<ScriptStep> Emit(TableDataChanges changes)
+    // The unbounded overload is for callers that have no size policy of their own — tests, mostly.
+    public IReadOnlyList<ScriptStep> Emit(TableDataChanges changes) => Emit(changes, long.MaxValue);
+
+    // Past maxInlineBytes a table's rows stop being written as literals and travel beside the script
+    // instead, through a staging table. Only inserts and updates take that route: a delete writes its key
+    // and nothing else, so it is compact enough to stay readable however many there are.
+    public IReadOnlyList<ScriptStep> Emit(TableDataChanges changes, long maxInlineBytes)
     {
         ArgumentNullException.ThrowIfNull(changes);
 
@@ -27,23 +33,34 @@ public sealed class TSqlDataEmitter : IDataScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.DataDeletes,
                 $"delete {deletes.Count} row(s) from {name}",
-                string.Join("\n", deletes.Select(d => Delete(changes, table, d)))));
+                string.Join("\n", deletes.Select(d => Delete(changes, table, d))),
+                Destructive: true));
         }
 
-        foreach (var batch in inserts.Chunk(RowsPerInsert))
-        {
-            steps.Add(new ScriptStep(
-                ScriptPhase.DataUpserts,
-                $"insert {batch.Length} row(s) into {name}",
-                Insert(changes, table, batch)));
-        }
+        var staged = ScriptSizeEstimator.EstimateBytes(changes) > maxInlineBytes
+            && inserts.Count + updates.Count > 0;
 
-        if (updates.Count > 0)
+        if (staged)
         {
-            steps.Add(new ScriptStep(
-                ScriptPhase.DataUpserts,
-                $"update {updates.Count} row(s) in {name}",
-                string.Join("\n", updates.Select(u => Update(changes, table, u)))));
+            steps.AddRange(TSqlStagedWriter.Emit(changes, inserts, updates));
+        }
+        else
+        {
+            foreach (var batch in inserts.Chunk(RowsPerInsert))
+            {
+                steps.Add(new ScriptStep(
+                    ScriptPhase.DataUpserts,
+                    $"insert {batch.Length} row(s) into {name}",
+                    Insert(changes, table, batch)));
+            }
+
+            if (updates.Count > 0)
+            {
+                steps.Add(new ScriptStep(
+                    ScriptPhase.DataUpserts,
+                    $"update {updates.Count} row(s) in {name}",
+                    string.Join("\n", updates.Select(u => Update(changes, table, u)))));
+            }
         }
 
         // A fresh IDENTITY starts at 1, so rows inserted with explicit keys leave the seed behind and

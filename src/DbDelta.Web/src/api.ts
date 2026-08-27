@@ -80,6 +80,7 @@ export interface StepDto {
   phase: string
   description: string
   sql: string
+  destructive: boolean
 }
 
 // An object the plan carries because something ticked needs it, not because it was ticked. Both halves
@@ -101,6 +102,14 @@ export interface RequiredRows {
   foreignKeyName: string
 }
 
+// A table whose rows travel beside the script instead of inside it. The script stays readable; the rows
+// come down as a data file in the same zip.
+export interface StagedTable {
+  table: string
+  rowCount: number
+  dataFileName: string
+}
+
 export interface ScriptResponse {
   sql: string
   stepCount: number
@@ -112,6 +121,7 @@ export interface ScriptResponse {
   unsatisfiable: string[]
   requiredRows: RequiredRows[]
   excluded: ExcludedObject[]
+  staged: StagedTable[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {

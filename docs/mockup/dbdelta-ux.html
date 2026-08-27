@@ -839,6 +839,11 @@
     <p class="screen-note">Dua hal di script ini tidak dipilih siapa pun: objek yang ditarik closure, dan
       baris induk yang ditarik karena baris yang ditulis menunjuk ke sana. Keduanya disebut namanya beserta
       alasannya &mdash; script yang isinya lebih banyak daripada yang dicentang harus bisa dijelaskan.</p>
+    <p class="screen-note">Tabel yang barisnya terlalu banyak untuk dibaca sebagai <span class="mono">INSERT</span>
+      memakai jalur staging: barisnya masuk ke tabel sementara, lalu satu statement memindahkannya. Panjang
+      script-nya sama saja apakah tabelnya 800 baris atau 800.000 &mdash; yang direview memang harus tetap
+      bisa dibaca. Karena itu tombolnya berbunyi <span class="mono">Download .zip</span>: script-nya sendiri
+      tidak lengkap tanpa file datanya.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
@@ -875,6 +880,16 @@
                     and the target does not have it</li>
                 </ul></div></div>
 
+            <div class="warnline info"><span class="g add">&#8681;</span>
+              <div><b>4.821 row(s) travel beside this script, not inside it.</b> Terlalu banyak untuk dibaca
+                sebagai <span class="mono">INSERT</span>, jadi barisnya masuk ke staging table dan satu
+                statement memindahkannya. Apply mengalirkannya lewat koneksinya sendiri; download-nya berupa
+                zip berisi script dan file datanya.
+                <ul style="margin:6px 0 0; padding-left:18px;">
+                  <li>4.821 row(s) of <span class="mono">dbo.SiteReading</span> &mdash;
+                    <span class="mono">dbo.SiteReading.dat</span></li>
+                </ul></div></div>
+
             <div class="warnline info"><span class="g add">+</span>
               <div><b>1 row(s) were pulled in as parents.</b> Baris yang di-seed tapi induknya tidak ada di
                 target akan gagal di foreign key, jadi induknya masuk lebih dulu.
@@ -904,7 +919,7 @@
             <span class="guard"><span class="g chg">!</span>2 destructive step(s)</span>
             <span class="push"></span>
             <button class="btn">Back</button>
-            <button class="btn primary">Download .sql</button>
+            <button class="btn primary">Download .zip</button>
             <button class="btn" aria-disabled="true">Apply to AppUat</button>
           </div>
         </div>

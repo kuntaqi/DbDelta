@@ -127,7 +127,7 @@ public sealed class CompareService
             script.Steps.Select(s => s.Sql).ToList());
     }
 
-    public async Task<ScriptResponse> ScriptAsync(
+    public async Task<BuiltScript> ScriptAsync(
         CompareSession session,
         DataCompareService data,
         CancellationToken cancellationToken)
@@ -157,12 +157,12 @@ public sealed class CompareService
         var sql = combined.ToSql();
         var bytes = System.Text.Encoding.UTF8.GetByteCount(sql);
 
-        return new ScriptResponse(
+        var response = new ScriptResponse(
             sql,
             combined.Count,
             bytes,
             bytes > _safety.MaxReviewableScriptBytes,
-            combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList(),
+            combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql, s.Destructive)).ToList(),
             rows.DeleteWarnings,
             closure.Required.Select(r => SchemaSelectionService.Required(session, r)).ToList(),
             [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. rows.ClosureWarnings],
@@ -170,7 +170,10 @@ public sealed class CompareService
                 .Select(r => new RequiredRowsDto(
                     r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))
                 .ToList(),
-            SchemaSelectionService.Exclusions(session));
+            SchemaSelectionService.Exclusions(session),
+            combined.Loads.Select(l => new StagedTableDto(l.Table, l.RowCount, l.DataFileName)).ToList());
+
+        return new BuiltScript { Script = combined, Response = response };
     }
 
     // Deletes walk the foreign key graph child-first and inserts parent-first. Both directions in one
@@ -235,7 +238,7 @@ public sealed class CompareService
                 }
             }
 
-            emitted.Add(_provider.CreateDataScriptEmitter().Emit(changes));
+            emitted.Add(_provider.CreateDataScriptEmitter().Emit(changes, _safety.MaxInlineTableBytes));
         }
 
         var steps = new List<ScriptStep>();

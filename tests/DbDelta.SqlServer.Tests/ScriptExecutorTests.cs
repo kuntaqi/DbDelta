@@ -29,7 +29,7 @@ public sealed class ScriptExecutorTests
             var script = new TSqlEmitter().Emit(source, target, diff);
 
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
             Assert.True(result.Succeeded);
@@ -59,7 +59,7 @@ public sealed class ScriptExecutorTests
         {
             var before = await new SqlServerSchemaReader(connectionString).ReadAsync();
 
-            var sql = new SyncScript
+            var script = new SyncScript
             {
                 Header = "-- deliberate failure",
                 Steps =
@@ -69,9 +69,9 @@ public sealed class ScriptExecutorTests
                     new ScriptStep(ScriptPhase.AlterColumns, "touch a table that is not there",
                         "ALTER TABLE [dbo].[NoSuchTable] ADD [X] INT NULL;")
                 ]
-            }.ToSql();
+            };
 
-            var result = await new SqlServerScriptExecutor().ExecuteAsync(connectionString, sql, 2);
+            var result = await new SqlServerScriptExecutor().ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.RolledBack, result.Outcome);
             Assert.False(result.Succeeded);
@@ -107,13 +107,11 @@ public sealed class ScriptExecutorTests
                 LocalDbFixture.ConnectionStringFor(LocalDbFixture.SourceDatabase)).ReadAsync();
             var target = await new SqlServerSchemaReader(connectionString).ReadAsync();
             var script = new TSqlEmitter().Emit(source, target, new SchemaComparer().Compare(source, target));
-            var sql = script.ToSql();
-
             var executor = new SqlServerScriptExecutor();
-            var first = await executor.ExecuteAsync(connectionString, sql, script.Count);
+            var first = await executor.ExecuteAsync(connectionString, script);
             Assert.Equal(ApplyOutcome.Committed, first.Outcome);
 
-            var second = await executor.ExecuteAsync(connectionString, sql, script.Count);
+            var second = await executor.ExecuteAsync(connectionString, script);
             Assert.Equal(ApplyOutcome.RolledBack, second.Outcome);
 
             var after = await new SqlServerSchemaReader(connectionString).ReadAsync();

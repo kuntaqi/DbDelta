@@ -111,7 +111,26 @@ api.MapPost("/compare/{id}/script", async (
     var session = sessions.Find(id);
     return session is null
         ? Results.NotFound()
-        : Results.Ok(await service.ScriptAsync(session, data, cancellationToken));
+        : Results.Ok((await service.ScriptAsync(session, data, cancellationToken)).Response);
+});
+
+api.MapGet("/compare/{id}/script/download", async (
+    string id,
+    CompareService service,
+    DataCompareService data,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    if (session is null)
+    {
+        return Results.NotFound();
+    }
+
+    var built = await service.ScriptAsync(session, data, cancellationToken);
+    var (content, fileName, contentType) = ScriptPackager.Package(built.Script, session.Target.DatabaseName);
+
+    return Results.File(content, contentType, fileName);
 });
 
 api.MapPost("/compare/{id}/schema/select", (

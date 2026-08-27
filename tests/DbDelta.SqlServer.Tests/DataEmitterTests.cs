@@ -76,7 +76,7 @@ public sealed class DataEmitterTests
             var script = new SyncScript { Header = "-- data", Steps = steps.OrderBy(s => s.Phase).ToList() };
 
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
             Assert.Equal(["1:Retail", "2:Wholesale", "3:Energy"], await RowsAsync(connectionString));
@@ -157,7 +157,7 @@ public sealed class DataEmitterTests
             };
 
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
             Assert.Contains("7:O'Brien & Co", await RowsAsync(connectionString));

@@ -25,20 +25,16 @@ export function PlanScreen({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const destructive = script.steps.filter(
-    (s) => /drop table/i.test(s.sql) || /drop column/i.test(s.sql),
-  )
+  // The step says whether it is destructive; reading its SQL for the word DROP used to count a staging
+  // table being cleaned up as data loss.
+  const destructive = script.steps.filter((s) => s.destructive)
   const confirmed = confirmation === comparison.targetDatabase
   const ready = confirmed && (destructive.length === 0 || allowDestructive) && !comparison.targetReadOnly
 
+  // Built on the server rather than from the text on screen: when rows are staged the download is a zip
+  // of the script and its data files, and the browser only has the script half.
   function download() {
-    const blob = new Blob([script.sql], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `sync_${comparison.targetDatabase}.sql`
-    link.click()
-    URL.revokeObjectURL(url)
+    window.location.href = `/api/compare/${comparison.id}/script/download`
   }
 
   async function apply() {
@@ -175,12 +171,35 @@ export function PlanScreen({
               </div>
             )}
 
+            {script.staged.length > 0 && (
+              <div className="warnline info">
+                <span className="g add">&#8681;</span>
+                <div>
+                  <b>
+                    {script.staged.reduce((sum, s) => sum + s.rowCount, 0)} row(s) travel beside this script,
+                    not inside it.
+                  </b>{' '}
+                  Too many to read as <span className="mono">INSERT</span> statements, so they load into a
+                  staging table and one statement moves them across. Apply streams them over its own
+                  connection; the download is a zip of the script and its data files.
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {script.staged.map((item) => (
+                      <li key={item.dataFileName}>
+                        {item.rowCount} row(s) of <span className="mono">{item.table}</span> &mdash;{' '}
+                        <span className="mono">{item.dataFileName}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {script.exceedsReviewableSize && (
               <div className="warnline warn">
                 <span className="g">!</span>
                 <div>
-                  This script is too large to review comfortably. Bulk mode is the right answer here rather
-                  than a file nobody reads.
+                  This script is still over the reviewable size even with rows staged out of it, so the bulk
+                  is structure rather than data. Read it in a text editor rather than SSMS.
                 </div>
               </div>
             )}
@@ -267,7 +286,7 @@ export function PlanScreen({
               Back
             </button>
             <button type="button" className="btn primary" onClick={download}>
-              Download .sql
+              {script.staged.length > 0 ? 'Download .zip' : 'Download .sql'}
             </button>
             <button type="button" className="btn" disabled={!ready || busy} onClick={apply}>
               {busy ? 'Applying…' : `Apply to ${comparison.targetDatabase}`}

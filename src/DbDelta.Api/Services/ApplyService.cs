@@ -44,7 +44,8 @@ public sealed class ApplyService
         // review was looking at. This is the "then"; what the rebuild finds is the "now".
         var reviewed = session.ReviewedRows;
 
-        var script = await _compare.ScriptAsync(session, _data, cancellationToken).ConfigureAwait(false);
+        var built = await _compare.ScriptAsync(session, _data, cancellationToken).ConfigureAwait(false);
+        var script = built.Response;
         var destructive = Destructive(script);
 
         // An empty plan has nothing to commit, and logging it as a successful run would fill the log
@@ -85,7 +86,7 @@ public sealed class ApplyService
         }
 
         var result = await _executor
-            .ExecuteAsync(session.TargetConnectionString, script.Sql, script.StepCount, cancellationToken)
+            .ExecuteAsync(session.TargetConnectionString, built.Script, cancellationToken)
             .ConfigureAwait(false);
 
         await LogAsync(
@@ -162,11 +163,12 @@ public sealed class ApplyService
     // Dropped objects and deleted rows are the parts a later rollback cannot bring back, so they need
     // the same deliberate consent. Over-limit delete shares join the list rather than sitting in a
     // separate warning nobody has to acknowledge.
+    //
+    // The steps say so themselves rather than being matched on their text. Reading the SQL for DROP was
+    // fine until a staged plan dropped the temporary table it had just made and read as data loss.
     private static IReadOnlyList<string> Destructive(ScriptResponse script) =>
         script.Steps
-            .Where(s => s.Sql.Contains("DROP TABLE", StringComparison.OrdinalIgnoreCase)
-                || s.Sql.Contains("DROP COLUMN", StringComparison.OrdinalIgnoreCase)
-                || s.Sql.Contains("DELETE FROM", StringComparison.OrdinalIgnoreCase))
+            .Where(s => s.Destructive)
             .Select(s => s.Description)
             .Concat(script.DeleteWarnings)
             .ToList();

@@ -226,6 +226,23 @@ public sealed class LocalDbFixture : IAsyncLifetime
         INSERT INTO dbo.Contact (ContactId, CompanyId, Email) VALUES (1, 2, N'ops@contoso.example');
         SET IDENTITY_INSERT dbo.Contact OFF;
         GO
+        -- More rows than the detail reader fetches in one go, and more than fit in one INSERT batch, so
+        -- both caps are exercised by something rather than assumed to be fine.
+        CREATE TABLE dbo.Metric (
+            MetricId  INT NOT NULL CONSTRAINT PK_Metric PRIMARY KEY,
+            Label   NVARCHAR(60) NOT NULL,
+            Amount  DECIMAL(18,2) NOT NULL,
+            At      DATETIME2 NULL
+        );
+        GO
+        INSERT INTO dbo.Metric (MetricId, Label, Amount, At)
+        SELECT TOP (1200)
+            ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+            N'row ' + CONVERT(nvarchar(10), ROW_NUMBER() OVER (ORDER BY (SELECT NULL))),
+            ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) * 1.5,
+            DATEADD(minute, ROW_NUMBER() OVER (ORDER BY (SELECT NULL)), '2026-01-01T00:00:00')
+        FROM sys.all_objects a CROSS JOIN sys.all_objects b;
+        GO
         """;
 
     // Deliberately behind the source in four ways: a narrower Segment, no RatingBand, no rating
@@ -269,6 +286,14 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         CREATE TABLE dbo.SegmentLegacy (
             Id INT NOT NULL CONSTRAINT PK_SegmentLegacy PRIMARY KEY
+        );
+        GO
+        -- Present but empty, so every one of the source's 1200 rows is an insert.
+        CREATE TABLE dbo.Metric (
+            MetricId  INT NOT NULL CONSTRAINT PK_Metric PRIMARY KEY,
+            Label   NVARCHAR(60) NOT NULL,
+            Amount  DECIMAL(18,2) NOT NULL,
+            At      DATETIME2 NULL
         );
         GO
         """;

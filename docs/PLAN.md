@@ -291,17 +291,38 @@ counts are only taken for tables actually entering a data compare.
 
 **The script-size cliff is real and gets its own guard.** `INSERT … VALUES` caps at 1000 rows per statement,
 and a `.sql` file past roughly 100 MB stops being openable in SSMS — which defeats the whole "review the
-script first" premise. So the script is measured against `Safety:MaxReviewableScriptBytes` (100 MB) and
-reported as oversized rather than being handed over as a 400 MB file nobody can read.
+script first" premise.
 
-**The staged bulk path behind that guard is not built.** `SqlBulkCopy` on apply and `BULK INSERT` + a data
-file for download were the intended other half; today the threshold produces a flag and the script is still
-emitted in full. Two things are worth separating here. The measurement is also not an estimate — the whole
-script is assembled first and then counted, so an oversized plan has already paid for the string it warns
-about. A genuine up-front estimate is cheap (`row count × column count × an average literal width` is already
-computed for the transfer readout) and would let the tool refuse before building. That ordering matters more
-than the bulk path does: without it, the guard protects the person reading the script but not the process
-generating it.
+**So a table's DML is measured before any of it is written.** `ScriptSizeEstimator` costs the rows from the
+values already in hand; past `Safety:MaxInlineTableBytes` (8 MB) that table takes the staged path instead of
+being written as literals. Deciding first is the part that matters — the old check assembled the whole script
+and then counted it, which meant an oversized plan had already paid for the string it was about to warn
+about.
+
+**Staged means a temporary table and one statement each.** The rows land in `#dbdelta_<schema>_<table>` and
+`INSERT … SELECT` / `UPDATE … FROM` move them into the target. The script is four statements whether the table
+has 800 rows or 800,000, so the reviewable artifact stays reviewable — and what is reviewed is *more* legible
+than 800 `INSERT` statements, not less, because it says what happens rather than listing it.
+
+Four decisions inside that:
+
+- **The staging table is entirely `NVARCHAR(MAX)`.** Every value in this tool is already text by the time it
+  reaches the emitter. A typed staging table would mean converting on the client — a second place for a
+  datetime or a float to be got wrong — where this way the conversion happens once, server-side, in the same
+  statement that reads the column, which is the same conversion a literal would have gone through.
+- **Deletes stay inline.** A delete writes its key and nothing else, so it is compact however many there are.
+  Only inserts and updates carry full rows, and only they take the staged route.
+- **Apply and download take different routes to the same staging table.** Apply streams the rows with
+  `SqlBulkCopy` over its own connection. Download cannot: `BULK INSERT` resolves its path on the *server*, so
+  the file has to be somewhere the server can read. The zip says so in a README rather than shipping a script
+  that silently loads nothing.
+- **The apply runs on one connection with a client-side transaction.** A temporary table exists only for the
+  connection that made it, and a bulk load can only join a transaction living on the same one. This is why
+  the executor now takes the plan rather than its text — a staged step's rows are not in the text.
+
+The download follows from that: a plan with no staged rows is one `.sql`, and a plan with them is a zip of
+the script, the data files, and a README. Handing over a script that looks complete and loads nothing would
+be worse than either.
 
 ### Per-table data modes: seeding instead of copying everything
 
@@ -650,7 +671,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Staged bulk path past the size cliff | `MaxReviewableScriptBytes`, measured and flagged | No `SqlBulkCopy` / `BULK INSERT` path, and the measurement happens after the whole script is built rather than before |
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | `Filter` row mode | `FilterPredicate` reaches the reader's `WHERE`; deletes already suppressed | No input control — and it needs a decision about user text becoming SQL before it gets one |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
@@ -660,8 +680,8 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
-Both closures and the drift check used to head this list, and all three are now built. What remains
-is convenience rather than correctness: nothing left here can make the tool write the wrong thing, only make
-it more tiring to use or refuse work it could have done. The one with teeth is the staged bulk path — past
-the size cliff the tool says the script is too large and still emits it, so the guard protects the person
-reading the script but not the process building it.
+Everything with teeth is now built: both closures, the drift check, and the staged path. What is
+left cannot make the tool write the wrong thing or refuse work it could do — it can only make the tool more
+tiring to use, or leave a database shape it does not understand. The nearest to consequential is
+`UserDefinedType`, which is silent rather than merely absent: a database using UDTs compares as though they
+were not there.

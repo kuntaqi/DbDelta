@@ -70,7 +70,7 @@ public sealed class ParentClosureIntegrationTests
 
             var script = Assemble(source, planned);
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.RolledBack, result.Outcome);
             Assert.Contains("FK_Contact_Company", result.ServerMessage);
@@ -246,7 +246,7 @@ public sealed class ParentClosureIntegrationTests
     {
         var script = Assemble(source, closure.Tables);
 
-        return new SqlServerScriptExecutor().ExecuteAsync(connectionString, script.ToSql(), script.Count);
+        return new SqlServerScriptExecutor().ExecuteAsync(connectionString, script);
     }
 
     // Parents first, which is what makes the pulled-in rows land before the rows that need them.

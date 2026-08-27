@@ -82,7 +82,7 @@ public sealed class EmptyTargetTests
             var script = new TSqlEmitter().Emit(source, target, comparer.Compare(source, target));
 
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
 

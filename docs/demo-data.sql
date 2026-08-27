@@ -97,3 +97,33 @@ INSERT INTO dbo.Company (CompanyId, CompanyName, Segment, CategoryId, RatingBand
 VALUES (1, N'Northwind', N'Retail', 1, 3, 100.00), (2, N'Contoso', N'Energy', 3, 4, 250.00);
 SET IDENTITY_INSERT dbo.Company OFF;
 GO
+
+-- A table big enough to take the staged path. 1200 rows of literal INSERT statements is a script nobody
+-- reads, so past Safety:MaxInlineTableBytes the rows go over the wire into a staging table instead and
+-- the script stays four statements long. Lower that setting to see it on a table this size.
+USE DbDelta_Demo_Src;
+GO
+CREATE TABLE dbo.Metric (
+    MetricId INT NOT NULL CONSTRAINT PK_Metric PRIMARY KEY,
+    Label    NVARCHAR(60) NOT NULL,
+    Amount   DECIMAL(18,2) NOT NULL,
+    At       DATETIME2 NULL
+);
+GO
+INSERT INTO dbo.Metric (MetricId, Label, Amount, At)
+SELECT TOP (1200)
+    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)),
+    N'row ' + CONVERT(nvarchar(10), ROW_NUMBER() OVER (ORDER BY (SELECT NULL))),
+    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) * 1.5,
+    DATEADD(minute, ROW_NUMBER() OVER (ORDER BY (SELECT NULL)), '2026-01-01T00:00:00')
+FROM sys.all_objects a CROSS JOIN sys.all_objects b;
+GO
+USE DbDelta_Demo_Tgt;
+GO
+CREATE TABLE dbo.Metric (
+    MetricId INT NOT NULL CONSTRAINT PK_Metric PRIMARY KEY,
+    Label    NVARCHAR(60) NOT NULL,
+    Amount   DECIMAL(18,2) NOT NULL,
+    At       DATETIME2 NULL
+);
+GO

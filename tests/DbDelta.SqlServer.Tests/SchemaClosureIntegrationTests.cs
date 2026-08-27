@@ -40,7 +40,7 @@ public sealed class SchemaClosureIntegrationTests
 
             var script = new TSqlEmitter().Emit(source, target, diff, closure.Selection);
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
 
@@ -78,7 +78,7 @@ public sealed class SchemaClosureIntegrationTests
 
             var script = new TSqlEmitter().Emit(source, target, diff, new HashSet<ObjectIdentity> { Contact });
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.RolledBack, result.Outcome);
 
@@ -118,7 +118,7 @@ public sealed class SchemaClosureIntegrationTests
 
             var script = new TSqlEmitter().Emit(source, target, diff, closure.Selection);
             var result = await new SqlServerScriptExecutor()
-                .ExecuteAsync(connectionString, script.ToSql(), script.Count);
+                .ExecuteAsync(connectionString, script);
 
             Assert.Equal(ApplyOutcome.Committed, result.Outcome);
 

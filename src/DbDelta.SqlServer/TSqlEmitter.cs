@@ -102,7 +102,8 @@ public sealed class TSqlEmitter : IScriptEmitter
                     steps.Add(new ScriptStep(
                         ScriptPhase.DropTables,
                         $"drop table {change.Identity.QualifiedName}",
-                        TSqlWriter.DropTable(change.Identity)));
+                        TSqlWriter.DropTable(change.Identity),
+                        Destructive: true));
                     break;
 
                 case ObjectType.View:
@@ -259,7 +260,8 @@ public sealed class TSqlEmitter : IScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.AlterColumns,
                 $"drop column {table.QualifiedName}.{name}",
-                TSqlWriter.DropColumn(table, name)));
+                TSqlWriter.DropColumn(table, name),
+                Destructive: true));
             return;
         }
 

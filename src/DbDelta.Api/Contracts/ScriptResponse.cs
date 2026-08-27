@@ -10,4 +10,5 @@ public sealed record ScriptResponse(
     IReadOnlyList<RequiredObjectDto> Required,
     IReadOnlyList<string> Unsatisfiable,
     IReadOnlyList<RequiredRowsDto> RequiredRows,
-    IReadOnlyList<ExcludedObjectDto> Excluded);
+    IReadOnlyList<ExcludedObjectDto> Excluded,
+    IReadOnlyList<StagedTableDto> Staged);

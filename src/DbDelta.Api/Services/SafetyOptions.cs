@@ -23,4 +23,9 @@ public sealed class SafetyOptions
     // Past this it stops and says what it stopped short of, because a plan that quietly grew by 80,000
     // rows is not a plan anybody reviewed.
     public int MaxClosureRows { get; init; } = 5000;
+
+    // Where one table stops being written as literal SQL. Past this its rows go over the wire into a
+    // staging table instead, which keeps the script the same size whether the table has 800 rows or
+    // 800,000 — the script is the reviewable artifact, so its size is the thing being protected.
+    public long MaxInlineTableBytes { get; init; } = 8L * 1024 * 1024;
 }

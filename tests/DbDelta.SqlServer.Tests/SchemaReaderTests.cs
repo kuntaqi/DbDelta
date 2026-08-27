@@ -29,7 +29,7 @@ public sealed class SchemaReaderTests
         var schema = await ReadSourceAsync();
 
         Assert.Equal(
-            ["Category", "Company", "Contact", "Digest"],
+            ["Category", "Company", "Contact", "Digest", "Metric"],
             schema.Tables.Select(t => t.Identity.Name).OrderBy(n => n));
     }
 
