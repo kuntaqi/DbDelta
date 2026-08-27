@@ -20,7 +20,8 @@ public static class SchemaClosure
         DatabaseSchema source,
         DatabaseSchema target,
         SchemaDiff diff,
-        IEnumerable<ObjectIdentity> selected)
+        IEnumerable<ObjectIdentity> selected,
+        IReadOnlySet<ObjectIdentity>? blocked = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(target);
@@ -41,6 +42,7 @@ public static class SchemaClosure
         var selection = new HashSet<ObjectIdentity>(seeds);
         var queue = new Queue<ObjectIdentity>(seeds);
         var required = new List<RequiredObject>();
+        var refused = new List<RequiredObject>();
         var unsatisfiable = new List<string>();
         var reported = new HashSet<string>(StringComparer.Ordinal);
 
@@ -52,6 +54,18 @@ public static class SchemaClosure
             {
                 if (selection.Contains(needed))
                 {
+                    continue;
+                }
+
+                // An exclusion is a decision, and closure is not entitled to overrule one. The
+                // prerequisite is named and the walk stops there rather than quietly reinstating it.
+                if (blocked is not null && blocked.Contains(needed))
+                {
+                    if (!refused.Any(r => r.Identity == needed && r.RequiredBy == identity))
+                    {
+                        refused.Add(new RequiredObject(needed, identity, reason));
+                    }
+
                     continue;
                 }
 
@@ -80,6 +94,7 @@ public static class SchemaClosure
         {
             Selection = selection,
             Required = required,
+            Blocked = refused,
             Unsatisfiable = unsatisfiable
         };
     }

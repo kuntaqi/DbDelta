@@ -118,6 +118,23 @@ export function PlanScreen({
               </div>
             ))}
 
+            {script.excluded.length > 0 && (
+              <div className="warnline">
+                <span className="g del">&minus;</span>
+                <div>
+                  <b>{script.excluded.length} change(s) are deliberately not here.</b> They were left out
+                  under a database-wide plan and stayed out.
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {script.excluded.map((item) => (
+                      <li key={item.id}>
+                        <span className="mono">{item.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {script.required.length > 0 && (
               <div className="warnline info">
                 <span className="g add">+</span>

@@ -209,6 +209,32 @@ public sealed class SchemaClosureTests
         Assert.Equal(2, closure.Selection.Count);
     }
 
+    // Closure adds what the plan needs; it does not get to reverse a refusal already given. Reinstating an
+    // excluded object would be the silent override the whole exclusion mechanism exists to prevent.
+    [Fact]
+    public void A_prerequisite_that_is_excluded_is_refused_rather_than_quietly_reinstated()
+    {
+        var source = Build.Schema(
+            "Src",
+            [
+                Build.Table("Company", foreignKeys: [Build.ForeignKey("FK_Company_Category", "CategoryId", "Category")]),
+                Build.Table("Category")
+            ]);
+
+        var target = Build.Schema("Tgt");
+        var diff = new SchemaComparer().Compare(source, target);
+
+        var closure = SchemaClosure.Expand(
+            source, target, diff, [Build.TableId("Company")], new HashSet<ObjectIdentity> { Build.TableId("Category") });
+
+        Assert.Empty(closure.Required);
+        Assert.DoesNotContain(Build.TableId("Category"), closure.Selection);
+
+        var blocked = Assert.Single(closure.Blocked);
+        Assert.Equal("dbo.Category", blocked.Identity.QualifiedName);
+        Assert.Equal("dbo.Company", blocked.RequiredBy.QualifiedName);
+    }
+
     private static ClosureResult Expand(
         DatabaseSchema source,
         DatabaseSchema target,

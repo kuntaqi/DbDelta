@@ -1,6 +1,7 @@
 using DbDelta.Core.Comparison;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
+using DbDelta.Core.Planning;
 
 namespace DbDelta.Api.Services;
 
@@ -36,7 +37,23 @@ public sealed class CompareSession
 
     // Nothing reaches the plan without being picked — schema included. A tool that pre-selects the
     // changes it found makes the review step optional in practice.
-    public HashSet<ObjectIdentity> SchemaSelections { get; } = [];
+    //
+    // Intents, not a list of objects: one entry can be "this object" or "the whole database". That
+    // distinction is what makes an exclusion necessary — under a database-wide intent there is no set to
+    // remove an object from, so declining one has to be said rather than left unsaid.
+    public List<PlanSelection> Selections { get; } = [];
+
+    // First-class refusals. Kept apart from the selections so widening the scope cannot swallow them.
+    public List<Exclusion> Exclusions { get; } = [];
+
+    public CompiledPlan SchemaPlan() =>
+        PlanCompiler.Compile(Selections, SchemaChangeUnits.From(Diff), Exclusions);
+
+    public bool Covers(ChangeUnitId unit) =>
+        PlanNormalizer.Normalize(Selections).Any(s => s.Covers(unit));
+
+    public bool IsWholeDatabase =>
+        PlanNormalizer.Normalize(Selections).Any(s => s.Scope == SelectionScope.Database);
 
     // Tables without a primary key are not compared on a guess. A key chosen here is verified unique on
     // both sides first, because the merge join is only correct when a key identifies at most one row.

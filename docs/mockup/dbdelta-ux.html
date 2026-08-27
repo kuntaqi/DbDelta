@@ -553,6 +553,11 @@
       kedua sisinya, lalu DDL berdampingan dengan baris berbeda ditandai, lalu perintah yang benar-benar akan
       dijalankan di target. Mencentang untuk plan dan membuka perbedaan adalah dua hal terpisah &mdash;
       checkbox tidak pernah membuka panel, dan hanya satu objek terbuka pada satu waktu.</p>
+    <p class="screen-note">Plan punya dua scope. <strong>Picked items</strong> adalah daftar; mencabut centang
+      berarti mengeluarkannya dari daftar. <strong>Entire database</strong> adalah niat yang berdiri sendiri
+      &mdash; ikut mencakup yang belum dilihat &mdash; dan di situ tidak ada daftar untuk dikurangi, jadi
+      mencabut centang tercatat sebagai <strong>exclusion</strong>. Meminta seluruh database sekali lagi tidak
+      mengembalikannya: yang sudah diputuskan bukan bagian dari &ldquo;yang belum dipertimbangkan&rdquo;.</p>
     <p class="screen-note">Plan bisa berisi lebih banyak daripada yang dicentang. Mencentang
       <span class="mono">dbo.CompanyRating</span> ikut menarik <span class="mono">dbo.Category</span>, karena
       foreign key-nya menunjuk ke sana dan target belum punya. Yang ditarik ditandai di barisnya sendiri
@@ -593,7 +598,9 @@
           <span class="chip">Show identical <span class="n">804</span></span>
           <span class="dim" style="font-size:12px;">25 object(s) differ</span>
           <span class="push"></span>
-          <span class="chip">Select all differing</span>
+          <span class="dim" style="font-size:12px;">Plan covers</span>
+          <span class="chip on">Picked items</span>
+          <span class="chip">Entire database</span>
           <span class="chip">Clear</span>
         </div>
       </div>
@@ -666,6 +673,12 @@
     </div>
     <p class="caption">Tanpa satu pun dicentang, action bar berbunyi &ldquo;Nothing picked. Tick the objects
       you want in the plan &mdash; none are selected for you.&rdquo;</p>
+
+    <p class="caption">Layar di atas berada pada scope <span class="mono">Picked items</span> &mdash; karena
+      itu ada baris yang ditarik closure. Pada <span class="mono">Entire database</span> tidak ada yang perlu
+      ditarik (semua yang beda sudah masuk), dan yang muncul justru kebalikannya: daftar exclusion di atas
+      pohon, <span class="mono">&minus; 1 change(s) left out on purpose &mdash; drop table
+      dbo.SegmentLegacy</span>, beserta catatan bahwa melebarkan scope lagi tidak menariknya kembali.</p>
 
     <p class="caption">Baris 3 dibungkus <span class="mono">EXEC sp_executesql</span> karena kolom yang baru
       ditambah tidak terlihat oleh statement lain di batch yang sama.</p>
@@ -1019,17 +1032,11 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">9 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">7 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
           <tbody>
-            <tr><td class="txt"><b>Scope escalation</b> &mdash; Picked items / Entire database</td><td>5</td>
-              <td class="txt">Scope lattice ada di <span class="mono">PlanNormalizer</span> dan teruji, tapi
-                tidak ada kontrol UI yang memanggilnya.</td></tr>
-            <tr><td class="txt"><b>Exclusion kelas satu</b> dengan tombol revoke</td><td>5</td>
-              <td class="txt">Tipe <span class="mono">Exclusion</span> ada di Core dan teruji; belum
-                tersambung ke session maupun UI.</td></tr>
             <tr><td class="txt"><b>Checkbox per baris</b> di grid data</td><td>4</td>
               <td class="txt">Pemilihan berhenti di tingkat tabel, sesuai keputusan yang diambil. Scope
                 <span class="mono">Row</span> sudah didukung model cart.</td></tr>

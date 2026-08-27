@@ -117,7 +117,6 @@ api.MapPost("/compare/{id}/script", async (
 api.MapPost("/compare/{id}/schema/select", (
     string id,
     SchemaSelectionRequest request,
-    CompareService service,
     CompareSessionStore sessions) =>
 {
     var session = sessions.Find(id);
@@ -128,7 +127,7 @@ api.MapPost("/compare/{id}/schema/select", (
 
     try
     {
-        return Results.Ok(service.SelectSchema(session, request));
+        return Results.Ok(SchemaSelectionService.Select(session, request));
     }
     catch (InvalidOperationException ex)
     {
@@ -136,20 +135,27 @@ api.MapPost("/compare/{id}/schema/select", (
     }
 });
 
-api.MapPost("/compare/{id}/schema/select-all", (
+api.MapPost("/compare/{id}/schema/scope", (
     string id,
-    bool selected,
-    CompareService service,
+    SchemaScopeRequest request,
     CompareSessionStore sessions) =>
 {
     var session = sessions.Find(id);
-    return session is null ? Results.NotFound() : Results.Ok(service.SelectAllSchema(session, selected));
+    return session is null ? Results.NotFound() : Results.Ok(SchemaSelectionService.SetScope(session, request.Scope));
+});
+
+api.MapPost("/compare/{id}/schema/clear", (
+    string id,
+    CompareSessionStore sessions) =>
+{
+    var session = sessions.Find(id);
+    return session is null ? Results.NotFound() : Results.Ok(SchemaSelectionService.Clear(session));
 });
 
 api.MapGet("/compare/{id}/schema/select", (string id, CompareSessionStore sessions) =>
 {
     var session = sessions.Find(id);
-    return session is null ? Results.NotFound() : Results.Ok(CompareService.SchemaSelection(session));
+    return session is null ? Results.NotFound() : Results.Ok(SchemaSelectionService.Describe(session));
 });
 
 api.MapGet("/compare/{id}/data/key", async (

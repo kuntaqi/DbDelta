@@ -167,14 +167,21 @@ deduplicated by identity — `(objectType, schema, name, changeKind)` for schema
 operation)` for data — so overlapping scopes are structurally incapable of producing the same statement
 twice. The guarantee comes from the identity key, not from care at the call site.
 
-**Status: built in `Core`, not reached from the app.** `PlanSelection`, `SelectionScope`, `PlanNormalizer`,
-`ChangeUnitId`, `Exclusion` and `PlanCompiler` all exist and are covered by `PlanCompilerTests`, but the only
-callers are those tests and one integration test. The API composes its script a simpler way: a
-`HashSet<ObjectIdentity>` of ticked schema objects goes straight to the emitter's `include` filter, and a
-`Dictionary<ObjectIdentity, DataSelection>` drives the data steps. Two consequences follow. There is no
-`Database` scope to escalate *to* — the UI offers "select all differing", which ticks each object individually
-and is not the same thing. And the dedup guarantee is currently provided by the set, which holds for schema
-objects but has never been exercised at row scope, because nothing selects rows.
+The session holds those intents directly: `List<PlanSelection>` and `List<Exclusion>`, compiled through
+`PlanCompiler` on every read. The schema screen offers the two scopes as a control — *Picked items* and
+*Entire database* — and the script is emitted from the compiled unit set rather than from a list of ticks.
+
+**Scope is over the schema, and table data stays opt-in per table.** The original sketch imagined "the whole
+database" reaching rows too. It does not, and the reason is elsewhere in this document: finding which tables
+differ is a button because it costs minutes, and data is the heavier decision by an explicit decision above.
+Escalating the schema scope must not quietly start comparing 263 tables' data. So `Database` scope covers
+schema change units; a table's rows enter the plan when that table is picked on the data screen. That is a
+narrowing of the original design, taken deliberately.
+
+**What a change unit is here.** One differing object is one unit, and the kind is part of its identity —
+`create`, `alter` or `drop`. That is what lets an exclusion be bound to a change rather than to an object:
+refusing today's `DROP` of a table does not also suppress an `ALTER` of it in a later comparison, because
+that would be a different decision taken on the user's behalf.
 
 **Escalation is not a pure superset, and that is the interesting case.** Positive picks are subsumed
 safely. Negative ones are not:
@@ -188,11 +195,23 @@ exercised. So exclusions are stored as **first-class negative entries**, not as 
 they survive escalation. Escalating means "also take everything I haven't considered", never "forget what
 I decided". The UI lists surviving exclusions so they can be revoked deliberately.
 
-That last sentence is design, not description. `Exclusion` is a Core type with tests proving it survives a
-`Database` selection; no endpoint creates one, the session has nowhere to keep one, and no screen shows or
-revokes one. Nothing is lost by that today — with no escalation control there is nothing for an exclusion to
-survive — but the two have to arrive together, because escalation without exclusions is precisely the silent
-override this section exists to prevent.
+**Where an exclusion comes from is the part worth stating.** It is not a separate gesture. Under *Picked
+items*, unticking is a removal — an object left off a list is simply not on it, and recording a refusal there
+would be noise. Under *Entire database* there is no list to take it off, so unticking has nowhere to go except
+into a first-class no. The same click means different things under the two scopes, and that is not an
+inconsistency: it is the only reading of "I do not want this one" that each scope can support.
+
+Three consequences, each of which could have gone the other way:
+
+- **Closure does not overrule an exclusion.** If a picked object needs an excluded one, the prerequisite is
+  refused and named — `dbo.Site needs dbo.Region … but dbo.Region is excluded` — and the script goes out
+  without it, to fail on that reference. Reinstating it would be exactly the silent override this section
+  exists to prevent, and closure is not entitled to reverse a decision it did not make.
+- **Narrowing keeps the result and drops the machinery.** Switching back to *Picked items* materialises
+  whatever is effectively in the plan as explicit picks and forgets the exclusions. Nothing is lost: an
+  excluded object simply is not among the picks.
+- **Escalating again does not reinstate anything.** That was the whole point. Asking for the whole database a
+  second time means "also take everything I have not considered", and a refusal is something considered.
 
 One consequence worth stating: an exclusion is only meaningful against a known change. If a later compare
 surfaces a *different* change to the same object, that is a new change unit with a new identity and it is
@@ -595,13 +614,11 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Scope escalation, `Database ⊃ Table ⊃ Row` | `PlanNormalizer`, `SelectionScope`, `PlanCompiler`, all tested | No API or UI calls them; the app composes its script from a `HashSet` of ticks instead |
-| First-class exclusions with revoke | `Exclusion`, `CompiledPlan.AppliedExclusions`, tested | Nothing creates one, the session cannot hold one, no screen shows one |
 | Row hashes in the drift check | `ITableFingerprintReader`, used by the whole-database scan | `DriftAsync` re-reads schema only; moved rows under a selected table do not abort the apply |
 | Staged bulk path past the size cliff | `MaxReviewableScriptBytes`, measured and flagged | No `SqlBulkCopy` / `BULK INSERT` path, and the measurement happens after the whole script is built rather than before |
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | `Filter` row mode | `FilterPredicate` reaches the reader's `WHERE`; deletes already suppressed | No input control — and it needs a decision about user text becoming SQL before it gets one |
-| Row-level selection | `SelectionScope.Row` exists in the cart model | Selection stops at the table, by decision; listed here because the model implies more than the UI offers |
+| Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
 | Saved connection profiles | Shape settled: `%APPDATA%\DbDelta\profiles.json`, no password | Nothing reads or writes the file |
 | `UserDefinedType` | A member of the `ObjectType` enum | No reader, no model type, no collection on `DatabaseSchema` — UDTs compare as absent |
 | Direction filter on the FK map | `Walk` already takes a direction, called twice | No control; both directions are always drawn |

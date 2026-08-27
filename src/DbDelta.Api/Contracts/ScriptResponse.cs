@@ -9,4 +9,5 @@ public sealed record ScriptResponse(
     IReadOnlyList<string> DeleteWarnings,
     IReadOnlyList<RequiredObjectDto> Required,
     IReadOnlyList<string> Unsatisfiable,
-    IReadOnlyList<RequiredRowsDto> RequiredRows);
+    IReadOnlyList<RequiredRowsDto> RequiredRows,
+    IReadOnlyList<ExcludedObjectDto> Excluded);

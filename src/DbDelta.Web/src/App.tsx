@@ -8,8 +8,10 @@ import {
   type ObjectDetail,
   type ObjectSummary,
   type ProbeResponse,
+  type ExcludedObject,
   type RequiredObject,
   schemaApi,
+  type SelectionScope,
   type SchemaSelectionResponse,
   type ScriptResponse,
 } from './api'
@@ -328,6 +330,8 @@ export default function App() {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [required, setRequired] = useState<RequiredObject[]>([])
   const [unsatisfiable, setUnsatisfiable] = useState<string[]>([])
+  const [scope, setScope] = useState<SelectionScope>('Picked')
+  const [excluded, setExcluded] = useState<ExcludedObject[]>([])
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -339,6 +343,8 @@ export default function App() {
     setPicked(new Set(value.selected))
     setRequired(value.required)
     setUnsatisfiable(value.unsatisfiable)
+    setScope(value.scope)
+    setExcluded(value.excluded)
   }
 
   async function run<T>(action: () => Promise<T>, then: (value: T) => void) {
@@ -527,6 +533,8 @@ export default function App() {
                       setPicked(new Set())
                       setRequired([])
                       setUnsatisfiable([])
+                      setScope('Picked')
+                      setExcluded([])
                       setScript(null)
                       setScreen('schema')
                     },
@@ -613,25 +621,41 @@ export default function App() {
                   {comparison.objects.filter((o) => o.kind !== 'Same').length} object(s) differ
                 </span>
                 <span className="push" />
+                {/* Two scopes, and the difference matters: a list of picks, or a standing intent that also
+                    covers what has not been looked at. Under the second one, unticking is a refusal that
+                    gets recorded rather than an item taken off a list. */}
+                <span className="dim" style={{ fontSize: 12 }}>Plan covers</span>
                 <button
                   type="button"
-                  className="chip"
+                  className={`chip ${scope === 'Picked' ? 'on' : ''}`}
                   onClick={() =>
                     run(
-                      () => schemaApi.selectAll(comparison.id, true),
+                      () => schemaApi.scope(comparison.id, 'Picked'),
                       (value) => applySelection(value),
                     )
                   }
                 >
-                  Select all differing
+                  Picked items
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${scope === 'Database' ? 'on' : ''}`}
+                  onClick={() =>
+                    run(
+                      () => schemaApi.scope(comparison.id, 'Database'),
+                      (value) => applySelection(value),
+                    )
+                  }
+                >
+                  Entire database
                 </button>
                 <button
                   type="button"
                   className="chip"
-                  disabled={picked.size === 0}
+                  disabled={picked.size === 0 && excluded.length === 0}
                   onClick={() =>
                     run(
-                      () => schemaApi.selectAll(comparison.id, false),
+                      () => schemaApi.clear(comparison.id),
                       (value) => applySelection(value),
                     )
                   }
@@ -639,6 +663,23 @@ export default function App() {
                   Clear
                 </button>
               </div>
+
+              {excluded.length > 0 && (
+                <div className="warnline">
+                  <span className="g del">&minus;</span>
+                  <div>
+                    <b>{excluded.length} change(s) left out on purpose.</b> Widening the scope again will not
+                    take them back &mdash; tick one to revoke it.
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                      {excluded.map((item) => (
+                        <li key={item.id}>
+                          <span className="mono">{item.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
 
             <ul className="tree">

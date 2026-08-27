@@ -111,6 +111,7 @@ export interface ScriptResponse {
   required: RequiredObject[]
   unsatisfiable: string[]
   requiredRows: RequiredRows[]
+  excluded: ExcludedObject[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -354,22 +355,34 @@ export const scanApi = {
   },
 }
 
+// A refusal that was recorded rather than left unsaid. Under a database-wide plan there is no list to
+// take an object off, so declining one has to be a first-class entry — and revocable.
+export interface ExcludedObject {
+  id: string
+  qualifiedName: string
+  kind: string
+  reason: string
+}
+
+export type SelectionScope = 'Picked' | 'Database'
+
 export interface SchemaSelectionResponse {
   selected: string[]
   differing: number
   dataTables: number
   required: RequiredObject[]
   unsatisfiable: string[]
+  scope: SelectionScope
+  excluded: ExcludedObject[]
 }
 
 export const schemaApi = {
   select: (compareId: string, objectId: string, selected: boolean) =>
     postJson<SchemaSelectionResponse>(`/api/compare/${compareId}/schema/select`, { objectId, selected }),
-  selectAll: (compareId: string, selected: boolean) =>
-    postJson<SchemaSelectionResponse>(
-      `/api/compare/${compareId}/schema/select-all?selected=${selected}`,
-      {},
-    ),
+  scope: (compareId: string, scope: SelectionScope) =>
+    postJson<SchemaSelectionResponse>(`/api/compare/${compareId}/schema/scope`, { scope }),
+  clear: (compareId: string) =>
+    postJson<SchemaSelectionResponse>(`/api/compare/${compareId}/schema/clear`, {}),
   selection: async (compareId: string) => {
     const response = await fetch(`/api/compare/${compareId}/schema/select`)
     if (!response.ok) throw new Error('Could not read the schema selection')

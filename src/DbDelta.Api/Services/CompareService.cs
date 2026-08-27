@@ -127,75 +127,6 @@ public sealed class CompareService
             script.Steps.Select(s => s.Sql).ToList());
     }
 
-    public SchemaSelectionResponse SelectSchema(CompareSession session, SchemaSelectionRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(request);
-
-        var identity = session.Resolve(request.ObjectId)
-            ?? throw new InvalidOperationException($"'{request.ObjectId}' is not part of this comparison.");
-
-        var diff = session.Diff.Find(identity);
-        if (diff is null || !diff.HasChanges)
-        {
-            throw new InvalidOperationException($"{identity.QualifiedName} has nothing to sync.");
-        }
-
-        if (request.Selected)
-        {
-            session.SchemaSelections.Add(identity);
-        }
-        else
-        {
-            session.SchemaSelections.Remove(identity);
-        }
-
-        return SchemaSelection(session);
-    }
-
-    public SchemaSelectionResponse SelectAllSchema(CompareSession session, bool selected)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-
-        session.SchemaSelections.Clear();
-
-        if (selected)
-        {
-            foreach (var diff in session.Diff.Differing)
-            {
-                session.SchemaSelections.Add(diff.Identity);
-            }
-        }
-
-        return SchemaSelection(session);
-    }
-
-    public static SchemaSelectionResponse SchemaSelection(CompareSession session)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-
-        var closure = Closure(session);
-
-        return new SchemaSelectionResponse(
-            session.SchemaSelections.Select(session.IdOf).OrderBy(id => id, StringComparer.Ordinal).ToList(),
-            session.Diff.Differing.Count(),
-            session.DataSelections.Count,
-            closure.Required.Select(r => Required(session, r)).ToList(),
-            closure.Unsatisfiable);
-    }
-
-    // Recomputed on every read rather than kept on the session. Prerequisites are a consequence of the
-    // ticks, so storing them would let one survive the untick of the only object that wanted it.
-    private static ClosureResult Closure(CompareSession session) =>
-        SchemaClosure.Expand(session.Source, session.Target, session.Diff, session.SchemaSelections);
-
-    private static RequiredObjectDto Required(CompareSession session, RequiredObject required) =>
-        new(session.IdOf(required.Identity),
-            required.Identity.Type.ToString(),
-            required.Identity.QualifiedName,
-            required.RequiredBy.QualifiedName,
-            required.Reason);
-
     public async Task<ScriptResponse> ScriptAsync(
         CompareSession session,
         DataCompareService data,
@@ -207,7 +138,7 @@ public sealed class CompareService
         // What was ticked is not always what has to run. A table picked without the table its foreign key
         // points at emits an FK to something that does not exist, so the plan is expanded before emission
         // and what the expansion added is reported alongside the script.
-        var closure = Closure(session);
+        var closure = SchemaSelectionService.Closure(session);
         var script = new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection);
         var steps = script.Steps.ToList();
         var rows = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
@@ -229,12 +160,13 @@ public sealed class CompareService
             bytes > _safety.MaxReviewableScriptBytes,
             combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql)).ToList(),
             rows.DeleteWarnings,
-            closure.Required.Select(r => Required(session, r)).ToList(),
-            [.. closure.Unsatisfiable, .. rows.ClosureWarnings],
+            closure.Required.Select(r => SchemaSelectionService.Required(session, r)).ToList(),
+            [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. rows.ClosureWarnings],
             rows.RequiredRows
                 .Select(r => new RequiredRowsDto(
                     r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))
-                .ToList());
+                .ToList(),
+            SchemaSelectionService.Exclusions(session));
     }
 
     // Deletes walk the foreign key graph child-first and inserts parent-first. Both directions in one

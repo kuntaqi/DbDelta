@@ -5,4 +5,6 @@ public sealed record SchemaSelectionResponse(
     int Differing,
     int DataTables,
     IReadOnlyList<RequiredObjectDto> Required,
-    IReadOnlyList<string> Unsatisfiable);
+    IReadOnlyList<string> Unsatisfiable,
+    string Scope,
+    IReadOnlyList<ExcludedObjectDto> Excluded);

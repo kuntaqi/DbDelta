@@ -106,7 +106,9 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    real table.
 2. **The sync plan is a cart of intents, never SQL fragments.** Scope lattice `Database ⊃ Table ⊃ Row`, with
    dedup by change-unit identity. That is what makes overlapping selections structurally unable to emit a
-   statement twice. `Exclusion` exists in Core and is tested, but nothing in the API or UI creates one yet.
+   statement twice. The schema screen offers two scopes — *Picked items* and *Entire database* — and under
+   the second, unticking records a first-class `Exclusion` that re-escalation cannot undo. Scope covers the
+   schema only; a table's rows enter the plan when that table is picked on the data screen.
 3. **Limited row modes must suppress deletes.** Under `Top N` or `Filter`, a row absent from the source only
    means "outside the limit" — honouring deletes would wipe the target while "seeding" it. Correctness rule,
    not a preference. The other half of the same rule is closure: a picked object pulls in what it references
