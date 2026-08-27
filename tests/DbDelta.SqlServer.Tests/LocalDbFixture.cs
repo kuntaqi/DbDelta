@@ -167,6 +167,12 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL;
         GO
+        -- One sequence only on the source, and one that exists on both sides with a different increment.
+        -- Without either, nothing ever exercised the sequence path and it stayed empty for months.
+        CREATE SEQUENCE dbo.OrderNumber AS BIGINT START WITH 1000 INCREMENT BY 1 MINVALUE 1000 NO MAXVALUE NO CYCLE;
+        GO
+        CREATE SEQUENCE dbo.TicketNumber AS INT START WITH 1 INCREMENT BY 5 NO MINVALUE NO MAXVALUE CYCLE;
+        GO
         -- Everything a table type can carry: no name on any constraint, because that syntax does not
         -- exist inside CREATE TYPE AS TABLE. The index is the one part that does take a name.
         CREATE TYPE dbo.IdList AS TABLE (
@@ -301,6 +307,12 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE TABLE dbo.SegmentLegacy (
             Id INT NOT NULL CONSTRAINT PK_SegmentLegacy PRIMARY KEY
         );
+        GO
+        -- Same name, different increment and cycling: the ALTER path rather than the CREATE path.
+        CREATE SEQUENCE dbo.TicketNumber AS INT START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE NO CYCLE;
+        GO
+        -- Only on the target, so it is a drop.
+        CREATE SEQUENCE dbo.LegacyCounter AS INT START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE NO CYCLE;
         GO
         -- Present but empty, so every one of the source's 1200 rows is an insert.
         CREATE TABLE dbo.Metric (

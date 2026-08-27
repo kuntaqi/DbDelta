@@ -11,6 +11,10 @@ public enum ScriptPhase
     // A type cannot be dropped while a column still uses it, and cannot be used before it exists, so it
     // brackets the tables on both sides.
     DropTypes,
+    // A column default can read NEXT VALUE FOR a sequence, so a sequence outlives the tables that use it
+    // on the way out and precedes them on the way in — the same bracketing as a type.
+    DropSequences,
+    CreateSequences,
     CreateTypes,
     CreateTables,
     AlterColumns,

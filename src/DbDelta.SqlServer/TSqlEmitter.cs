@@ -47,6 +47,7 @@ public sealed class TSqlEmitter : IScriptEmitter
         EmitSchemas(steps, changes, sourceTables);
         EmitDrops(steps, changes, target);
         EmitTypes(steps, changes, source, target);
+        EmitSequences(steps, changes, source);
         EmitTableCreations(steps, changes, sourceTables, newTypes);
         EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred);
         EmitProgrammables(steps, changes, source);
@@ -163,6 +164,75 @@ public sealed class TSqlEmitter : IScriptEmitter
         var nullability = type.IsNullable ? "NULL" : "NOT NULL";
 
         return $"CREATE TYPE {name} FROM {SqlTypeText.Declare(type.BaseType!)} {nullability};";
+    }
+
+    // Sequences were read and compared long before anything emitted them, so a database with one produced a
+    // plan that listed it and a script that contained nothing for it. Silently.
+    private static void EmitSequences(
+        List<ScriptStep> steps,
+        List<ObjectDiff> changes,
+        DatabaseSchema source)
+    {
+        foreach (var change in changes.Where(c => c.Identity.Type == ObjectType.Sequence))
+        {
+            var name = SqlServerQuoter.Instance.Qualify(change.Identity);
+
+            if (change.Kind == DiffKind.TargetOnly)
+            {
+                // Destructive: dropping a sequence loses where it had got to, and nothing brings that back.
+                steps.Add(new ScriptStep(
+                    ScriptPhase.DropSequences,
+                    $"drop sequence {change.Identity.QualifiedName}",
+                    $"DROP SEQUENCE {name};",
+                    Destructive: true));
+
+                continue;
+            }
+
+            var sequence = source.Sequences.FirstOrDefault(s => s.Identity == change.Identity);
+            if (sequence is null)
+            {
+                continue;
+            }
+
+            if (change.Kind == DiffKind.SourceOnly)
+            {
+                steps.Add(new ScriptStep(
+                    ScriptPhase.CreateSequences,
+                    $"create sequence {change.Identity.QualifiedName}",
+                    $"CREATE SEQUENCE {name}\n    AS {SqlTypeText.Declare(sequence.DataType)}\n"
+                        + $"    START WITH {sequence.StartValue}\n{Options(sequence)};"));
+
+                continue;
+            }
+
+            // ALTER SEQUENCE can move the increment, the bounds and the cycling, and cannot change the type.
+            // A type difference is therefore reported rather than emitted, the same as a user-defined type.
+            //
+            // What it deliberately never touches is where the sequence has got to. RESTART WITH exists and
+            // would make the target's current value match the source's start value — which on a live
+            // sequence means handing out numbers it has already issued.
+            if (change.Properties.Any(p => p.Property == "DataType"))
+            {
+                continue;
+            }
+
+            steps.Add(new ScriptStep(
+                ScriptPhase.CreateSequences,
+                $"alter sequence {change.Identity.QualifiedName}",
+                $"ALTER SEQUENCE {name}\n{Options(sequence)};"));
+        }
+    }
+
+    private static string Options(SequenceDefinition sequence)
+    {
+        var options = new List<string> { $"    INCREMENT BY {sequence.Increment}" };
+
+        options.Add(sequence.MinValue is { } min ? $"    MINVALUE {min}" : "    NO MINVALUE");
+        options.Add(sequence.MaxValue is { } max ? $"    MAXVALUE {max}" : "    NO MAXVALUE");
+        options.Add(sequence.IsCycling ? "    CYCLE" : "    NO CYCLE");
+
+        return string.Join("\n", options);
     }
 
     private static string Clustering(bool clustered) => clustered ? "CLUSTERED" : "NONCLUSTERED";

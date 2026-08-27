@@ -731,6 +731,36 @@ out of these files. It is therefore the one screen never to paste output from or
 not a mockup, not a test fixture, not a doc. The tests here assert *containment* (the fixture's own two
 databases are present, the system databases are not) and never the whole list, for the same reason.
 
+### Sequences, and the one thing a sync must never do to one
+
+Sequences were read and compared from early on, and **nothing ever emitted them**. A database with a sequence
+produced a plan that listed it and a script that contained nothing for it, with no warning. It was found by
+being asked how to build a schema-only replica of a whole instance — not by any test, because neither the
+fixture nor the demo data had a sequence. Both do now, which is the actual fix for the class of gap.
+
+**What a sequence has that other objects do not is a current position**, and that is what decides the
+behaviour:
+
+| Difference | What is emitted |
+|---|---|
+| Only on the source | `CREATE SEQUENCE` with its type, start, bounds and cycling |
+| Only on the target | `DROP SEQUENCE`, marked destructive — where it had got to does not come back |
+| Increment, bounds or cycling differ | `ALTER SEQUENCE` for those, in place |
+| Data type differs | nothing, and it says so — `ALTER SEQUENCE` cannot change a type, and recreating loses the position |
+
+**`RESTART WITH` is never emitted, and the comparer never compares `StartValue`.** Both halves of that are
+deliberate and they are the interesting part. `START WITH` describes where a sequence *began*; a live one has
+moved on. "Syncing" it would mean rewinding the target to hand out numbers it has already issued — a
+duplicate-key generator dressed as a schema fix. So the start value is written once, on create, and after
+that the position is the target's own business. `SequenceTests` moves the target's sequence on before the
+compare and asserts it is still ahead afterwards.
+
+One small thing the catalog decides for us: `sys.sequences` never returns a null bound, so `NO MAXVALUE` is
+stored as the type's maximum and reads back that way. The emitted script therefore says
+`MAXVALUE 9223372036854775807` where the original said `NO MAXVALUE`. Those are the same sequence, and it
+round-trips stably, which is what matters — but it does mean the script is more explicit than the DDL that
+made it.
+
 ### The whole-database scan is a screen, not a compare
 
 "Which tables differ" needs every table compared, which is expensive enough that it is a button rather
@@ -834,8 +864,18 @@ about but does not stop a data compare**, so a mismatched pair still produces di
 be trusted. The other three are absences rather than faults — row selection stops at the table by decision,
 `api.ts` is mirrored by hand, and the provider abstraction has never met a second engine.
 
-The honest caveat: this is a claim about the gaps *known* to be gaps. Three of the bugs found while building
-the last few items — a script silently emitting only its first 500 rows, a staging table's cleanup counted as
-data loss, and a table type compared as though it had no constraints — were on nobody's list until something
-was built next to them. The instance survey then found a third collation on this very machine, which is the
-same story: the gap was visible only once there was a screen that could show it.
+The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
+gaps.** The list of things found only because something was built beside them:
+
+- a script silently emitting only its first 500 rows
+- a staging table's cleanup counted as data loss
+- a table type compared as though it had no constraints
+- **sequences read and compared but never emitted** — found by being asked how to script a whole instance,
+  and the plainest case of all: the plan listed the object and the script had nothing in it
+- a third collation on the very machine this is developed on, visible only once a screen existed that could
+  show a whole instance at once
+
+Every one of those was invisible while this section claimed to be complete. The pattern is worth naming: the
+gaps were not in the code that was being reviewed, they were in the *fixtures* — no sequence, no table-type
+constraint, no table with more than 500 changed rows. A gap that nothing exercises cannot be seen by reading,
+only by adding the case that would have failed.

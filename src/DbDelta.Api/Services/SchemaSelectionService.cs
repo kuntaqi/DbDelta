@@ -134,6 +134,21 @@ public static class SchemaSelectionService
 
         var messages = new List<string>();
 
+        // A sequence's type cannot be altered either, and the same silence would follow.
+        foreach (var unit in session.SchemaPlan().Units
+            .Where(u => u.Id.Object.Type == ObjectType.Sequence && u.Id.Kind == ChangeUnitKind.AlterObject))
+        {
+            var diff = session.Diff.Find(unit.Id.Object);
+
+            if (diff?.Properties.Any(p => p.Property == "DataType") == true)
+            {
+                messages.Add(
+                    $"{unit.Id.Object.QualifiedName} differs in its data type, and ALTER SEQUENCE cannot "
+                    + "change that. Nothing is emitted for it — recreating it would lose the value it has "
+                    + "reached, which is not something to do on your behalf.");
+            }
+        }
+
         foreach (var unit in session.SchemaPlan().Units
             .Where(u => u.Id.Object.Type == ObjectType.UserDefinedType))
         {

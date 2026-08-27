@@ -159,3 +159,17 @@ CREATE TYPE dbo.IdList AS TABLE (
     INDEX IX_IdList_Note NONCLUSTERED (Note)
 );
 GO
+
+-- Sequences: one only on the source (a create), one on both sides with a different increment (an alter,
+-- never a drop-and-recreate — that would lose the value it has reached). Neither the fixture nor this file
+-- had a sequence for months, which is exactly why nothing noticed that none were ever emitted.
+USE DbDelta_Demo_Src;
+GO
+CREATE SEQUENCE dbo.OrderNumber AS BIGINT START WITH 1000 INCREMENT BY 1 MINVALUE 1000 NO MAXVALUE NO CYCLE;
+GO
+CREATE SEQUENCE dbo.TicketNumber AS INT START WITH 1 INCREMENT BY 5 NO MINVALUE NO MAXVALUE CYCLE;
+GO
+USE DbDelta_Demo_Tgt;
+GO
+CREATE SEQUENCE dbo.TicketNumber AS INT START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE NO CYCLE;
+GO
