@@ -1001,6 +1001,8 @@
         <div class="field sel" style="width:170px;">dbo.Company</div>
         <span class="lbl" style="margin:0;">Depth</span>
         <span class="chip on">1</span><span class="chip">2</span><span class="chip">3</span>
+        <span class="lbl" style="margin:0;">Show</span>
+        <span class="chip on">Both</span><span class="chip">Parents</span><span class="chip">Children</span>
       </div>
 
       <div class="diagram">
@@ -1059,6 +1061,13 @@
     </div>
     <p class="caption">Status node berasal dari schema diff (akan dibuat / akan diubah / identik), bukan dari
       mode data per tabel.</p>
+
+    <p class="caption">Filter <span class="mono">Show</span> hanya menyembunyikan dari <em>gambar</em>, bukan
+      dari catatan. Tetangga tetap ditelusuri dua arah: yang dipakai untuk digambar, dan yang utuh untuk
+      catatan &mdash; apa yang muat di layar itu soal tampilan, apa yang harus dilewati rencana sync bukan.
+      Jadi memilih <span class="mono">Parents</span> tetap menyisakan peringatan soal tabel anak, ditambah
+      satu baris yang menyebut ada berapa yang sedang disembunyikan. Kontrol yang membuat peringatan hilang
+      itu cara untuk tidak diberi tahu.</p>
   </section>
 
   <!-- not built -->
@@ -1070,7 +1079,7 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">5 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">4 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
@@ -1084,8 +1093,6 @@
               <td class="txt">Ada per tabel di layar 3, tidak di kartu koneksi.</td></tr>
             <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>3</td>
               <td class="txt">Emitter memang memilih strategi, tapi tidak melaporkan alasannya ke UI.</td></tr>
-            <tr><td class="txt"><b>Filter arah</b> (Parents / Children / Both)</td><td>7</td>
-              <td class="txt">Hanya fokus dan kedalaman yang bisa diatur.</td></tr>
           </tbody>
         </table>
       </div>

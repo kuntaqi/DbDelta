@@ -511,9 +511,16 @@ The tool already holds the graph — FKs drive the topological order, parent clo
 **A whole-schema ER diagram is the failure mode to avoid.** 142 tables draws as unreadable spaghetti, which
 is how most database diagram tools become decoration. So the unit is a *neighbourhood*: one focused table,
 1–3 hops. Parents are what must exist first; children are what breaks if referenced rows are missing.
-Focus and depth are adjustable; the **direction filter (Parents / Children / Both) is not built** — both
-directions are always walked and drawn. At depth 1–2 that is the sensible default and the filter would be
-noise; at depth 3 on a hub table it is the difference between a diagram and a smear.
+Focus, depth and direction are all adjustable, with `Both` the default: at depth 1 everything fits and
+choosing would be a decision nobody needs to make, while at depth 3 on a table half the schema points at,
+the filter is the difference between a diagram and a smear.
+
+**The filter hides edges from the drawing, not facts from the notes.** That distinction is the whole of the
+design. The neighbourhood is walked twice — once for what is drawn, once entire — because what fits on
+screen is a viewing preference and what a plan has to survive is not. So hiding the children still leaves
+*"1 table(s) reference dbo.Company; seeding it with a limited row set would leave their rows pointing at rows
+that were never created"* in place, and adds a note saying what the filter is holding back. A control that
+made a warning disappear would be a way of not being told.
 
 What makes it worth building rather than pointing at an existing ER tool is that it is **plan-aware**. Nodes
 carry sync state — in plan, pulled in as a prerequisite, schema-only, unsatisfiable — so the question it
@@ -569,7 +576,8 @@ connections is the only prerequisite, and after that every screen reaches every 
 4. **Sync plan** — everything ticked across screens 2 and 3, rolled into one ordered script
    (FK-dependency ordered for whole-DB runs), with Download and the guarded Apply.
 5. **Run log** — what was generated, what was applied, what the server said.
-6. **FK map** — foreign-key neighbourhood of one table, as inline SVG.
+6. **FK map** — foreign-key neighbourhood of one table, as inline SVG, with focus, depth 1–3 and a
+   Parents / Children / Both direction filter.
 
 ### Overview and Schema detail are one screen
 
@@ -750,15 +758,14 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
-| Direction filter on the FK map | `Walk` already takes a direction, called twice | No control; both directions are always drawn |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
 Nothing left here is silent. Both closures, the drift check, the staged path, the filter and user-defined
 types are built, and each of those was on this list because it could make the tool do the wrong thing
-quietly. What remains announces itself: a diagram without a direction control, an abstraction a second engine
-has never met, and a contract mirrored by hand. All of them are things a person notices immediately and none
-of them changes what gets written to a database.
+quietly. What remains is two things and neither is a gap in behaviour: an abstraction a second engine has
+never met, and a contract mirrored by hand. Both announce themselves the moment they matter, and neither
+changes what gets written to a database.
 
 The honest caveat on that: it is a claim about the gaps *known* to be gaps. The two bugs found while building
 the last few items — a script silently emitting only its first 500 rows, and a staging table's cleanup

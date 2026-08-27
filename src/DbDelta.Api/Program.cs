@@ -331,6 +331,7 @@ api.MapGet("/compare/{id}/fk", (
     string id,
     string table,
     int? depth,
+    FkDirection? direction,
     FkMapService service,
     CompareSessionStore sessions) =>
 {
@@ -342,7 +343,7 @@ api.MapGet("/compare/{id}/fk", (
 
     try
     {
-        return Results.Ok(service.Build(session, table, depth ?? 1));
+        return Results.Ok(service.Build(session, table, depth ?? 1, direction ?? FkDirection.Both));
     }
     catch (InvalidOperationException ex)
     {

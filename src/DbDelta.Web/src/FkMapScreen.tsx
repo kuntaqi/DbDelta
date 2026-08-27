@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fkApi, type CompareResponse, type FkMapResponse, type FkNode } from './api'
+import { fkApi, type CompareResponse, type FkDirection, type FkMapResponse, type FkNode } from './api'
 
 const NODE_W = 190
 const NODE_H = 54
@@ -41,13 +41,16 @@ export function FkMapScreen({ comparison }: { comparison: CompareResponse }) {
   const tables = comparison.objects.filter((o) => o.type === 'Table')
   const [focus, setFocus] = useState(tables[0]?.qualifiedName ?? '')
   const [depth, setDepth] = useState(1)
+  // Both by default: at depth 1 everything fits and choosing would be a decision nobody needs to make.
+  // The filter earns its keep at depth 3 on a table half the schema points at.
+  const [direction, setDirection] = useState<FkDirection>('Both')
   const [map, setMap] = useState<FkMapResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!focus) return
     fkApi
-      .map(comparison.id, focus, depth)
+      .map(comparison.id, focus, depth, direction)
       .then((m) => {
         setMap(m)
         setError(null)
@@ -56,7 +59,7 @@ export function FkMapScreen({ comparison }: { comparison: CompareResponse }) {
         setMap(null)
         setError(e instanceof Error ? e.message : String(e))
       })
-  }, [comparison.id, focus, depth])
+  }, [comparison.id, focus, depth, direction])
 
   const { placed, width, height } = map ? layout(map.nodes) : { placed: new Map<string, { x: number; y: number }>(), width: 700, height: 200 }
   const viewBox = `${-width / 2} -20 ${width} ${height}`
@@ -86,6 +89,26 @@ export function FkMapScreen({ comparison }: { comparison: CompareResponse }) {
             type="button"
             className={`chip ${depth === value ? 'on' : ''}`}
             onClick={() => setDepth(value)}
+          >
+            {value}
+          </button>
+        ))}
+        {/* Parents are what must exist first; children are what breaks if referenced rows are missing.
+            Hiding one hides it from the drawing only — the notes below still count what is over there. */}
+        <span className="lbl" style={{ margin: 0 }}>Show</span>
+        {(['Both', 'Parents', 'Children'] as FkDirection[]).map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={`chip ${direction === value ? 'on' : ''}`}
+            title={
+              value === 'Parents'
+                ? 'What must exist before this table'
+                : value === 'Children'
+                  ? 'What breaks if this table is missing rows'
+                  : 'Both directions'
+            }
+            onClick={() => setDirection(value)}
           >
             {value}
           </button>

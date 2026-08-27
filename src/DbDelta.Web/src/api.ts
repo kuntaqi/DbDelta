@@ -321,16 +321,19 @@ export interface FkEdge {
 export interface FkMapResponse {
   focus: string
   depth: number
+  direction: FkDirection
   nodes: FkNode[]
   edges: FkEdge[]
   cycles: string[]
   notes: string[]
 }
 
+export type FkDirection = 'Both' | 'Parents' | 'Children'
+
 export const fkApi = {
-  map: async (compareId: string, table: string, depth: number) => {
+  map: async (compareId: string, table: string, depth: number, direction: FkDirection) => {
     const response = await fetch(
-      `/api/compare/${compareId}/fk?table=${encodeURIComponent(table)}&depth=${depth}`,
+      `/api/compare/${compareId}/fk?table=${encodeURIComponent(table)}&depth=${depth}&direction=${direction}`,
     )
     if (!response.ok) throw new Error(await readError(response))
     return (await response.json()) as FkMapResponse

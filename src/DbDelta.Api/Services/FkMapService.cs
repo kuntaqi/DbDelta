@@ -10,7 +10,7 @@ namespace DbDelta.Api.Services;
 // what the sync plan intends to do overlaid on it.
 public sealed class FkMapService
 {
-    public FkMapResponse Build(CompareSession session, string table, int depth)
+    public FkMapResponse Build(CompareSession session, string table, int depth, FkDirection direction)
     {
         ArgumentNullException.ThrowIfNull(session);
 
@@ -21,20 +21,36 @@ public sealed class FkMapService
         depth = Math.Clamp(depth, 1, 3);
 
         var graph = TableDependencyGraph.Build(session.Source.Tables);
-        var bands = new Dictionary<ObjectIdentity, int> { [focus.Identity] = 0 };
 
-        Walk(graph, focus.Identity, depth, -1, bands);
-        Walk(graph, focus.Identity, depth, 1, bands);
+        // Walked twice over: once for what is drawn, once for the whole neighbourhood. The filter is
+        // about what fits on screen, and the notes are about what the plan has to survive — hiding a
+        // direction must not hide the warning that something is over there.
+        var shown = new Dictionary<ObjectIdentity, int> { [focus.Identity] = 0 };
+        var full = new Dictionary<ObjectIdentity, int> { [focus.Identity] = 0 };
 
-        var edges = BuildEdges(session, bands.Keys.ToHashSet(), graph);
+        Walk(graph, focus.Identity, depth, -1, full);
+        Walk(graph, focus.Identity, depth, 1, full);
+
+        if (direction != FkDirection.Children)
+        {
+            Walk(graph, focus.Identity, depth, -1, shown);
+        }
+
+        if (direction != FkDirection.Parents)
+        {
+            Walk(graph, focus.Identity, depth, 1, shown);
+        }
+
+        var edges = BuildEdges(session, shown.Keys.ToHashSet(), graph);
 
         return new FkMapResponse(
             focus.Identity.QualifiedName,
             depth,
-            bands.Select(pair => Node(session, pair.Key, pair.Value)).OrderBy(n => n.Band).ToList(),
+            direction.ToString(),
+            shown.Select(pair => Node(session, pair.Key, pair.Value)).OrderBy(n => n.Band).ToList(),
             edges,
             graph.OrderForData().Cyclic.Select(c => c.QualifiedName).ToList(),
-            Notes(session, focus, bands, edges));
+            Notes(session, focus, full, BuildEdges(session, full.Keys.ToHashSet(), graph), direction));
     }
 
     private static void Walk(
@@ -121,13 +137,31 @@ public sealed class FkMapService
         _ => "identical"
     };
 
+    // Computed over the whole neighbourhood, not the filtered one. What is drawn is a viewing choice;
+    // what a plan has to survive is not, and a note that disappears when a direction is hidden would
+    // make the filter a way of not being told.
     private static List<string> Notes(
         CompareSession session,
         TableDefinition focus,
         Dictionary<ObjectIdentity, int> bands,
-        IReadOnlyList<FkEdge> edges)
+        IReadOnlyList<FkEdge> edges,
+        FkDirection direction)
     {
         var notes = new List<string>();
+
+        var hidden = direction switch
+        {
+            FkDirection.Parents => bands.Count(b => b.Value > 0),
+            FkDirection.Children => bands.Count(b => b.Value < 0),
+            _ => 0
+        };
+
+        if (hidden > 0)
+        {
+            var kind = direction == FkDirection.Parents ? "child" : "parent";
+            notes.Add($"{hidden} {kind} table(s) are in this neighbourhood but hidden by the direction filter. "
+                + "They still matter to the plan; they are just not drawn.");
+        }
 
         var requiredParents = edges
             .Where(e => e.From == focus.Identity.QualifiedName && !e.Nullable)
