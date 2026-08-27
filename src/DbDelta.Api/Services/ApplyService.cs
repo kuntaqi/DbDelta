@@ -48,8 +48,8 @@ public sealed class ApplyService
         {
             return Respond(
                 ApplyResult.Blocked(
-                    "Nothing to apply. Pick the schema objects and table data you want on the overview and "
-                    + "data screens first — nothing is selected for you.", []),
+                    "Nothing to apply. Pick the schema objects and table data you want on the schema compare "
+                    + "and data screens first — nothing is selected for you.", []),
                 0,
                 destructive);
         }

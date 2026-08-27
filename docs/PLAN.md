@@ -3,6 +3,10 @@
 Personal tool. Purpose: compare two databases (schema + data) and sync one
 direction, at three granularities — schema only, one table's data, or the whole DB.
 
+This is a design document, so it describes things that are not built. Where that is true it now says so at
+the point it comes up, and the full list is in *Designed, not built* at the end. `docs/mockup/dbdelta-ux.html`
+carries the same ledger for the screens. Neither document should be read as evidence that a feature exists.
+
 ## Decisions (locked)
 
 | # | Decision | Choice |
@@ -10,11 +14,18 @@ direction, at three granularities — schema only, one table's data, or the whol
 | 1 | Engine | SQL Server first. Provider-abstracted so PostgreSQL slots in without touching the diff engine. |
 | 2 | Interface | Local web UI: ASP.NET Core API (.NET 10) + React 19 SPA in TypeScript, Vite. |
 | 3 | Sync execution | Always emit a reviewable `.sql` script. Apply is opt-in, transactional, and hard-blocked on read-only servers. |
+| 4 | UI language | English. |
+| 5 | Grid/diagram libraries | None. The grids are plain `<table>`s; the FK map is hand-authored inline SVG. |
 
-Why React over Angular: the only hard UI requirement is virtualized diff grids and tree tables, and
-TanStack Table + TanStack Virtual are the best free answer to exactly that — React-first, with a much
-younger Angular adapter. Kendo is licence-bound so it is off the table either way, which means Angular
-would mean hand-building the grid. This is a single-user local tool, so Angular's structure buys nothing here.
+Why React over Angular: the expectation was virtualized diff grids and tree tables, and TanStack Table +
+TanStack Virtual were the best free answer to exactly that — React-first, with a much younger Angular
+adapter. Kendo is licence-bound so it was off the table either way, which under Angular would have meant
+hand-building the grid. This is a single-user local tool, so Angular's structure buys nothing here.
+
+The virtualization never turned out to be needed, so TanStack was dropped before it was added — `package.json`
+carries `react` and `react-dom` and nothing else. Row detail is capped at 200 rows because the two-pass design
+fetches only what is shown, and 200 rows render fine in a plain table. The argument that picked React no longer
+holds on its own terms; the choice still stands, for the ecosystem rather than for the grid.
 
 ## Non-goals
 
@@ -32,19 +43,29 @@ DbDelta.sln
   src/DbDelta.PostgreSql/    provider: later, information_schema/pg_catalog
   src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
   src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
-  tests/DbDelta.Core.Tests/  diff engine unit tests (no DB needed)
+  tests/DbDelta.Core.Tests/       diff engine + planning unit tests (no DB needed)
+  tests/DbDelta.Api.Tests/        connection parsing and safety classification (no DB needed)
+  tests/DbDelta.SqlServer.Tests/  integration against LocalDB, skipped when it is absent
 ```
 
 The API is the only thing that touches a database; the SPA holds no credentials and issues no SQL.
-TypeScript types are generated from the API's OpenAPI document rather than hand-maintained, so a
-changed response shape breaks the build instead of failing silently at runtime.
+The SPA's request and response types are hand-maintained in `src/DbDelta.Web/src/api.ts`. Generating them
+from the API's OpenAPI document was the intent and is still the better answer — a changed response shape
+would break the build instead of failing silently at runtime — but no generator is wired up, so today a
+contract change has to be mirrored by hand in two places.
 
 `Core` never references a provider package. Everything engine-specific sits behind:
 
-- `IDatabaseProvider` — factory + capability flags
+- `IDatabaseProvider` — factory for everything below, plus `Key` and `Quoter`. No capability flags: nothing
+  has needed to branch on one while SQL Server is the only provider, and inventing them before a second
+  engine exists would be guessing at what differs
 - `ISchemaReader` — reads the neutral schema model
-- `IRowSetReader` — streams key+hash pairs, and fetches full rows on demand
-- `IScriptEmitter` — turns a diff into DDL/DML for that engine, including how that engine handles statements
+- `IRowHashReader` / `IRowDetailReader` — one streams key+hash pairs, the other fetches full rows on demand.
+  Two interfaces rather than the single `IRowSetReader` first sketched: the two passes share nothing but the
+  table they read
+- `IVolumeReader`, `ITableFingerprintReader`, `IKeyUniquenessChecker` — the volume readout, the whole-database
+  scan, and the keyless-table key picker; each is engine-specific for the same reason
+- `IScriptEmitter` / `IDataScriptEmitter` — turn a diff into DDL and DML for that engine, including how that engine handles statements
   that must begin their own batch (T-SQL `CREATE VIEW`/`PROCEDURE`/`SCHEMA` need `EXEC sp_executesql` wrapping
   inside a single-transaction script; PostgreSQL does not)
 - `IIdentifierQuoter` — `[x]` vs `"x"`
@@ -52,9 +73,15 @@ changed response shape breaks the build instead of failing silently at runtime.
 ### Neutral schema model
 
 `Table`, `Column`, `PrimaryKey`, `UniqueConstraint`, `Index`, `ForeignKey`, `CheckConstraint`,
-`DefaultConstraint`, `View`, `Routine` (proc/function), `Trigger`, `Sequence`, `UserDefinedType`.
-Each carries a `ProviderExtras` bag for engine-only attributes (filegroup, fillfactor, collation…)
-so the reader loses nothing even though the comparer ignores what it doesn't understand.
+`View`, `Routine` (proc/function), `Trigger`, `Sequence`. Each carries a `ProviderExtras` bag for
+engine-only attributes (filegroup, fillfactor, collation…) so the reader loses nothing even though the
+comparer ignores what it doesn't understand.
+
+Two entries in that first list are not what they looked like. A default is a property of its column
+(`ColumnDefinition.DefaultConstraintName` plus the expression), not a top-level object, so it is compared as
+part of the column rather than on its own. `UserDefinedType` exists in the `ObjectType` enum and nowhere
+else — the reader does not read UDTs and `DatabaseSchema` has no collection for them, so a database using
+them compares as if they were not there. That is a gap, not a decision.
 
 ### Data compare — how it scales
 
@@ -72,23 +99,31 @@ columns, and the UI reports excluded columns explicitly rather than silently ign
 
 ### The sync plan is a cart, with dependency closure
 
-Selections accumulate across screens — tick objects on Schema compare, tick rows on the data screen, and
-both land in one plan. There is no separate "add to plan" step to forget. Three properties make it more
-than a passive basket:
+Selections accumulate across screens — tick objects on Schema compare, pick tables and their mode on the
+data screen, and both land in one plan. There is no separate "add to plan" step to forget. Three properties
+make it more than a passive basket:
 
-- **Closure, not literal selection.** Ticking `dbo.Company` pulls in what it needs: `dbo.Category`
+- **Closure, not literal selection.** Ticking `dbo.Company` should pull in what it needs: `dbo.Category`
   goes first because of `FK_Company_Category`. The plan can therefore contain more than was clicked,
   and the UI must show what was added on your behalf and why — a silently larger plan is a trap.
+  **Not built.** The FK graph exists and already decides script order, but `include` filters the emitter
+  literally: tick `dbo.Company` alone against an empty target and the script creates it without `dbo.Category`,
+  and the FK add fails. Closure is the one unbuilt item here that can produce a broken script rather than
+  merely a smaller one.
 - **Tool-decided order.** Steps are topologically sorted by dependency, not by click order — FKs for tables,
   `sys.sql_expression_dependencies` for views and routines, since those depend through their SQL bodies rather
   than through constraints. Tables are created bare and their FKs added afterwards, which avoids FK cycles
   outright. This is what lets the whole plan run in one transaction. See *Empty target* below for the full order.
 - **Carts go stale.** You compare at 14:02, pick for ten minutes, meanwhile someone deploys to UAT.
-  Before applying, the plan re-verifies that the target still matches what was compared (object
-  fingerprints + row hashes for affected keys). A drift aborts the apply and asks for a fresh compare
-  rather than running against a database it no longer understands.
+  Before applying, the plan re-verifies that the target still matches what was compared. A drift aborts the
+  apply and asks for a fresh compare rather than running against a database it no longer understands.
+  **Built for schema only:** `ApplyService.DriftAsync` re-reads the target schema and re-compares it against
+  the schema captured at compare time. Row hashes for the affected keys are not re-checked, so a target whose
+  *rows* moved under a selected table still applies. The fingerprint reader that would answer this already
+  exists — it powers the whole-database scan — so this is wiring, not new machinery.
 
-Plan state lives in the API session, not only in browser memory, so a refresh doesn't lose the picking work.
+Plan state lives in the API session (`CompareSessionStore`), not only in browser memory, so a refresh doesn't
+lose the picking work. It does not survive an API restart, and is not meant to.
 
 ### Scope escalation: picking rows, then deciding "just do the whole database"
 
@@ -102,6 +137,15 @@ deduplicated by identity — `(objectType, schema, name, changeKind)` for schema
 operation)` for data — so overlapping scopes are structurally incapable of producing the same statement
 twice. The guarantee comes from the identity key, not from care at the call site.
 
+**Status: built in `Core`, not reached from the app.** `PlanSelection`, `SelectionScope`, `PlanNormalizer`,
+`ChangeUnitId`, `Exclusion` and `PlanCompiler` all exist and are covered by `PlanCompilerTests`, but the only
+callers are those tests and one integration test. The API composes its script a simpler way: a
+`HashSet<ObjectIdentity>` of ticked schema objects goes straight to the emitter's `include` filter, and a
+`Dictionary<ObjectIdentity, DataSelection>` drives the data steps. Two consequences follow. There is no
+`Database` scope to escalate *to* — the UI offers "select all differing", which ticks each object individually
+and is not the same thing. And the dedup guarantee is currently provided by the set, which holds for schema
+objects but has never been exercised at row scope, because nothing selects rows.
+
 **Escalation is not a pure superset, and that is the interesting case.** Positive picks are subsumed
 safely. Negative ones are not:
 
@@ -113,6 +157,12 @@ A naive reading of "whole database" pulls all three back in — which silently o
 exercised. So exclusions are stored as **first-class negative entries**, not as the absence of a tick, and
 they survive escalation. Escalating means "also take everything I haven't considered", never "forget what
 I decided". The UI lists surviving exclusions so they can be revoked deliberately.
+
+That last sentence is design, not description. `Exclusion` is a Core type with tests proving it survives a
+`Database` selection; no endpoint creates one, the session has nowhere to keep one, and no screen shows or
+revokes one. Nothing is lost by that today — with no escalation control there is nothing for an exclusion to
+survive — but the two have to arrive together, because escalation without exclusions is precisely the silent
+override this section exists to prevent.
 
 One consequence worth stating: an exclusion is only meaningful against a known change. If a later compare
 surfaces a *different* change to the same object, that is a new change unit with a new identity and it is
@@ -156,9 +206,17 @@ counts are only taken for tables actually entering a data compare.
 
 **The script-size cliff is real and gets its own guard.** `INSERT … VALUES` caps at 1000 rows per statement,
 and a `.sql` file past roughly 100 MB stops being openable in SSMS — which defeats the whole "review the
-script first" premise. So the plan estimates script bytes up front. Past the threshold the tool says so and
-switches to a staged bulk path (`SqlBulkCopy` on apply, `BULK INSERT` + data file for download) instead of
-silently emitting a 400 MB file nobody can read.
+script first" premise. So the script is measured against `Safety:MaxReviewableScriptBytes` (100 MB) and
+reported as oversized rather than being handed over as a 400 MB file nobody can read.
+
+**The staged bulk path behind that guard is not built.** `SqlBulkCopy` on apply and `BULK INSERT` + a data
+file for download were the intended other half; today the threshold produces a flag and the script is still
+emitted in full. Two things are worth separating here. The measurement is also not an estimate — the whole
+script is assembled first and then counted, so an oversized plan has already paid for the string it warns
+about. A genuine up-front estimate is cheap (`row count × column count × an average literal width` is already
+computed for the transfer readout) and would let the tool refuse before building. That ordering matters more
+than the bulk path does: without it, the guard protects the person reading the script but not the process
+generating it.
 
 ### Per-table data modes: seeding instead of copying everything
 
@@ -170,6 +228,12 @@ Data scope is chosen per table, not once for the whole run:
 | `Top N` | first N rows by primary key ascending | yes | yes | **suppressed** |
 | `Filter` | rows matching a `WHERE` predicate | yes | yes | **suppressed** |
 | `Schema only` | structure, no data | — | — | — |
+
+`Filter` is implemented end to end in the backend — `DataCompareRequest.FilterPredicate` reaches the row-hash
+reader's `WHERE` clause, and `SuppressDeletes` already covers it — but the data screen offers only `All rows`,
+`Top N` and `Schema only`, so there is no way to type a predicate and the mode is unreachable. It is a text box
+away, and it is deliberately still absent: a raw predicate concatenated into the reader's SQL is the one place
+in this tool where user text becomes SQL, and it needs a decision about that before it gets a control.
 
 **Deletes must be suppressed whenever the row set is limited.** Under `All rows`, a row present on the
 target but absent from the source means *delete*. Under `Top N` it only means *outside the top 100* — so
@@ -185,6 +249,12 @@ make seeding irreproducible.
 dependency machinery the cart already has. Closure runs upward only — pulling children transitively is the
 full database-subsetting problem and would quietly drag in most of the database. When a seed's children
 cannot be satisfied, the tool reports which FKs are affected rather than guessing.
+
+**Half built.** `TableDependencyGraph.ParentClosure` exists and is tested, but the only caller is its test —
+`DataStepsAsync` emits exactly the tables that were picked, in dependency order, and pulls in no parent rows.
+So `Top N` on a child table today produces inserts that can fail the FK on apply, which the transaction then
+rolls back whole. Failing loudly inside a transaction is the tolerable version of this bug, not a defence of
+it. The closure is the missing call; reporting unsatisfiable FKs is the missing message.
 
 ### Empty target: the case that stresses everything else
 
@@ -228,9 +298,12 @@ before the view it selects from. Three mechanisms, in order of preference:
 sizing are DBA decisions, and a database created with the wrong collation is painful to undo. A missing
 database is reported, not provisioned. A database that exists but is empty is fine to work with.
 
-**Collation is checked as a precondition.** A target whose collation differs from the source changes string
-comparison and therefore changes the row hashes the data compare depends on. Mismatch is reported before any
-compare runs rather than producing quietly wrong diffs.
+**Collation is checked, but as a warning rather than a precondition.** A target whose collation differs from
+the source changes string comparison and therefore changes the row hashes the data compare depends on. The
+mismatch is detected and surfaced — `CompareService` compares the two `DATABASEPROPERTYEX` values and adds a
+warning saying data compare results cannot be trusted — but it rides along with the schema comparison's other
+warnings and stops nothing. A data compare on a collation-mismatched pair still runs and still returns diffs.
+"Reported before any compare runs" is what this should be; today the person has to read the warning and decide.
 
 ### FK map: a neighbourhood diagram, not an ER chart
 
@@ -239,8 +312,10 @@ The tool already holds the graph — FKs drive the topological order, parent clo
 
 **A whole-schema ER diagram is the failure mode to avoid.** 142 tables draws as unreadable spaghetti, which
 is how most database diagram tools become decoration. So the unit is a *neighbourhood*: one focused table,
-1–2 hops, with direction and depth controls. Parents are what must exist first; children are what breaks if
-referenced rows are missing.
+1–3 hops. Parents are what must exist first; children are what breaks if referenced rows are missing.
+Focus and depth are adjustable; the **direction filter (Parents / Children / Both) is not built** — both
+directions are always walked and drawn. At depth 1–2 that is the sensible default and the filter would be
+noise; at depth 3 on a hub table it is the difference between a diagram and a smear.
 
 What makes it worth building rather than pointing at an existing ER tool is that it is **plan-aware**. Nodes
 carry sync state — in plan, pulled in as a prerequisite, schema-only, unsatisfiable — so the question it
@@ -263,20 +338,36 @@ state overlay, no interaction, poor layout on graphs.
   never be applied to — script generation still works.
 - Apply requires the user to type the target database name to confirm.
 - Every apply runs in one explicit transaction with `XACT_ABORT ON`; failure rolls back whole.
-- Blast-radius guard: abort if deletes exceed a configurable share of the table's row count,
-  unless explicitly overridden for that run.
+- Blast-radius guard: a delete share over `Safety:MaxDeleteShare` (5%) does not get its own abort. It joins
+  the destructive list alongside `DROP TABLE`, `DROP COLUMN` and `DELETE FROM`, and that whole list is what
+  `AllowDestructive` has to acknowledge. One acknowledgement covers everything on it — which is the deliberate
+  part (an over-limit delete is not a different *kind* of consent from a drop) and the weak part (the count
+  is what you acknowledge, not each item).
 - The connection panel shows source/target with a colour band by environment class so you cannot
   mistake which side is which.
 
+All five are built. The destructive list is matched by scanning emitted SQL for those three strings rather
+than by asking the step what it is — `ScriptStep` carries a `Phase` and a description but no destructive flag,
+so a step that drops something without those words in it would pass unnoticed. No emitter currently produces
+one; the fragility is in the matching, not in a known hole.
+
 ## UI screens
 
-1. **Connections** — source | target side by side, Test, environment badge, and saved profiles that
-   hold no password (see *Connection profiles carry everything except the secret*). Not built yet.
+They are numbered here for reference only. In the app they are tabs, not steps: a compared pair of
+connections is the only prerequisite, and after that every screen reaches every other in any order.
+
+1. **Connections** — source | target side by side, Test, environment badge. Built, including connection-string
+   and full-detail entry with port and SQL login. **Saved profiles are not built** (see *Connection profiles
+   carry everything except the secret*) — the fields are retyped every session, which is the friction that
+   section exists to remove.
 2. **Schema compare** — object-type tree with counts and per-object ticks; clicking a row opens that
    object's difference inline beneath it: one table of what differs with both sides' values, side-by-side
    DDL with changed lines marked, and the statements that will run on the target.
-3. **Data compare** — table picker with key selection, summary counts, then virtualized
-   Inserts / Updates / Deletes tabs, per-row select, cell-level highlight on updates.
+3. **Data compare** — table picker with key selection and per-table mode, whole-database scan, summary counts,
+   then **one combined grid with a `Change` column** rather than separate Inserts / Updates / Deletes tabs, and
+   cell-level highlight on updates. Not virtualized and not per-row: the grid caps at 200 rows because the
+   two-pass design only fetches what is shown, and selection is per table, so there is nothing for a row
+   checkbox to add. `Row` scope exists in the cart model and has no control.
 4. **Sync plan** — everything ticked across screens 2 and 3, rolled into one ordered script
    (FK-dependency ordered for whole-DB runs), with Download and the guarded Apply.
 5. **Run log** — what was generated, what was applied, what the server said.
@@ -310,13 +401,19 @@ connections is the only prerequisite anywhere in the app.
 
 ## Build order
 
-1. Solution skeleton + Core model & diff engine + unit tests (no DB).
-2. SQL Server schema reader + T-SQL emitter, verified against `DBSERVER-DEV` (Dev).
-3. API endpoints + React shell + screens 1–2 (schema path end to end).
-4. Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list.
-5. Data compare engine (key+hash), per-table modes, parent closure + screens 3–4.
-6. Apply path + safety guards + screen 5.
-7. PostgreSQL provider stub proving the abstraction holds.
+1. **Done.** Solution skeleton + Core model & diff engine + unit tests (no DB).
+2. **Done.** SQL Server schema reader + T-SQL emitter, verified against LocalDB rather than a shared Dev
+   server — `tests/DbDelta.SqlServer.Tests` creates and drops its own databases per run, and skips when
+   LocalDB is absent.
+3. **Done.** API endpoints + React shell + screens 1–2 (schema path end to end).
+4. **Done.** Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list.
+5. **Partly.** Data compare engine (key+hash) and per-table modes + screens 3–4 are done; **parent closure is
+   not wired**, and `Filter` mode has no control.
+6. **Done.** Apply path + safety guards + screen 5, with a schema-only drift check.
+7. **Done.** FK map (screen 6), as hand-authored inline SVG.
+8. **Not started.** PostgreSQL provider stub proving the abstraction holds. `src/DbDelta.PostgreSql/` does not
+   exist yet, so decision 1's "provider-abstracted" claim rests on the shape of the interfaces and has never
+   been tested by a second implementation.
 
 ## Open questions
 
@@ -330,6 +427,10 @@ connections is the only prerequisite anywhere in the app.
 
 Retyping a server, a port, a database name and an auth mode every session is the largest avoidable
 friction in the tool, and a profile fixes it. A stored password does not belong in that trade.
+
+**This is a resolved decision, not a built feature.** Nothing writes or reads `profiles.json` today; the
+connections screen is retyped every session. What is settled is the shape, so that when it is built there is
+nothing left to decide.
 
 So a profile holds the **non-secret** half of a connection — server, port, database, auth mode, and the
 trust-certificate flag — in `%APPDATA%\DbDelta\profiles.json`, never in the repo (`.gitignore` already
@@ -431,3 +532,31 @@ by an empty table and then apply it to a full one.
 
 One consequence reaches the table list: a table whose key is merely undeclared now reads `key not set`
 rather than `no key`, because those are different problems and only one of them is the user's to solve.
+
+## Designed, not built
+
+Everything above that is design rather than description, in one place. `docs/mockup/dbdelta-ux.html` carries
+the screen-level version of this list; this one is the engineering side, so the two overlap without being the
+same list. Each row says where the design lives in the code, because in most cases the piece exists and only
+the call site is missing — which is what makes them cheap and also what makes them easy to mistake for built.
+
+| Idea | Where the design already lives | What is actually missing |
+|---|---|---|
+| Dependency closure on schema selection | `TableDependencyGraph`, already ordering the script | Nothing adds prerequisites to the selection; `include` filters literally, so a lone tick can emit an FK to a table that was never created |
+| Scope escalation, `Database ⊃ Table ⊃ Row` | `PlanNormalizer`, `SelectionScope`, `PlanCompiler`, all tested | No API or UI calls them; the app composes its script from a `HashSet` of ticks instead |
+| First-class exclusions with revoke | `Exclusion`, `CompiledPlan.AppliedExclusions`, tested | Nothing creates one, the session cannot hold one, no screen shows one |
+| Parent closure for seeded tables | `TableDependencyGraph.ParentClosure`, tested | Never called from the data path, so `Top N` on a child can emit inserts that fail their FK |
+| Row hashes in the drift check | `ITableFingerprintReader`, used by the whole-database scan | `DriftAsync` re-reads schema only; moved rows under a selected table do not abort the apply |
+| Staged bulk path past the size cliff | `MaxReviewableScriptBytes`, measured and flagged | No `SqlBulkCopy` / `BULK INSERT` path, and the measurement happens after the whole script is built rather than before |
+| Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
+| `Filter` row mode | `FilterPredicate` reaches the reader's `WHERE`; deletes already suppressed | No input control — and it needs a decision about user text becoming SQL before it gets one |
+| Row-level selection | `SelectionScope.Row` exists in the cart model | Selection stops at the table, by decision; listed here because the model implies more than the UI offers |
+| Saved connection profiles | Shape settled: `%APPDATA%\DbDelta\profiles.json`, no password | Nothing reads or writes the file |
+| `UserDefinedType` | A member of the `ObjectType` enum | No reader, no model type, no collection on `DatabaseSchema` — UDTs compare as absent |
+| Direction filter on the FK map | `Walk` already takes a direction, called twice | No control; both directions are always drawn |
+| Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
+| PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
+
+Two of these are correctness gaps rather than absent conveniences — schema closure and parent closure can
+both produce a script that fails on apply. The transaction rolls it back, so the failure is loud, but a tool
+whose premise is "review the script first" should not be emitting scripts it could have known were incomplete.

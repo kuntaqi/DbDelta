@@ -26,8 +26,8 @@ public sealed class CompareSession
 
     public DateTimeOffset ComparedAt { get; init; }
 
-    // Data enters the plan only for tables picked here. Schema differences are selected for you;
-    // moving rows is a heavier decision, so it stays deliberate and per-table.
+    // Data enters the plan only for tables picked here. Nothing is selected for you on either side, and
+    // moving rows is the heavier decision of the two, so it stays per-table rather than per-database.
     public Dictionary<ObjectIdentity, DataSelection> DataSelections { get; } = new();
 
     // Which tables actually differ is not known until they are compared, so the result is kept for the
