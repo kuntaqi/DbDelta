@@ -35,6 +35,11 @@ public sealed class CompareSession
     // session rather than recomputed every time the screen opens.
     public Dictionary<string, Contracts.TableScanRow> Scan { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    // The target-side state of the plan's rows the last time a script was built — which is the last time
+    // anyone could have reviewed one. Apply rebuilds the script against the target as it is now, so this
+    // is the only record of what the review was actually looking at.
+    public RowStateSnapshot? ReviewedRows { get; set; }
+
     // Nothing reaches the plan without being picked — schema included. A tool that pre-selects the
     // changes it found makes the review step optional in practice.
     //

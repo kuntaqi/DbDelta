@@ -69,7 +69,7 @@ public sealed class DataComparer
                 // delete here would empty the target while claiming to seed it.
                 if (!settings.SuppressDeletes)
                 {
-                    differences.Add(new RowDifference(right.Current.Key, RowClassification.Delete));
+                    differences.Add(new RowDifference(right.Current.Key, RowClassification.Delete, right.Current.Hash));
                 }
 
                 hasRight = await AdvanceRight().ConfigureAwait(false);
@@ -82,7 +82,7 @@ public sealed class DataComparer
                 }
                 else
                 {
-                    differences.Add(new RowDifference(left.Current.Key, RowClassification.Update));
+                    differences.Add(new RowDifference(left.Current.Key, RowClassification.Update, right.Current.Hash));
                 }
 
                 hasLeft = await AdvanceLeft().ConfigureAwait(false);

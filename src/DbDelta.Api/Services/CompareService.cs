@@ -144,6 +144,10 @@ public sealed class CompareService
         var rows = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
         steps.AddRange(rows.Steps);
 
+        // Building a script is the only moment anyone can have reviewed one, so this is where the row
+        // state behind it is recorded. Apply compares what it finds now against this.
+        session.ReviewedRows = rows.Rows;
+
         var combined = new SyncScript
         {
             Header = script.Header,
@@ -251,7 +255,8 @@ public sealed class CompareService
             Steps = steps,
             DeleteWarnings = warnings,
             RequiredRows = closure.Added,
-            ClosureWarnings = closure.Warnings
+            ClosureWarnings = closure.Warnings,
+            Rows = RowStateSnapshot.From(closure.Tables)
         };
     }
 

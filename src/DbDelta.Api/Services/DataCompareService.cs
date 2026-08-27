@@ -516,7 +516,8 @@ public sealed class DataCompareService
                     string.Join(", ", keys.Values.Select(v => v ?? "NULL")),
                     difference.Classification,
                     row.Values,
-                    keys);
+                    keys,
+                    difference.TargetHash);
             })
             .OfType<DataChange>()
             .ToList();

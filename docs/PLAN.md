@@ -115,13 +115,49 @@ make it more than a passive basket:
 - **Carts go stale.** You compare at 14:02, pick for ten minutes, meanwhile someone deploys to UAT.
   Before applying, the plan re-verifies that the target still matches what was compared. A drift aborts the
   apply and asks for a fresh compare rather than running against a database it no longer understands.
-  **Built for schema only:** `ApplyService.DriftAsync` re-reads the target schema and re-compares it against
-  the schema captured at compare time. Row hashes for the affected keys are not re-checked, so a target whose
-  *rows* moved under a selected table still applies. The fingerprint reader that would answer this already
-  exists — it powers the whole-database scan — so this is wiring, not new machinery.
+  Two halves, because a target moves in two ways: `ApplyService.DriftAsync` re-reads the target schema and
+  compares it against the one captured at compare time, and separately compares the rows the plan writes
+  against what they held when the script was last built. See *Drift is measured against the review, not the
+  comparison*.
 
 Plan state lives in the API session (`CompareSessionStore`), not only in browser memory, so a refresh doesn't
 lose the picking work. It does not survive an API restart, and is not meant to.
+
+### Drift is measured against the review, not the comparison
+
+Writing the row half of this turned up something the original sketch had wrong. "Re-verify that the target
+still matches **what was compared**" assumes the plan is fixed at compare time. It is not: apply rebuilds the
+script, re-reading both databases, so the DML about to run always reflects the target as of the click. The
+data in the script is never stale.
+
+What *is* stale is the review. You read a plan at 14:10; apply at 14:13 rebuilds it, and the rebuilt one can
+differ from the one you read. That is the failure worth catching — not "the tool no longer understands the
+database" but **"the tool is about to run something you did not agree to"**. So the reference point is the
+last script build, which is the last moment anyone could have read one, and the check is an equality test on
+the affected-row state either side of it.
+
+`RowStateSnapshot` records, per selected table, the target-side digest of every row the plan writes — `null`
+for an insert, since what must stay true there is that the target does *not* have the row. Four ways two
+snapshots can disagree, and each says something different:
+
+| Difference | What happened |
+|---|---|
+| A recorded hash changed | the row about to be overwritten is no longer the one that was reviewed |
+| A key disappeared | it stopped differing — the target already matches the source there |
+| A key appeared | a row started differing after the review, so the plan grew |
+| A table entered or left | the plan is not the shape it was |
+
+**Only affected rows are recorded, and that is deliberate.** A row the plan does not touch can change all it
+likes; refusing to apply because an unrelated row moved would make the check unusable on any database in real
+use. The rows held to account are the ones about to be overwritten, deleted, or inserted on top of.
+
+The hash itself costs nothing extra: the merge join already has the target digest in hand when it classifies
+a row, and used to discard it. `RowDifference` now carries it through to `DataChange`. There is no second
+read, no fingerprint pass, and no new provider interface — the earlier note in this document that the
+whole-database scan's fingerprint reader would answer this was wrong about which mechanism applies.
+
+One consequence to state plainly: a session that never built a script has nothing recorded, so only the
+schema half of the check runs. That is the API-only path; the plan screen fetches a script to show one.
 
 ### What closure follows
 
@@ -614,7 +650,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Row hashes in the drift check | `ITableFingerprintReader`, used by the whole-database scan | `DriftAsync` re-reads schema only; moved rows under a selected table do not abort the apply |
 | Staged bulk path past the size cliff | `MaxReviewableScriptBytes`, measured and flagged | No `SqlBulkCopy` / `BULK INSERT` path, and the measurement happens after the whole script is built rather than before |
 | Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | `Filter` row mode | `FilterPredicate` reaches the reader's `WHERE`; deletes already suppressed | No input control — and it needs a decision about user text becoming SQL before it gets one |
@@ -625,8 +660,8 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
-Both closures — schema and parent-row — used to head this list, and both are now built. What is left that
-still bears on correctness rather than convenience is the drift check: it re-reads the target's schema but
-not the rows under a selected table, so a plan can apply against data that moved after it was compared. The
-apply is transactional, so the failure mode is a wrong write rather than a broken one, which is the harder
-kind to notice.
+Both closures and the drift check used to head this list, and all three are now built. What remains
+is convenience rather than correctness: nothing left here can make the tool write the wrong thing, only make
+it more tiring to use or refuse work it could have done. The one with teeth is the staged bulk path — past
+the size cliff the tool says the script is too large and still emits it, so the guard protects the person
+reading the script but not the process building it.

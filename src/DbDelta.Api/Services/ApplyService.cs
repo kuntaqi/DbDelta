@@ -1,6 +1,7 @@
 using DbDelta.Api.Contracts;
 using DbDelta.Core.Apply;
 using DbDelta.Core.Comparison;
+using DbDelta.Core.Data;
 using DbDelta.Core.Providers;
 using DbDelta.Core.Scripting;
 
@@ -39,6 +40,10 @@ public sealed class ApplyService
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
 
+        // Taken before the script is rebuilt, because rebuilding it overwrites the record of what the
+        // review was looking at. This is the "then"; what the rebuild finds is the "now".
+        var reviewed = session.ReviewedRows;
+
         var script = await _compare.ScriptAsync(session, _data, cancellationToken).ConfigureAwait(false);
         var destructive = Destructive(script);
 
@@ -62,14 +67,15 @@ public sealed class ApplyService
 
         // Between the comparison and this click the target may have moved. Applying a script built
         // against a database that no longer matches is how a "safe" tool corrupts one.
-        var drift = await DriftAsync(session, cancellationToken).ConfigureAwait(false);
+        var drift = await DriftAsync(session, reviewed, cancellationToken).ConfigureAwait(false);
         if (drift is not null)
         {
             await LogAsync(session, "Apply", "Drifted", script, 0, 0, drift, cancellationToken).ConfigureAwait(false);
 
             return new ApplyResponse(
                 nameof(ApplyOutcome.Drifted),
-                "The target changed since the comparison. Compare again before applying.",
+                "The target moved after you reviewed this plan, so what would run is no longer what you read. "
+                    + "Compare again before applying.",
                 script.StepCount,
                 0,
                 drift,
@@ -119,8 +125,16 @@ public sealed class ApplyService
             DestructiveSteps = destructive
         }).ToList();
 
-    private async Task<string?> DriftAsync(CompareSession session, CancellationToken cancellationToken)
+    // Two halves, because the target can move in two ways. Its structure is checked against the schema
+    // read when the comparison was made; its rows are checked against what they held when the script was
+    // last built, which is the last moment anyone could have read one.
+    private async Task<string?> DriftAsync(
+        CompareSession session,
+        RowStateSnapshot? reviewed,
+        CancellationToken cancellationToken)
     {
+        var reasons = new List<string>();
+
         var current = await _provider
             .CreateSchemaReader(session.TargetConnectionString)
             .ReadAsync(cancellationToken)
@@ -129,9 +143,20 @@ public sealed class ApplyService
         var drift = new SchemaComparer().Compare(session.Target, current);
         var changed = drift.Differing.Take(5).Select(o => o.Identity.QualifiedName).ToList();
 
-        return changed.Count == 0
-            ? null
-            : $"{drift.Differing.Count()} object(s) no longer match what was compared: {string.Join(", ", changed)}";
+        if (changed.Count > 0)
+        {
+            reasons.Add(
+                $"{drift.Differing.Count()} object(s) no longer match what was compared: {string.Join(", ", changed)}");
+        }
+
+        // No recorded state means no script was ever built for this session, so there is nothing a review
+        // could have been based on and nothing to compare against. The schema half still applies.
+        if (reviewed is not null && session.ReviewedRows is not null)
+        {
+            reasons.AddRange(reviewed.DriftAgainst(session.ReviewedRows).Take(5));
+        }
+
+        return reasons.Count == 0 ? null : string.Join(" ", reasons);
     }
 
     // Dropped objects and deleted rows are the parts a later rollback cannot bring back, so they need

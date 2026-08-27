@@ -7,4 +7,5 @@ public sealed record DataChange(
     string Display,
     RowClassification Classification,
     IReadOnlyDictionary<string, string?> SourceValues,
-    IReadOnlyDictionary<string, string?> KeyValues);
+    IReadOnlyDictionary<string, string?> KeyValues,
+    string? TargetHash = null);

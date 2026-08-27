@@ -15,11 +15,16 @@ public sealed class DataScriptResult
 
     public required IReadOnlyList<string> ClosureWarnings { get; init; }
 
+    // What the target held, for the rows this plan writes, at the moment it was built. Compared against
+    // the same thing at apply time, this is what catches a row that moved in between.
+    public required RowStateSnapshot Rows { get; init; }
+
     public static DataScriptResult Empty { get; } = new()
     {
         Steps = [],
         DeleteWarnings = [],
         RequiredRows = [],
-        ClosureWarnings = []
+        ClosureWarnings = [],
+        Rows = RowStateSnapshot.From([])
     };
 }
