@@ -346,10 +346,42 @@ public sealed class SchemaComparer
         }
     }
 
-    private static string Shape(UserDefinedTypeDefinition type) =>
-        string.Join(", ", type.Columns
+    // Everything a table type is, as one canonical string, with the constraint names left out. They cannot
+    // be written by hand — "CONSTRAINT name" is a syntax error inside CREATE TYPE AS TABLE — so SQL Server
+    // generates them with a random suffix, and two identical types on two databases never share one.
+    // Matching on names would report every table type as different, every time.
+    //
+    // A standalone index is the exception: that syntax does take a name, so the name is the author's and is
+    // compared. The parts are sorted rather than taken in catalog order, since neither side promises one.
+    private static string Shape(UserDefinedTypeDefinition type)
+    {
+        var parts = type.Columns
             .OrderBy(c => c.OrdinalPosition)
-            .Select(c => $"{c.Name} {c.DataType} {(c.IsNullable ? "NULL" : "NOT NULL")}"));
+            .Select(c => $"{c.Name} {c.DataType} {(c.IsNullable ? "NULL" : "NOT NULL")}"
+                + (c.DefaultExpression is null ? string.Empty : $" DEFAULT {c.DefaultExpression}")
+                + (c.ComputedExpression is null ? string.Empty : $" AS {c.ComputedExpression}"))
+            .ToList();
+
+        if (type.PrimaryKey is { } pk)
+        {
+            parts.Add($"PRIMARY KEY {(pk.IsClustered ? "CLUSTERED" : "NONCLUSTERED")} ({Join(pk.Columns)})");
+        }
+
+        parts.AddRange(type.UniqueConstraints
+            .Select(u => $"UNIQUE {(u.IsClustered ? "CLUSTERED" : "NONCLUSTERED")} ({Join(u.Columns)})")
+            .Order(StringComparer.Ordinal));
+
+        parts.AddRange(type.CheckConstraints
+            .Select(c => $"CHECK {c.Expression}")
+            .Order(StringComparer.Ordinal));
+
+        parts.AddRange(type.Indexes
+            .Select(i => $"INDEX {i.Name} {(i.IsUnique ? "UNIQUE " : string.Empty)}({Join(i.Columns)})"
+                + (i.IncludedColumns.Count == 0 ? string.Empty : $" INCLUDE ({string.Join(", ", i.IncludedColumns)})"))
+            .Order(StringComparer.Ordinal));
+
+        return string.Join(", ", parts);
+    }
 
     private IEnumerable<ObjectDiff> CompareSequences(
         IReadOnlyList<SequenceDefinition> source,

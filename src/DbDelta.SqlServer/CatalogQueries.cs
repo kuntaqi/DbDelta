@@ -261,6 +261,8 @@ internal static class CatalogQueries
         ORDER BY s.name, t.name;
         """;
 
+    // A table type is backed by an object, so its columns and constraints live in the same catalogs a
+    // table's do — reached through type_table_object_id rather than through sys.tables.
     public const string TableTypes = """
         SELECT
             s.name              AS [SchemaName],
@@ -273,14 +275,80 @@ internal static class CatalogQueries
             c.scale             AS [Scale],
             c.is_nullable       AS [IsNullable],
             ty.is_user_defined  AS [IsUserDefined],
-            tys.name            AS [TypeSchemaName]
+            tys.name            AS [TypeSchemaName],
+            dc.definition       AS [DefaultDefinition],
+            cc.definition       AS [ComputedDefinition]
         FROM sys.table_types tt
         JOIN sys.schemas s      ON s.schema_id = tt.schema_id
         JOIN sys.columns c      ON c.object_id = tt.type_table_object_id
         JOIN sys.types ty       ON ty.user_type_id = c.user_type_id
         JOIN sys.schemas tys    ON tys.schema_id = ty.schema_id
+        LEFT JOIN sys.default_constraints dc
+               ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+        LEFT JOIN sys.computed_columns cc
+               ON cc.object_id = c.object_id AND cc.column_id = c.column_id
         WHERE tt.is_user_defined = 1
         ORDER BY s.name, tt.name, c.column_id;
+        """;
+
+    // PRIMARY KEY and UNIQUE inside a table type. The constraint name carries a random suffix, so it is read
+    // but never compared; the columns and clustering are the parts that mean anything.
+    public const string TableTypeKeys = """
+        SELECT
+            s.name                  AS [SchemaName],
+            tt.name                 AS [TypeName],
+            kc.name                 AS [ConstraintName],
+            kc.type                 AS [ConstraintType],
+            i.type_desc             AS [IndexType],
+            c.name                  AS [ColumnName],
+            ic.key_ordinal          AS [KeyOrdinal],
+            ic.is_descending_key    AS [IsDescending]
+        FROM sys.table_types tt
+        JOIN sys.schemas s          ON s.schema_id = tt.schema_id
+        JOIN sys.key_constraints kc ON kc.parent_object_id = tt.type_table_object_id
+        JOIN sys.indexes i          ON i.object_id = kc.parent_object_id AND i.index_id = kc.unique_index_id
+        JOIN sys.index_columns ic   ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+        JOIN sys.columns c          ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE tt.is_user_defined = 1 AND ic.is_included_column = 0
+        ORDER BY s.name, tt.name, kc.name, ic.key_ordinal;
+        """;
+
+    public const string TableTypeChecks = """
+        SELECT
+            s.name          AS [SchemaName],
+            tt.name         AS [TypeName],
+            cc.name         AS [ConstraintName],
+            cc.definition   AS [Definition]
+        FROM sys.table_types tt
+        JOIN sys.schemas s              ON s.schema_id = tt.schema_id
+        JOIN sys.check_constraints cc   ON cc.parent_object_id = tt.type_table_object_id
+        WHERE tt.is_user_defined = 1
+        ORDER BY s.name, tt.name, cc.definition;
+        """;
+
+    // Standalone indexes only. The indexes backing a PRIMARY KEY or a UNIQUE constraint are already reported
+    // as those constraints, and counting them twice would emit each one twice.
+    public const string TableTypeIndexes = """
+        SELECT
+            s.name                  AS [SchemaName],
+            tt.name                 AS [TypeName],
+            i.name                  AS [IndexName],
+            i.is_unique             AS [IsUnique],
+            i.type_desc             AS [IndexType],
+            c.name                  AS [ColumnName],
+            ic.key_ordinal          AS [KeyOrdinal],
+            ic.is_descending_key    AS [IsDescending],
+            ic.is_included_column   AS [IsIncluded]
+        FROM sys.table_types tt
+        JOIN sys.schemas s          ON s.schema_id = tt.schema_id
+        JOIN sys.indexes i          ON i.object_id = tt.type_table_object_id
+        JOIN sys.index_columns ic   ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+        JOIN sys.columns c          ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE tt.is_user_defined = 1
+          AND i.is_primary_key = 0
+          AND i.is_unique_constraint = 0
+          AND i.name IS NOT NULL
+        ORDER BY s.name, tt.name, i.name, ic.is_included_column, ic.key_ordinal;
         """;
 
     public const string Sequences = """

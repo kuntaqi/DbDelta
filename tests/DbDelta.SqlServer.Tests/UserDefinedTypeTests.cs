@@ -25,7 +25,7 @@ public sealed class UserDefinedTypeTests
 
         var table = schema.UserDefinedTypes.Single(t => t.Identity.Name == "IdList");
         Assert.Equal(UserDefinedTypeKind.Table, table.Kind);
-        Assert.Equal(["Id", "Note"], table.Columns.Select(c => c.Name));
+        Assert.Equal(["Id", "Ref", "Amount", "Note"], table.Columns.Select(c => c.Name));
         Assert.Equal("NVARCHAR(40)", table.Columns.Single(c => c.Name == "Note").DataType.ToString());
     }
 
@@ -81,6 +81,68 @@ public sealed class UserDefinedTypeTests
                 .Columns.Single(c => c.Name == "Phone");
 
             Assert.Equal("dbo.PhoneNumber", phone.DataType.ToString());
+            Assert.Empty(new SchemaComparer().Compare(source, after).Differing);
+        }
+        finally
+        {
+            await _fixture.DropScratchAsync(scratch);
+        }
+    }
+
+    // A table type is a table shape, and everything in that shape used to be dropped on the floor: only
+    // the columns were read, so a type with a key, a unique constraint, a default, a check and an index
+    // compared as though it had none of them.
+    [SkippableFact]
+    public async Task A_table_types_constraints_are_all_read()
+    {
+        var schema = await SourceAsync();
+        var type = schema.UserDefinedTypes.Single(t => t.Identity.Name == "IdList");
+
+        Assert.Equal(["Id"], type.PrimaryKey?.Columns.Select(c => c.Name));
+        Assert.Equal(["Ref"], Assert.Single(type.UniqueConstraints).Columns.Select(c => c.Name));
+        Assert.Contains("Amount", Assert.Single(type.CheckConstraints).Expression);
+        // The catalog wraps a default in its own brackets, so the assertion is about the value in it.
+        var amount = type.Columns.Single(c => c.Name == "Amount");
+        Assert.Contains("0", amount.DefaultExpression);
+
+        // The one part with a name the author chose, so the name is real and worth comparing.
+        var index = Assert.Single(type.Indexes);
+        Assert.Equal("IX_IdList_Note", index.Name);
+        Assert.Equal(["Note"], index.Columns.Select(c => c.Name));
+    }
+
+    // The point of the exercise: emitted and re-read, the type comes back the same shape. A constraint name
+    // cannot survive that trip — SQL Server invents a new one each time — which is exactly why the
+    // comparison is by shape and the emitter writes no names.
+    [SkippableFact]
+    public async Task A_table_type_survives_being_emitted_and_read_back()
+    {
+        Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
+
+        const string scratch = "TableTypeRoundTrip";
+        var connectionString = await _fixture.CreateEmptyTargetAsync(scratch);
+
+        try
+        {
+            var source = await SourceAsync();
+            var target = await new SqlServerSchemaReader(connectionString).ReadAsync();
+            var diff = new SchemaComparer().Compare(source, target);
+
+            var script = new TSqlEmitter().Emit(source, target, diff);
+            var result = await new SqlServerScriptExecutor().ExecuteAsync(connectionString, script);
+            Assert.Equal(ApplyOutcome.Committed, result.Outcome);
+
+            var after = await new SqlServerSchemaReader(connectionString).ReadAsync();
+            var rebuilt = after.UserDefinedTypes.Single(t => t.Identity.Name == "IdList");
+
+            Assert.Equal(["Id"], rebuilt.PrimaryKey?.Columns.Select(c => c.Name));
+            Assert.Single(rebuilt.UniqueConstraints);
+            Assert.Single(rebuilt.CheckConstraints);
+            Assert.Equal("IX_IdList_Note", Assert.Single(rebuilt.Indexes).Name);
+            Assert.NotNull(rebuilt.Columns.Single(c => c.Name == "Amount").DefaultExpression);
+
+            // And the whole schema compares clean, which is the assertion that would have failed before:
+            // a type read without its constraints emits without them and then differs from its source.
             Assert.Empty(new SchemaComparer().Compare(source, after).Differing);
         }
         finally

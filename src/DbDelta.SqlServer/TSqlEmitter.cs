@@ -130,17 +130,46 @@ public sealed class TSqlEmitter : IScriptEmitter
 
         if (type.Kind == UserDefinedTypeKind.Table)
         {
-            var columns = type.Columns
-                .OrderBy(c => c.OrdinalPosition)
-                .Select(c => "    " + TSqlWriter.ColumnDefinition(c, includeDefault: false));
+            var quoter = SqlServerQuoter.Instance;
 
-            return $"CREATE TYPE {name} AS TABLE (\n{string.Join(",\n", columns)}\n);";
+            // Nothing here carries a constraint name, because none of it can: the syntax has no place to
+            // put one. Passing the names through would produce a statement SQL Server refuses to parse.
+            var parts = type.Columns
+                .OrderBy(c => c.OrdinalPosition)
+                .Select(c => "    " + TSqlWriter.ColumnDefinition(c, includeDefault: false)
+                    + (c.DefaultExpression is null ? string.Empty : $" DEFAULT {c.DefaultExpression}"))
+                .ToList();
+
+            if (type.PrimaryKey is { } pk)
+            {
+                parts.Add($"    PRIMARY KEY {Clustering(pk.IsClustered)} ({Columns(pk.Columns)})");
+            }
+
+            parts.AddRange(type.UniqueConstraints
+                .Select(u => $"    UNIQUE {Clustering(u.IsClustered)} ({Columns(u.Columns)})"));
+
+            parts.AddRange(type.CheckConstraints.Select(c => $"    CHECK {c.Expression}"));
+
+            parts.AddRange(type.Indexes.Select(i =>
+                $"    INDEX {quoter.Quote(i.Name)} {(i.IsUnique ? "UNIQUE " : string.Empty)}"
+                + $"{Clustering(i.IsClustered)} ({Columns(i.Columns)})"
+                + (i.IncludedColumns.Count == 0
+                    ? string.Empty
+                    : $" INCLUDE ({string.Join(", ", i.IncludedColumns.Select(quoter.Quote))})")));
+
+            return $"CREATE TYPE {name} AS TABLE (\n{string.Join(",\n", parts)}\n);";
         }
 
         var nullability = type.IsNullable ? "NULL" : "NOT NULL";
 
         return $"CREATE TYPE {name} FROM {SqlTypeText.Declare(type.BaseType!)} {nullability};";
     }
+
+    private static string Clustering(bool clustered) => clustered ? "CLUSTERED" : "NONCLUSTERED";
+
+    private static string Columns(IEnumerable<IndexColumn> columns) =>
+        string.Join(", ", columns.Select(c =>
+            $"{SqlServerQuoter.Instance.Quote(c.Name)} {(c.IsDescending ? "DESC" : "ASC")}"));
 
     private static void EmitDrops(
         List<ScriptStep> steps,

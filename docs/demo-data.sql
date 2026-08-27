@@ -143,3 +143,19 @@ CREATE TABLE dbo.Person (
 GO
 INSERT INTO dbo.Person (PersonId, FullName, Phone) VALUES (1, N'Ada Lovelace', N'+61 2 5550 1234');
 GO
+
+-- A table type carrying everything one can carry. None of these constraints can be named — "CONSTRAINT
+-- name" is a syntax error inside CREATE TYPE AS TABLE — so SQL Server generates names with a random
+-- suffix, which is why the comparison is by shape and the emitter writes no names. The index is the one
+-- part whose name is the author's.
+USE DbDelta_Demo_Src;
+GO
+CREATE TYPE dbo.IdList AS TABLE (
+    Id      INT NOT NULL PRIMARY KEY,
+    Ref     NVARCHAR(20) NOT NULL UNIQUE,
+    Amount  DECIMAL(18,2) NOT NULL DEFAULT (0),
+    Note    NVARCHAR(40) NULL,
+    CHECK (Amount >= 0),
+    INDEX IX_IdList_Note NONCLUSTERED (Note)
+);
+GO

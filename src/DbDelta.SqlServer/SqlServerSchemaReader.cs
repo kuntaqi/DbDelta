@@ -407,20 +407,190 @@ public sealed class SqlServerSchemaReader : ISchemaReader
                         reader.GetByte(reader.GetOrdinal("Scale")),
                         reader.GetBoolean(reader.GetOrdinal("IsUserDefined")),
                         Str(reader, "TypeSchemaName")),
-                    IsNullable = reader.GetBoolean(reader.GetOrdinal("IsNullable"))
+                    IsNullable = reader.GetBoolean(reader.GetOrdinal("IsNullable")),
+                    DefaultExpression = NullableStr(reader, "DefaultDefinition"),
+                    ComputedExpression = NullableStr(reader, "ComputedDefinition")
                 });
             }
         }
 
-        types.AddRange(tableTypes.Select(pair => new UserDefinedTypeDefinition
+        var keys = await ReadTableTypeKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+        var checks = await ReadTableTypeChecksAsync(connection, cancellationToken).ConfigureAwait(false);
+        var indexes = await ReadTableTypeIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        types.AddRange(tableTypes.Select(pair =>
         {
-            Identity = pair.Key,
-            Kind = UserDefinedTypeKind.Table,
-            Columns = pair.Value.OrderBy(c => c.OrdinalPosition).ToList()
+            keys.TryGetValue(pair.Key, out var key);
+
+            return new UserDefinedTypeDefinition
+            {
+                Identity = pair.Key,
+                Kind = UserDefinedTypeKind.Table,
+                Columns = pair.Value.OrderBy(c => c.OrdinalPosition).ToList(),
+                PrimaryKey = key.PrimaryKey,
+                UniqueConstraints = key.Uniques ?? [],
+                CheckConstraints = checks.TryGetValue(pair.Key, out var check) ? check : [],
+                Indexes = indexes.TryGetValue(pair.Key, out var index) ? index : []
+            };
         }));
 
         return types.OrderBy(t => t.Identity.QualifiedName, StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+// Keyed on the type rather than the backing object, so the caller never has to know that a table type
+    // has one.
+    private static async Task<Dictionary<ObjectIdentity, (PrimaryKeyDefinition? PrimaryKey, List<UniqueConstraintDefinition>? Uniques)>>
+        ReadTableTypeKeysAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var primaries = new Dictionary<ObjectIdentity, (bool Clustered, List<IndexColumn> Columns)>();
+        var uniques = new Dictionary<(ObjectIdentity Type, string Name), (bool Clustered, List<IndexColumn> Columns)>();
+
+        await using (var reader = await ExecuteAsync(connection, CatalogQueries.TableTypeKeys, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var identity = TypeId(Str(reader, "SchemaName"), Str(reader, "TypeName"));
+                var clustered = Str(reader, "IndexType").StartsWith("CLUSTERED", StringComparison.OrdinalIgnoreCase);
+                var column = new IndexColumn(
+                    Str(reader, "ColumnName"),
+                    reader.GetBoolean(reader.GetOrdinal("IsDescending")));
+
+                if (Str(reader, "ConstraintType").Trim() == "PK")
+                {
+                    if (!primaries.TryGetValue(identity, out var pk))
+                    {
+                        pk = (clustered, []);
+                        primaries[identity] = pk;
+                    }
+
+                    pk.Columns.Add(column);
+                    continue;
+                }
+
+                var key = (identity, Str(reader, "ConstraintName"));
+                if (!uniques.TryGetValue(key, out var uq))
+                {
+                    uq = (clustered, []);
+                    uniques[key] = uq;
+                }
+
+                uq.Columns.Add(column);
+            }
+        }
+
+        var result = new Dictionary<ObjectIdentity, (PrimaryKeyDefinition?, List<UniqueConstraintDefinition>?)>();
+
+        foreach (var (identity, (clustered, columns)) in primaries)
+        {
+            result[identity] = (
+                new PrimaryKeyDefinition { Name = string.Empty, Columns = columns, IsClustered = clustered },
+                result.TryGetValue(identity, out var existing) ? existing.Item2 : null);
+        }
+
+        foreach (var ((identity, name), (clustered, columns)) in uniques)
+        {
+            result.TryGetValue(identity, out var existing);
+            var list = existing.Item2 ?? [];
+
+            list.Add(new UniqueConstraintDefinition { Name = name, Columns = columns, IsClustered = clustered });
+            result[identity] = (existing.Item1, list);
+        }
+
+        return result;
+    }
+
+    private static async Task<Dictionary<ObjectIdentity, List<CheckConstraintDefinition>>> ReadTableTypeChecksAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var checks = new Dictionary<ObjectIdentity, List<CheckConstraintDefinition>>();
+
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.TableTypeChecks, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var identity = TypeId(Str(reader, "SchemaName"), Str(reader, "TypeName"));
+
+            if (!checks.TryGetValue(identity, out var list))
+            {
+                list = [];
+                checks[identity] = list;
+            }
+
+            list.Add(new CheckConstraintDefinition
+            {
+                Name = Str(reader, "ConstraintName"),
+                Expression = Str(reader, "Definition")
+            });
+        }
+
+        return checks;
+    }
+
+    private static async Task<Dictionary<ObjectIdentity, List<IndexDefinition>>> ReadTableTypeIndexesAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var gathered = new Dictionary<(ObjectIdentity Type, string Name), (bool Unique, bool Clustered, List<IndexColumn> Key, List<string> Included)>();
+
+        await using (var reader = await ExecuteAsync(connection, CatalogQueries.TableTypeIndexes, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var identity = TypeId(Str(reader, "SchemaName"), Str(reader, "TypeName"));
+                var key = (identity, Str(reader, "IndexName"));
+
+                if (!gathered.TryGetValue(key, out var entry))
+                {
+                    entry = (
+                        reader.GetBoolean(reader.GetOrdinal("IsUnique")),
+                        Str(reader, "IndexType").StartsWith("CLUSTERED", StringComparison.OrdinalIgnoreCase),
+                        [],
+                        []);
+
+                    gathered[key] = entry;
+                }
+
+                if (reader.GetBoolean(reader.GetOrdinal("IsIncluded")))
+                {
+                    entry.Included.Add(Str(reader, "ColumnName"));
+                    continue;
+                }
+
+                entry.Key.Add(new IndexColumn(
+                    Str(reader, "ColumnName"),
+                    reader.GetBoolean(reader.GetOrdinal("IsDescending"))));
+            }
+        }
+
+        var indexes = new Dictionary<ObjectIdentity, List<IndexDefinition>>();
+
+        foreach (var ((identity, name), (unique, clustered, keyColumns, included)) in gathered)
+        {
+            if (!indexes.TryGetValue(identity, out var list))
+            {
+                list = [];
+                indexes[identity] = list;
+            }
+
+            list.Add(new IndexDefinition
+            {
+                Name = name,
+                Columns = keyColumns,
+                IncludedColumns = included,
+                IsUnique = unique,
+                IsClustered = clustered
+            });
+        }
+
+        return indexes;
+    }
+
+    private static ObjectIdentity TypeId(string schema, string name) =>
+        new(ObjectType.UserDefinedType, schema, name);
 
     private static async Task<List<SequenceDefinition>> ReadSequencesAsync(
         SqlConnection connection,

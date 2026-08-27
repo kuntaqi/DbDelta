@@ -167,7 +167,16 @@ public sealed class LocalDbFixture : IAsyncLifetime
         GO
         CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL;
         GO
-        CREATE TYPE dbo.IdList AS TABLE (Id INT NOT NULL, Note NVARCHAR(40) NULL);
+        -- Everything a table type can carry: no name on any constraint, because that syntax does not
+        -- exist inside CREATE TYPE AS TABLE. The index is the one part that does take a name.
+        CREATE TYPE dbo.IdList AS TABLE (
+            Id      INT NOT NULL PRIMARY KEY,
+            Ref     NVARCHAR(20) NOT NULL UNIQUE,
+            Amount  DECIMAL(18,2) NOT NULL DEFAULT (0),
+            Note    NVARCHAR(40) NULL,
+            CHECK (Amount >= 0),
+            INDEX IX_IdList_Note NONCLUSTERED (Note)
+        );
         GO
         CREATE TABLE dbo.Category (
             CategoryId  INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Category PRIMARY KEY,
