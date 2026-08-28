@@ -743,9 +743,9 @@ connections is the only prerequisite anywhere in the app.
    LocalDB is absent.
 3. **Done.** API endpoints + React shell + screens 1–2 (schema path end to end).
 4. **Done.** Volume readout (`sys.dm_db_partition_stats`) wired into connect + table list.
-5. **Partly.** Data compare engine (key+hash), per-table modes and parent closure + screens 3–4 are done;
-   `Filter` mode has no control.
-6. **Done.** Apply path + safety guards + screen 5, with a schema-only drift check.
+5. **Done.** Data compare engine (key+hash), per-table modes, parent closure and row-level selection +
+   screens 3–4. All four modes have controls, including `Filter`.
+6. **Done.** Apply path + safety guards + screen 5, with a drift check over both schema and rows.
 7. **Done.** FK map (screen 6), as hand-authored inline SVG.
 8. **Not started.** PostgreSQL provider stub proving the abstraction holds. `src/DbDelta.PostgreSql/` does not
    exist yet, so decision 1's "provider-abstracted" claim rests on the shape of the interfaces and has never
@@ -983,6 +983,12 @@ gaps.** The list of things found only because something was built beside them:
   differ in practice mean the same code page and the same sensitivity, so the check spent its credibility
   where nothing was wrong and had none left for a code page difference, which is the case that silently
   changes what gets written
+- **a schema step for a schema the plan never mentioned** — the emitter added every schema in the source
+  database to the ones a plan needed, so a plan of one `dbo` table carried a `CREATE SCHEMA` for schemas
+  nothing in it referred to. Guarded and idempotent, so nothing ever broke; it just put something in a plan
+  that nobody picked. And the first five tests written for it *passed against the buggy code*, because every
+  table in the fixture lived in `dbo` and the emitter's own `dbo` filter swallowed the evidence — the bug
+  needed a table outside `dbo` to become visible at all
 - **every fixture database sharing one default collation** — a source and a target created on the same
   instance produce identical columns whether or not the emitter writes `COLLATE`, so no test that compared
   the two could tell that it never did. The fixture had to be able to vary the default before the gap was
@@ -991,6 +997,7 @@ gaps.** The list of things found only because something was built beside them:
 Every one of those was invisible while this section claimed to be complete. The pattern is worth naming: the
 gaps were not in the code that was being reviewed, they were in the *fixtures* — no sequence, no table-type
 constraint, no table with more than 500 changed rows, no definition with a comment above it, no second
-code page, no second database default. A gap that nothing exercises cannot be seen by reading, only by
-adding the case that would have failed. Two of those were not found by reading at all: they were found by
-pointing the tool at a real instance, where the fixtures' idea of normal stopped applying.
+code page, no second database default, no table outside `dbo`. A gap that nothing exercises cannot be seen
+by reading, only by adding the case that would have failed. Two of those were not found by reading at all:
+they were found by pointing the tool at a real instance, where the fixtures' idea of normal stopped
+applying.

@@ -44,7 +44,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             .Select(c => c.Identity)
             .ToHashSet();
 
-        EmitSchemas(steps, changes, sourceTables);
+        EmitSchemas(steps, changes);
         EmitDrops(steps, changes, target);
         EmitTypes(steps, changes, source, target);
         EmitSequences(steps, changes, source);
@@ -60,15 +60,21 @@ public sealed class TSqlEmitter : IScriptEmitter
         };
     }
 
-    private static void EmitSchemas(
-        List<ScriptStep> steps,
-        List<ObjectDiff> changes,
-        Dictionary<ObjectIdentity, TableDefinition> sourceTables)
+    // Only the schemas this script actually creates something in, which is the schema of every object it
+    // creates and nothing else. An object that merely differs already exists on the target, so its schema
+    // does too; an object being dropped needs no schema at all.
+    //
+    // This used to add every schema in the source database as well, on top of the ones the plan needed.
+    // Nothing broke — CreateSchemaIfMissing is guarded and idempotent — but a plan of one dbo table would
+    // carry a CREATE SCHEMA for schemas nothing in it referred to, which is the one thing this tool is
+    // strictest about not doing. The whole-source list arrived with the first version of the emitter and
+    // was never a fix for anything; no test asserted on schema steps, so it went unnoticed for as long as
+    // it existed.
+    private static void EmitSchemas(List<ScriptStep> steps, List<ObjectDiff> changes)
     {
         var schemas = changes
             .Where(c => c.Kind == DiffKind.SourceOnly)
             .Select(c => c.Identity.Schema)
-            .Concat(sourceTables.Keys.Select(k => k.Schema))
             .Where(s => !string.Equals(s, "dbo", StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase);

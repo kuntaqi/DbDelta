@@ -204,3 +204,21 @@ GO
 INSERT dbo.Invoice (Reference, Label, Amount) VALUES
     ('REF-001', 'Opening balance', 1200.00);
 GO
+
+-- A table outside dbo, identical on both sides. Nothing about it differs, so it is in no plan — it is here
+-- so the schema phase has something to be wrong about: the emitter used to add every schema in the source
+-- database to the ones a plan needed, and with every table in dbo the dbo filter hid it.
+USE DbDelta_Demo_Src;
+GO
+CREATE TABLE sales.Territory (
+    TerritoryId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Territory PRIMARY KEY,
+    Name        NVARCHAR(50) NOT NULL
+);
+GO
+USE DbDelta_Demo_Tgt;
+GO
+CREATE TABLE sales.Territory (
+    TerritoryId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Territory PRIMARY KEY,
+    Name        NVARCHAR(50) NOT NULL
+);
+GO

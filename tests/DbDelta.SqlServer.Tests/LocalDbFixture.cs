@@ -172,6 +172,15 @@ public sealed class LocalDbFixture : IAsyncLifetime
     private const string SourceScript = """
         CREATE SCHEMA sales;
         GO
+        -- A table outside dbo, identical on both sides so it is in nobody's diff. It exists to make one
+        -- thing observable: the emitter used to add every schema in the source database to the ones a plan
+        -- needed, and with every table in dbo there was no way to see it — the dbo filter swallowed the
+        -- evidence. A schema that holds a table is what the old code reached for.
+        CREATE TABLE sales.Territory (
+            TerritoryId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Territory PRIMARY KEY,
+            Name        NVARCHAR(50) NOT NULL
+        );
+        GO
         CREATE TYPE dbo.PhoneNumber FROM NVARCHAR(20) NOT NULL;
         GO
         -- One sequence only on the source, and one that exists on both sides with a different increment.
@@ -279,6 +288,15 @@ public sealed class LocalDbFixture : IAsyncLifetime
     // index, and a different view body.
     private const string TargetScript = """
         CREATE SCHEMA sales;
+        GO
+        -- A table outside dbo, identical on both sides so it is in nobody's diff. It exists to make one
+        -- thing observable: the emitter used to add every schema in the source database to the ones a plan
+        -- needed, and with every table in dbo there was no way to see it — the dbo filter swallowed the
+        -- evidence. A schema that holds a table is what the old code reached for.
+        CREATE TABLE sales.Territory (
+            TerritoryId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Territory PRIMARY KEY,
+            Name        NVARCHAR(50) NOT NULL
+        );
         GO
         CREATE TABLE dbo.Category (
             CategoryId  INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Category PRIMARY KEY,

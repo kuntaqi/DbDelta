@@ -115,7 +115,7 @@ public sealed class EndToEndCompareTests
 
         Assert.False(order.HasCycles);
         Assert.Equal(
-            ["dbo.Category", "dbo.Company", "dbo.Contact", "dbo.Digest", "dbo.Metric"],
+            ["dbo.Category", "dbo.Company", "dbo.Contact", "dbo.Digest", "dbo.Metric", "sales.Territory"],
             order.Ordered.Select(t => t.QualifiedName));
     }
 
