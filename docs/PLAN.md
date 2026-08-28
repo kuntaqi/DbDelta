@@ -1143,10 +1143,12 @@ publishes that. Since it has never been pushed anywhere, rewriting is free, and 
 squashed commit. No credentials are in the history — the only password-shaped strings are the deliberate
 `hunter2` fixture and the generic examples.
 
-**There is no LICENSE and no README.** The licence is the owner's decision; MIT and Apache-2.0 are the
-usual two, and Apache-2.0's explicit patent grant is the reason to prefer it for a tool a company might
-adopt. The README has to carry the two setup paths, the no-authentication warning, and the fact that the
-apply path writes to databases.
+**There is no LICENSE, and the README is not yet a public one.** The licence is the owner's decision; MIT
+and Apache-2.0 are the usual two, and Apache-2.0's explicit patent grant is the reason to prefer it for a
+tool a company might adopt. `README.md` exists — 38 lines covering what the tool does, status, stack and
+safety — but it predates all of this: it mentions neither setup path, says nothing about Docker, and does
+not mention that there is no authentication. A newcomer's first file has to carry the two ways in, the
+no-login warning, and the fact that the apply path writes to databases.
 
 **`CLAUDE.md` ships with the repository.** It is currently the best description of the project's conventions
 and would be genuinely useful to a contributor, but it is written to an audience of one and refers to one developer's
