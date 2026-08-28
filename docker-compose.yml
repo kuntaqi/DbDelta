@@ -19,6 +19,10 @@ services:
       # *-PROD, *-UAT, *-DEV and LocalDB, so anything named differently needs saying here.
       DbDelta__DataDirectory: /var/lib/dbdelta
       Safety__ReadOnlyServers__0: "*-PROD"
+      # Deliberately not set. Outside a container the startup guard refuses to bind beyond loopback without
+      # it; inside one it does not apply, because a container has to bind all interfaces to be reachable.
+      # The 127.0.0.1 publish above is what actually limits who can reach this.
+      # Safety__AllowRemoteAccess: "true"
     # Lets the container reach a SQL Server running on the host as `host.docker.internal`. Docker Desktop
     # provides this name already; on plain Linux it needs the mapping below.
     extra_hosts:

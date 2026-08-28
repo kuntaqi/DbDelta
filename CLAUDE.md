@@ -161,6 +161,14 @@ regardless: a Linux container has no Windows identity, so Windows authentication
 LocalDB is local-only, so a container cannot reach it at all — which is why the compose file brings its own
 SQL Server. Full reasoning in `docs/PLAN.md`, *Going open source, and two ways in*.
 
+**The API refuses to start if it would listen beyond loopback.** DbDelta has no authentication, so the
+address it binds is the whole of its access control: anyone who can open the page can apply changes to any
+database the process can reach. `NetworkExposureGuard` checks the configured URLs before the host is built —
+so a refusal happens before anything binds — and `Safety:AllowRemoteAccess` turns the refusal into a warning
+rather than into silence. The one exception is a container, which has to bind all interfaces to be reachable
+through a published port at all; there the guard defers and says what it could not check, and the port
+publish is the real control. Don't "fix" a refusal by setting the flag in committed config.
+
 **Where state lives is configurable now.** Saved profiles and the run log resolve to
 `DbDelta:DataDirectory` (`DbDelta__DataDirectory` as an environment variable) and fall back to
 `%APPDATA%\DbDelta` when it is unset. The fallback is what a direct run gets; the setting is what makes a

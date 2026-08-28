@@ -1069,15 +1069,38 @@ file binds `127.0.0.1:5199:8080` and says why, and the Dockerfile carries the sa
 
 That is mitigation, not a fix. Three options, in increasing order of honesty:
 
-1. **Document it and bind to localhost.** What is done now. Cheap, and relies on the user reading.
+1. **Document it and bind to localhost.** Relies on the user reading.
 2. **Refuse to start when bound to a non-loopback address** unless an explicit setting says otherwise —
    the same shape as the read-only server guard: a hard block rather than a warning, because the cost of
    being wrong is not symmetric.
 3. **Add authentication.** Correct for a tool that might be run on a shared box, and a different product.
 
-Option 2 is the one that fits what this project already believes about guards, and it should land before the
-repository is public. It is cheap: read the configured URLs at startup, and if any of them binds beyond
-loopback without `DbDelta:AllowRemoteAccess`, fail to start with an explanation.
+**Option 2 is built.** `NetworkExposureGuard` reads the configured URLs before the host is built — so a
+refusal happens before anything has bound a port — and returns one of four verdicts. Loopback starts and
+says nothing. A non-loopback address refuses, naming the addresses and the setting that would permit them.
+`Safety:AllowRemoteAccess` turns the refusal into a warning rather than into silence, because someone who
+opted in still deserves to be told what they opted into. Verified by starting the app four ways: exposed
+refuses with exit 1 and no listener, exposed-with-the-setting starts and warns, the normal launch profile
+starts silently, and the container case below is allowed.
+
+The setting sits under `Safety` rather than `DbDelta`, which is where an earlier draft of this section put
+it. It is a guard, and the guards live together.
+
+**The container is the case that makes this interesting, and it is the reason the guard has four verdicts
+rather than two.** A process listening on 127.0.0.1 *inside* a container is unreachable even through a
+published port, so every container has to bind all interfaces — the Microsoft base images set
+`ASPNETCORE_URLS` accordingly, and the Dockerfile here does too. Inside a container the binding therefore
+says nothing at all about who can reach the tool. What decides that is how the port was published, and the
+process cannot see it.
+
+So refusing in a container would block the supported Docker path over a fact the guard cannot check.
+Instead it detects `DOTNET_RUNNING_IN_CONTAINER`, allows the binding, and says precisely what it did not
+verify. That is an honest boundary rather than a loophole, but it is a boundary: **someone who publishes the
+container's port to 0.0.0.0 gets no protection from this guard**, only from the compose file's
+`127.0.0.1:5199:8080` and the warning printed at startup. Closing that would need option 3.
+
+The default direction matters too. An absent `DOTNET_RUNNING_IN_CONTAINER` is read as "not in a container",
+so being wrong about it refuses rather than permits.
 
 ### What the Docker path cannot do, and it is not a configuration mistake
 
@@ -1160,7 +1183,6 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
-| Refusing to bind beyond loopback | The read-only server guard is the pattern to copy | Nothing checks the bound address, so publishing the port exposes an unauthenticated database-writing UI |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,
 the drift check, the staged path, the filter, user-defined types, the constraints inside a table type,
@@ -1169,15 +1191,14 @@ built, and every one of those was here because it could make the tool do the wro
 
 What is left is no longer only absences, which is a change from how this section read a week ago.
 
-Of the five rows, three are absences rather than faults, and the first is a decision rather than a gap:
+Of the four rows, three are absences rather than faults, and the first is a decision rather than a gap:
 data deliberately does not follow the schema scope, `api.ts` is mirrored by hand, and the provider
 abstraction has never met a second engine. None of those can produce a wrong answer or a wrong write.
 
-The last two are new and they are not in that category. The Docker files are the exact failure mode this
-ledger exists to catch — written, plausible, and never executed — and they are labelled that way in the
-files themselves rather than only here. The loopback guard is a real gap that only matters once the
-repository is public, which is also when it stops being theoretical: see *Going open source, and two ways
-in*.
+The fourth is different, and it is the exact failure mode this ledger exists to catch: the Docker files are
+written, plausible, and have never been executed. They are labelled that way in the files themselves rather
+than only here. What was a fifth row — nothing checking the bound address — is built: see *Going open
+source, and two ways in*.
 
 The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
 gaps.** The list of things found only because something was built beside them:

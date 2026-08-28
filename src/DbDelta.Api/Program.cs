@@ -28,6 +28,46 @@ builder.Services.AddScoped<FkMapService>();
 builder.Services.AddScoped<InstanceService>();
 builder.Services.AddOpenApi();
 
+// Checked before the host is built, so a refusal happens before anything is listening. The addresses come
+// from configuration rather than from the server, because by the time the server can be asked, it has
+// already bound the port.
+{
+    var configured = new List<string>();
+
+    // ASPNETCORE_URLS and --urls both arrive as the "urls" key; Kestrel's own section is the other way in.
+    if (builder.Configuration["urls"] is { Length: > 0 } urls)
+    {
+        configured.Add(urls);
+    }
+
+    configured.AddRange(builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren()
+        .Select(e => e["Url"])
+        .Where(u => !string.IsNullOrWhiteSpace(u))
+        .Select(u => u!));
+
+    var verdict = NetworkExposureGuard.Evaluate(
+        configured,
+        builder.Configuration.GetValue<bool>($"{SafetyOptions.SectionName}:AllowRemoteAccess"),
+        // Set by the Microsoft base images. Absent means "not in a container" for every case this cares
+        // about, and being wrong that way refuses rather than permits.
+        inContainer: builder.Configuration.GetValue<bool>("DOTNET_RUNNING_IN_CONTAINER"));
+
+    if (verdict.ShouldRefuse)
+    {
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(verdict.Message);
+        Console.Error.WriteLine();
+        return 1;
+    }
+
+    if (verdict.Message is not null)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"warning: {verdict.Message}");
+        Console.WriteLine();
+    }
+}
+
 var app = builder.Build();
 
 app.MapOpenApi();
@@ -435,6 +475,8 @@ api.MapGet("/runs/{runId}", async (string runId, ApplyService service, Cancellat
 app.MapFallbackToFile("index.html");
 
 app.Run();
+
+return 0;
 
 static (string Title, string Detail) Explain(
     SqlException exception,

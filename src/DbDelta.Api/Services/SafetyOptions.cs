@@ -17,6 +17,11 @@ public sealed class SafetyOptions
     // 21 GB table to learn whether it differs costs minutes; the user can raise this deliberately.
     public long MaxScanTableBytes { get; init; } = 200L * 1024 * 1024;
 
+    // Binding beyond loopback is refused unless this says otherwise, because there is no authentication:
+    // see NetworkExposureGuard. Named here rather than under DbDelta because it is a guard, and the guards
+    // live together.
+    public bool AllowRemoteAccess { get; init; }
+
     public double MaxDeleteShare { get; init; } = 0.05;
 
     // Parent closure follows keys, and a seed into a table with a wide fan-in can follow a lot of them.

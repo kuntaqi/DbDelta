@@ -43,7 +43,14 @@ VOLUME ["/var/lib/dbdelta"]
 EXPOSE 8080
 
 # Read this before publishing the port anywhere but localhost: DbDelta has no authentication of any kind.
-# It is a single-user local tool, and anyone who can reach this port can compare, script and — against a
-# server not on the read-only list — apply changes to any database the container can connect to. Bind it to
-# 127.0.0.1 on the host.
+# Anyone who can reach this port can compare, script and, against a server not on the read-only list, apply
+# changes to any database the container can connect to. Bind it to 127.0.0.1 on the host.
+#
+# NetworkExposureGuard refuses to start when the process binds beyond loopback — except in a container,
+# where binding to all interfaces is the only way to be reachable through a published port at all. So the
+# guard cannot help here and says so at startup instead. Inside a container, the port publish is the
+# control, and it is yours.
+#
+# Set Safety__AllowRemoteAccess=true only if exposing it is deliberate; outside a container that setting is
+# what turns the refusal into a warning.
 ENTRYPOINT ["dotnet", "DbDelta.Api.dll"]
