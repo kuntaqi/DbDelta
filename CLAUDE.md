@@ -19,7 +19,15 @@ read the run log.
 
 **The Instance screen lists every database name on a server**, which is exactly the infrastructure topology
 the naming constraint below exists to keep out of this repo. Never paste its output or screenshot it into
-`docs/`, a mockup, or a test fixture; its tests assert containment, never the whole list.
+`docs/`, a mockup, or a test fixture; its tests assert containment, never the whole list. It also compares
+two servers, and that mode prints both servers' whole inventories — same rule, doubled.
+
+**Instance comparison matches database names, and matching names is not enough.** Where the environment is
+part of the name — `AppProd` against `AppUat`, this repo's own convention — two servers share no names, so
+name matching pairs nothing and the result reads like a complete list of differences when it is a list of
+things nobody has lined up. Hence declared pairings, and hence the warning that fires when nothing matched.
+Its verdicts also distinguish "we did not look" and "we could not look" from "the counts agree", and
+`CountsMatch` explicitly does not mean the schemas match. Don't collapse any of that into a boolean.
 
 **Nothing is selected for you.** Schema objects are ticked on Schema compare, table data is picked per
 table on the data screen. An empty plan yields an empty script and a refused apply.

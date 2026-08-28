@@ -139,6 +139,29 @@ api.MapPost("/instance/describe", async (
     }
 });
 
+api.MapPost("/instance/compare", async (
+    InstanceCompareRequest request,
+    ConnectionFactory connections,
+    InstanceService service,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await service.CompareAsync(request, cancellationToken));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
+    }
+    catch (SqlException ex)
+    {
+        // Which server failed matters more here than usual: the whole point is that there are two of them.
+        var side = Blames(ex, request.Target, connections) ? request.Target : request.Source;
+        var (title, detail) = Explain(ex, side, connections);
+        return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
+    }
+});
+
 api.MapPost("/compare", async (
     CompareRequest request,
     ConnectionFactory connections,

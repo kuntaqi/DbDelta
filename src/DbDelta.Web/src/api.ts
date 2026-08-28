@@ -232,12 +232,55 @@ export interface InstanceSurveyResponse {
   warning: string | null
 }
 
+export interface DatabasePairing {
+  source: string
+  target: string
+}
+
+export interface DatabasePair {
+  name: string
+  kind: 'ByName' | 'Declared' | 'SourceOnly' | 'TargetOnly'
+  canBeCompared: boolean
+  signal: 'SourceOnly' | 'TargetOnly' | 'Unreadable' | 'NotCompared' | 'CollationDiffers' | 'CountsDiffer' | 'CountsMatch'
+  detail: string
+  source: InstanceDatabase | null
+  target: InstanceDatabase | null
+}
+
+export interface InstanceComparisonResponse {
+  sourceServer: string
+  targetServer: string
+  sourceEnvironment: EnvironmentClass
+  targetEnvironment: EnvironmentClass
+  targetReadOnly: boolean
+  durationMs: number
+  onBothSides: number
+  sourceOnly: number
+  targetOnly: number
+  described: boolean
+  pairs: DatabasePair[]
+  warnings: string[]
+}
+
 export const instanceApi = {
   survey: (connection: ConnectionRequest) =>
     postJson<InstanceSurveyResponse>('/api/instance', connection),
   // An empty list means every database; naming them describes only those.
   describe: (connection: ConnectionRequest, databases: string[]) =>
     postJson<InstanceSurveyResponse>('/api/instance/describe', { connection, databases }),
+  // Describe is the expensive half: a connection per database per side, so it is asked for separately.
+  compare: (
+    source: ConnectionRequest,
+    target: ConnectionRequest,
+    pairings: DatabasePairing[],
+    describe: boolean,
+  ) =>
+    postJson<InstanceComparisonResponse>('/api/instance/compare', {
+      source,
+      target,
+      pairings,
+      describe,
+    }),
 }
 
 export const applyApi = {

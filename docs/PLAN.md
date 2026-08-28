@@ -938,6 +938,63 @@ out of these files. It is therefore the one screen never to paste output from or
 not a mockup, not a test fixture, not a doc. The tests here assert *containment* (the fixture's own two
 databases are present, the system databases are not) and never the whole list, for the same reason.
 
+
+### Comparing two instances, and the assumption that nearly made it useless
+
+Surveying one instance answers "what is on this server". Comparing two answers "what does this server have
+that the other does not", and the naive version of that is matching database names — two queries, no
+connection per database, done.
+
+**That would have been close to worthless, and the reason is in this document's own examples.** The naming
+convention used throughout here is `AppProd`, `AppUat`, `AppDev`. Where the environment is part of the
+database name, two servers share *no* names at all, so name matching pairs nothing, and the result is a list
+of "only on the source" beside a list of "only on the target". That reads exactly like a complete inventory
+of differences. It is really a list of things nobody has lined up yet, and the two are indistinguishable
+unless the tool says which it is.
+
+So the comparison has three parts:
+
+**Name matching**, which is right whenever environments share database names, and is the default because it
+needs nothing from the user.
+
+**Declared pairings** — `AppProd -> AppUat` — for when they do not. A pairing is applied before name
+matching and consumes both names, so a coincidence on the other side cannot steal one back and leave the
+pairing half applied. A pairing naming a database nobody has is reported rather than dropped: silently
+ignoring it would make the database that *does* exist look accounted for. So is pairing one source twice,
+because keeping the first quietly would drop the second from the comparison entirely.
+
+**Saying when nothing matched.** If no name appears on both servers and both have databases, the comparison
+says so in as many words and suggests pairing. That single warning is what separates "these servers have
+nothing in common" from "you have not told me how these correspond".
+
+#### What the cheap pass can and cannot conclude
+
+The verdict per pair is deliberately not a boolean, because three of the possible answers are about what was
+*not* established:
+
+| Verdict | Means |
+|---|---|
+| `SourceOnly` | On the source only. Reportable, not actionable — this tool does not create databases |
+| `TargetOnly` | On the target only. Nothing in a plan will remove it |
+| `Unreadable` | On both, but offline or closed to this login. **Unknown, not equal** |
+| `NotCompared` | On both, and nothing has been read from them yet |
+| `CollationDiffers` | Described, and the collations differ — which decides what a data compare would even mean |
+| `CountsDiffer` | Described, and the object counts differ. Definitely different |
+| `CountsMatch` | Described, same collation, same counts. **Not the same schema** |
+
+That last row is the one worth guarding. Two databases with the same number of tables can differ in every
+column of every one of them, so the sentence attached to it says so outright rather than leaving a tick to
+imply agreement. `InstanceCompareTests` proves the gap rather than asserting it: it takes a copy of a
+database, widens one column, and shows the counts still match while the schema comparer finds differences.
+
+The expensive half is opt-in for the same reason the whole-database scan is a button — describing costs a
+connection per database per side. Measured against 23 databases on one instance: matching the lists took
+867ms, describing both sides of all of them took 4.9 seconds and 46 connections.
+
+What this screen deliberately does not do is compare schemas. It narrows a server pair down to the database
+pairs worth looking at, and hands one to the existing comparison, which is the thing that actually answers
+the question.
+
 ### Sequences, and the one thing a sync must never do to one
 
 Sequences were read and compared from early on, and **nothing ever emitted them**. A database with a sequence
