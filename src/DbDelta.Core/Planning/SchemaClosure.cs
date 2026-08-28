@@ -201,10 +201,17 @@ public static class SchemaClosure
     {
         foreach (var dependency in dependsOn ?? [])
         {
-            if (dependency != identity && !onTarget.Contains(dependency))
+            if (dependency == identity || onTarget.Contains(dependency))
             {
-                yield return (dependency, $"{identity.QualifiedName} reads from it");
+                continue;
             }
+
+            // A type is not read from, it is named — as a parameter, or in a declaration inside the body.
+            // Either way it has to exist when the body compiles, which is the same prerequisite; only the
+            // sentence explaining it to someone reading the plan is different.
+            yield return dependency.Type == ObjectType.UserDefinedType
+                ? (dependency, $"{identity.QualifiedName} names that type")
+                : (dependency, $"{identity.QualifiedName} reads from it");
         }
     }
 

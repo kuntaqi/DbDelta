@@ -172,9 +172,10 @@ public sealed class SchemaReaderTests
         Assert.Equal("sales.vCompanySegment", view.Identity.QualifiedName);
         Assert.Contains("SELECT", view.Definition, StringComparison.OrdinalIgnoreCase);
 
-        var routine = Assert.Single(schema.Routines);
+        var routine = schema.Routines.Single(r => r.Identity.Name == "usp_GetCompany");
         Assert.Equal("dbo.usp_GetCompany", routine.Identity.QualifiedName);
         Assert.Equal(RoutineKind.Procedure, routine.Kind);
+        Assert.Contains("SELECT", routine.Definition, StringComparison.OrdinalIgnoreCase);
     }
 
     // Views depend on each other and on tables through their SQL bodies, and only the catalog knows

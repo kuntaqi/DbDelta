@@ -170,6 +170,16 @@ internal static class CatalogQueries
     // Tables are on the referenced side because a view is not only ordered against what it reads, it
     // cannot be created at all if the table it selects from is missing. Emission order never needed
     // them — tables are created in an earlier phase regardless — but closure does.
+    // Two branches, because sys.sql_expression_dependencies numbers its referenced entities in more than one
+    // id space and says which one in referenced_class. Class 1 is an object and referenced_id is an
+    // object_id; class 6 is a type and referenced_id is a *user_type_id*. Joining every row to
+    // sys.objects — which is what this did — silently dropped every type a routine referred to, and was
+    // comparing ids from two different spaces to do it. Nothing collided only because a user_type_id lands
+    // where the system objects live and those are filtered out by is_ms_shipped.
+    //
+    // What the second branch buys: a procedure taking a table-valued parameter depends on that table type,
+    // and a plan containing the procedure without the type produces a CREATE that cannot compile. The same
+    // is true of an alias type named anywhere in a body. Both were invisible before.
     public const string ProgrammableDependencies = """
         SELECT DISTINCT
             s.name  AS [SchemaName],
@@ -182,11 +192,30 @@ internal static class CatalogQueries
         JOIN sys.schemas s  ON s.schema_id = o.schema_id
         JOIN sys.objects ro ON ro.object_id = d.referenced_id
         JOIN sys.schemas rs ON rs.schema_id = ro.schema_id
-        WHERE o.is_ms_shipped = 0
+        WHERE d.referenced_class = 1
+          AND o.is_ms_shipped = 0
           AND ro.is_ms_shipped = 0
           AND o.type IN ('V', 'P', 'FN', 'IF', 'TF')
           AND ro.type IN ('U', 'V', 'P', 'FN', 'IF', 'TF')
-          AND o.object_id <> ro.object_id;
+          AND o.object_id <> ro.object_id
+
+        UNION
+
+        SELECT DISTINCT
+            s.name      AS [SchemaName],
+            o.name      AS [Name],
+            rts.name    AS [ReferencedSchema],
+            rt.name     AS [ReferencedName],
+            'TY'        AS [ReferencedType]
+        FROM sys.sql_expression_dependencies d
+        JOIN sys.objects o   ON o.object_id = d.referencing_id
+        JOIN sys.schemas s   ON s.schema_id = o.schema_id
+        JOIN sys.types rt    ON rt.user_type_id = d.referenced_id
+        JOIN sys.schemas rts ON rts.schema_id = rt.schema_id
+        WHERE d.referenced_class = 6
+          AND o.is_ms_shipped = 0
+          AND o.type IN ('V', 'P', 'FN', 'IF', 'TF')
+          AND rt.is_user_defined = 1;
         """;
 
     // Every user database on the instance, from one connection. sys.master_files carries the file sizes for

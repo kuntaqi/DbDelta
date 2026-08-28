@@ -641,10 +641,14 @@ public sealed class SqlServerSchemaReader : ISchemaReader
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var referencing = $"{Str(reader, "SchemaName")}.{Str(reader, "Name")}";
+                // TY is this query's own code for a type, not one of SQL Server's: types are reported in a
+                // separate id space and come from the second branch, so they have no sys.objects type
+                // letter to carry.
                 var type = Str(reader, "ReferencedType").Trim() switch
                 {
                     "U" => ObjectType.Table,
                     "V" => ObjectType.View,
+                    "TY" => ObjectType.UserDefinedType,
                     _ => ObjectType.Routine
                 };
 

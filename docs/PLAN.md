@@ -223,15 +223,34 @@ schema half of the check runs. That is the API-only path; the plan screen fetche
 
 ### What closure follows
 
-`SchemaClosure` walks four kinds of reference and adds what the target does not already have:
+`SchemaClosure` walks five kinds of reference and adds what the target does not already have:
 
 | Picked object | Follows | Because |
 |---|---|---|
 | A table being created | every foreign key's referenced table | the FK is added at the end of the script and fails if the parent is not there |
 | A table being altered | only the foreign keys being *added* | the rest were satisfied when the target was built |
 | A view or routine | everything its body reads — tables included | `CREATE OR ALTER` compiles the body, so a missing table fails the statement, not just the order |
+| A view or routine | every user-defined type it *names* — parameters included | a table-valued parameter's type has to exist when the body compiles, and the body is where the name appears |
 | A trigger | the table it sits on | a trigger cannot be created before its table |
 | Any table being written | the user-defined type of each column | a column cannot be declared with a type the target does not have |
+
+The type row was the last one missing, and the reason is worth writing down because it was not where anyone
+would look. `sys.sql_expression_dependencies` reports a type dependency perfectly well — it simply reports
+it as `referenced_class = 6`, where `referenced_id` is a **`user_type_id`, not an `object_id`**. The reader
+joined every row to `sys.objects` on that id, so every type row matched nothing and disappeared, and the
+join was comparing two different id spaces to do it. Nothing collided only because a `user_type_id` lands
+in the range where system objects live, and those are filtered out by `is_ms_shipped`.
+
+So this was never a missing catalog query. The dependency was in the result set that closure already read,
+discarded one join earlier. The fix is a `referenced_class` filter on the object branch and a second branch
+against `sys.types` — and closure needed no change at all, because `BodyPrerequisites` already yields any
+dependency the target lacks and `OnTarget` already counts the target's types.
+
+Worth knowing what this does *not* do: routine parameters are still not read as model, and are still not
+compared. A signature change already shows up as a body difference, since the parameter list is part of the
+definition text, so reading parameters separately would report the same change twice. The one case that
+escapes both is a routine whose definition cannot be read at all — an encrypted one — where nothing is
+compared and nothing is followed.
 
 Two decisions inside that are worth stating, because both could reasonably have gone the other way.
 
@@ -989,6 +1008,11 @@ gaps.** The list of things found only because something was built beside them:
   that nobody picked. And the first five tests written for it *passed against the buggy code*, because every
   table in the fixture lived in `dbo` and the emitter's own `dbo` filter swallowed the evidence — the bug
   needed a table outside `dbo` to become visible at all
+- **a dependency discarded by a join, not missing from a query** — `sys.sql_expression_dependencies` reports
+  the type a table-valued parameter uses, as `referenced_class = 6` with a `user_type_id` in
+  `referenced_id`. The reader joined every row to `sys.objects` on that id, so every type row matched
+  nothing and vanished — and the join was comparing two id spaces to do it. The data closure needed had
+  been in its own result set the whole time
 - **every fixture database sharing one default collation** — a source and a target created on the same
   instance produce identical columns whether or not the emitter writes `COLLATE`, so no test that compared
   the two could tell that it never did. The fixture had to be able to vary the default before the gap was
@@ -997,7 +1021,7 @@ gaps.** The list of things found only because something was built beside them:
 Every one of those was invisible while this section claimed to be complete. The pattern is worth naming: the
 gaps were not in the code that was being reviewed, they were in the *fixtures* — no sequence, no table-type
 constraint, no table with more than 500 changed rows, no definition with a comment above it, no second
-code page, no second database default, no table outside `dbo`. A gap that nothing exercises cannot be seen
-by reading, only by adding the case that would have failed. Two of those were not found by reading at all:
-they were found by pointing the tool at a real instance, where the fixtures' idea of normal stopped
-applying.
+code page, no second database default, no table outside `dbo`, no routine taking a table-valued
+parameter. A gap that nothing exercises cannot be seen by reading, only by adding the case that would have
+failed. Two of those were not found by reading at all: they were found by pointing the tool at a real
+instance, where the fixtures' idea of normal stopped applying.

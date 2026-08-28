@@ -254,6 +254,14 @@ public sealed class LocalDbFixture : IAsyncLifetime
         CREATE PROCEDURE dbo.usp_GetCompany @Id INT AS
             SELECT * FROM dbo.Company WHERE CompanyId = @Id;
         GO
+        -- A procedure whose parameter is a table type, which is the case that made routine dependencies
+        -- worth looking at. sys.sql_expression_dependencies does report the type — but in a different id
+        -- space, class 6, keyed by user_type_id — so the reader's join to sys.objects dropped it and the
+        -- closure never knew this procedure needed dbo.IdList to exist first.
+        CREATE PROCEDURE dbo.usp_TagCompanies @Ids dbo.IdList READONLY, @Phone dbo.PhoneNumber AS
+            SELECT c.CompanyId, @Phone AS Phone
+            FROM dbo.Company c JOIN @Ids i ON i.Id = c.CompanyId;
+        GO
         -- Rows for parent closure to walk. Contoso sits in category 3, which the target does not have,
         -- and the contact sits on Contoso: seeding the contact needs both, two hops up.
         SET IDENTITY_INSERT dbo.Company ON;

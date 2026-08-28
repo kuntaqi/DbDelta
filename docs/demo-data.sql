@@ -222,3 +222,13 @@ CREATE TABLE sales.Territory (
     Name        NVARCHAR(50) NOT NULL
 );
 GO
+
+-- A procedure whose parameter is a table type. Picking it alone has to pull dbo.IdList in with it, or the
+-- CREATE cannot compile. The dependency was always in sys.sql_expression_dependencies — as class 6, keyed
+-- by user_type_id — and the reader's join to sys.objects dropped every row of that shape.
+USE DbDelta_Demo_Src;
+GO
+CREATE PROCEDURE dbo.usp_TagCompanies @Ids dbo.IdList READONLY AS
+    SELECT c.CompanyId, c.CompanyName
+    FROM dbo.Company c JOIN @Ids i ON i.Id = c.CompanyId;
+GO
