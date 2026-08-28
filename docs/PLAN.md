@@ -1324,7 +1324,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
-| Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
+| Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
@@ -1335,9 +1335,14 @@ built, and every one of those was here because it could make the tool do the wro
 
 What is left is no longer only absences, which is a change from how this section read a week ago.
 
-Of the four rows, three are absences rather than faults, and the first is a decision rather than a gap:
-data deliberately does not follow the schema scope, `api.ts` is mirrored by hand, and the provider
-abstraction has never met a second engine. None of those can produce a wrong answer or a wrong write.
+Of the four rows, two are now decisions rather than gaps and one is an absence. Data deliberately does not
+follow the schema scope. `api.ts` stays hand-written: the case for generating it was that six contract
+changes had to be mirrored by hand, and the case against is that `tsc --noEmit` caught every one of them
+immediately — the failure mode is a compile error, not a wrong answer, which makes it the least valuable
+thing in this table by the standard the rest of it is held to. It would also add a generator and a build
+step to a toolchain that is currently npm and dotnet and nothing else, which counts for more once other
+people have to build this. The provider abstraction has never met a second engine, and that one is a real
+absence. None of the three can produce a wrong answer or a wrong write.
 
 The fourth is different, and it is the exact failure mode this ledger exists to catch: the Docker files are
 written, plausible, and have never been executed. They are labelled that way in the files themselves rather
