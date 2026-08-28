@@ -8,6 +8,7 @@ namespace DbDelta.SqlServer.Tests;
 // dbo.Category differs by exactly one of each kind between the fixture's two sides — CategoryId 2 is an
 // update, 3 an insert, 4 a delete — so narrowing to one row and checking the other two are untouched is a
 // real test of the narrowing rather than of a filter that happens to keep everything.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class RowPickIntegrationTests
 {

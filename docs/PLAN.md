@@ -754,6 +754,49 @@ The navigation cost of the split was also the last reason for a tab that could b
 Schema detail had to be locked until an object had been opened. With one screen, a compared pair of
 connections is the only prerequisite anywhere in the app.
 
+### The test suite is split by what a test needs, because the cost is all in one place
+
+Measured on a warm LocalDB, the SqlServer suite was 340 seconds across 118 tests, and the distribution is
+not a curve — it is a cliff:
+
+| Class | Tests | Seconds |
+|---|---|---|
+| `StagedBulkTests` | 3 | 125 |
+| `LargePlanTests` | 1 | 29 |
+| `CollationEmitTests` | 3 | 23 |
+| … fourteen more, 3 to 17 seconds each | 54 | 157 |
+| the remaining seven classes | 57 | 6 |
+
+Seven classes hold 57 tests and cost six seconds between them. The other seventeen hold 61 tests and cost
+the remaining 334. So the split is by what a test *needs*: `Speed=Slow` is any class that creates its own database, moves the
+1200-row fixture table, or opens a connection per database on the instance; the fast half reads the shared
+source and target pair and nothing else. That line is readable from the test — a class with no
+`CreateScratchTargetAsync` or `CreateEmptyTargetAsync` call is in the fast half — which matters more than a
+threshold in seconds, because a threshold rots and a rule does not.
+
+`dotnet test` still runs everything. Making the fast half the default was considered and rejected: this
+project already worries about a green run that proves less than it appears to (see the skip note in
+`CLAUDE.md`), and a hidden filter is a better version of that same trap. The two halves' counts add to the
+total — 60 and 61 — so a mistyped trait shows up as tests missing from both rather than as a quietly
+smaller run. `SpeedTraitTests` asserts the rule directly, and was checked by removing a trait and watching
+it name the class.
+
+What the split does not buy is a faster full run: the slow half alone is 5m36s against the whole suite's
+5m40s. Wall clock for everything is unchanged, and the only lever left on it is parallelism. Every class
+sits in one xUnit collection today, which serialises the lot; the shared fixture is read-only for every
+test that touches it, so collections could run in parallel, but the best case is bounded by StagedBulkTests
+at 125 seconds and the instance survey walks a database list that other collections would be creating and
+dropping underneath it. Not attempted.
+
+**What the measurement turned up that is not a test problem.** `LargePlanTests` writes nothing — it streams
+1200 key/hash pairs and then fetches those 1200 rows — and costs 29 seconds. Database creation is not the
+cause; a bare `CREATE DATABASE` on this LocalDB is 78ms. What is left is the digest expression itself: every
+column goes through `CONCAT(N'|', DATALENGTH, N':', CONVERT(nvarchar(max), col))`, and the row detail fetch
+then matches 500 of those `nvarchar(max)` strings per query with `WHERE <expression> IN (…)`, which no index
+can help. 1200 rows should not cost 29 seconds, so the expression is worth profiling before anyone trusts
+the two-pass design at the scale it was written for. LocalDB cannot prove behaviour at real volume, but it
+has just produced a reason to look.
+
 ## Build order
 
 1. **Done.** Solution skeleton + Core model & diff engine + unit tests (no DB).

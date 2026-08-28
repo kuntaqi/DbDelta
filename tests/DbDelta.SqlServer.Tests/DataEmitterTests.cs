@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace DbDelta.SqlServer.Tests;
 
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class DataEmitterTests
 {

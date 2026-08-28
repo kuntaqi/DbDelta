@@ -8,6 +8,7 @@ namespace DbDelta.SqlServer.Tests;
 // hash the data compare depends on genuinely does differ for identical bytes under two code pages, and
 // genuinely does not differ for case sensitivity. Without that half the rule is only an assertion that
 // the rule is what it is.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class CollationTests
 {

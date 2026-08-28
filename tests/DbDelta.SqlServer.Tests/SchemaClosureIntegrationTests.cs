@@ -7,6 +7,7 @@ namespace DbDelta.SqlServer.Tests;
 
 // Closure is only worth anything if the script it produces runs. These go all the way to the server:
 // one tick against an empty target, emitted and executed, with the target read back afterwards.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class SchemaClosureIntegrationTests
 {

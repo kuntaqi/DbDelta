@@ -11,6 +11,7 @@ namespace DbDelta.SqlServer.Tests;
 // perfectly well — it just reports it as referenced_class 6, where referenced_id is a user_type_id rather
 // than an object_id. The reader joined every row to sys.objects on that id, so type rows matched nothing
 // and vanished, and the join was comparing two different id spaces to do it.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class RoutineTypeClosureTests
 {

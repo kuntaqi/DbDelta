@@ -4,6 +4,7 @@ using DbDelta.Core.Scripting;
 
 namespace DbDelta.SqlServer.Tests;
 
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class ScriptExecutorTests
 {

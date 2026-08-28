@@ -7,6 +7,7 @@ namespace DbDelta.SqlServer.Tests;
 // Sequences were read and compared for months while nothing emitted them, so a plan listed one and the
 // script contained nothing for it. Nothing caught it because neither the fixture nor the demo data had a
 // sequence — which is why both do now.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class SequenceTests
 {

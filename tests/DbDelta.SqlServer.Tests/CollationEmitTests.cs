@@ -11,6 +11,7 @@ namespace DbDelta.SqlServer.Tests;
 //
 // That is exactly why this went unnoticed. A source and a target that share a default produce identical
 // columns whether or not the emitter writes COLLATE, so nothing that compared the two could tell.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class CollationEmitTests
 {

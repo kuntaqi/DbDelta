@@ -7,6 +7,7 @@ namespace DbDelta.SqlServer.Tests;
 
 // The drift check is only worth anything if the hash it compares actually comes from the row. These take
 // two snapshots either side of a real UPDATE on the target and check that the second one notices.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class RowDriftTests
 {

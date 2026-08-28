@@ -6,6 +6,7 @@ namespace DbDelta.SqlServer.Tests;
 //
 // Assertions are about containment, never about the whole list: the instance a developer runs this on has
 // databases that are none of this repo's business.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class InstanceSurveyTests
 {

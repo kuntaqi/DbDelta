@@ -4,6 +4,7 @@ namespace DbDelta.SqlServer.Tests;
 
 // Filter mode was reachable from the backend long before it had a control, so what these check is that it
 // does what the mode claims: narrows both sides to the same predicate, and never reports a delete.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class FilterModeTests
 {

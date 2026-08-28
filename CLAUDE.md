@@ -167,6 +167,24 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   after. If LocalDB is missing the tests **skip** rather than fail, so `dotnet test` stays green on a
   machine without SQL Server — check for skips before believing a clean run proves the reader works.
   Start it with `SqlLocalDB start MSSQLLocalDB` if a test reports it unavailable.
+- **The integration tests are split by cost, and `dotnet test` still runs all of them.** The inner loop is
+  the fast half:
+
+  ```
+  dotnet test --filter "Speed!=Slow"    # ~7s: everything except the database-creating tests
+  dotnet test                            # ~6min: the whole thing, before committing
+  ```
+
+  `Speed=Slow` marks the classes that create their own database, move the 1200-row fixture table, or walk
+  every database on the instance. The line is exactly *"does this test need more than the shared source and
+  target pair"*, so which side a class belongs on is readable from the test itself — a class with no
+  `CreateScratchTargetAsync` / `CreateEmptyTargetAsync` call belongs in the fast half.
+  **The fast half is not proof.** It is 60 of 121 SqlServer tests and applies no script to any database, so
+  it cannot tell you a script runs. Run the whole suite before committing.
+
+  `SpeedTraitTests` holds the split honest: it fails if a class that takes the LocalDB fixture is not marked
+  slow, or if one is marked slow without needing a database. A trait is a string in an attribute, and a
+  misspelled one would drop its tests out of *both* filters at once.
 - LocalDB caps a database at 10 GB and accepts local connections only, so volume behaviour at real
   scale cannot be proven here — only that the queries are correct.
 - Connection profiles live in `%APPDATA%\DbDelta\profiles.json`, never in the repo, and **store no

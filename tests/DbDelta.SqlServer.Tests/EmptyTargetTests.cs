@@ -6,6 +6,7 @@ namespace DbDelta.SqlServer.Tests;
 
 // An empty target is the case that stresses everything else: every object is a create, so ordering
 // stops being a handful of foreign keys and becomes the whole dependency graph at once.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class EmptyTargetTests
 {

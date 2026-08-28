@@ -9,6 +9,7 @@ namespace DbDelta.SqlServer.Tests;
 // The staged path has to land the same data as the literal one — that is the whole bar. These run both
 // against a real server and compare the target afterwards, because the staging table converts text back
 // into types and that is where a datetime or a decimal would quietly come out wrong.
+[Trait("Speed", "Slow")]
 [Collection(nameof(LocalDbCollection))]
 public sealed class StagedBulkTests
 {
