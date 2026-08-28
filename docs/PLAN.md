@@ -1048,6 +1048,105 @@ by an empty table and then apply it to a full one.
 One consequence reaches the table list: a table whose key is merely undeclared now reads `key not set`
 rather than `no key`, because those are different problems and only one of them is the user's to solve.
 
+## Going open source, and two ways in
+
+The intent is to publish this once the MVP is done, with two supported setups: run the projects directly,
+or run it in Docker. Both are worth having — the first is what a contributor wants, the second is what
+someone evaluating the tool wants — but they are not the same product, and the differences are not
+cosmetic.
+
+### The thing to settle before publishing anything: there is no authentication
+
+DbDelta has none, anywhere. No login, no token, no origin check. That was the right call for a tool
+described as *local web UI, single user* — and it becomes the central fact about it the moment strangers can
+download it, because the app compares, scripts and **applies changes to any database it can reach**. A user
+who publishes the port on a shared machine has put an unauthenticated database-writing UI on the network,
+and nothing in the tool will stop them or tell them.
+
+This is not a Docker problem, but Docker makes it sharper: `ports: 5199:8080` in a compose file binds every
+interface, and that is the shape everyone copies from every other project's README. So the committed compose
+file binds `127.0.0.1:5199:8080` and says why, and the Dockerfile carries the same warning next to `EXPOSE`.
+
+That is mitigation, not a fix. Three options, in increasing order of honesty:
+
+1. **Document it and bind to localhost.** What is done now. Cheap, and relies on the user reading.
+2. **Refuse to start when bound to a non-loopback address** unless an explicit setting says otherwise —
+   the same shape as the read-only server guard: a hard block rather than a warning, because the cost of
+   being wrong is not symmetric.
+3. **Add authentication.** Correct for a tool that might be run on a shared box, and a different product.
+
+Option 2 is the one that fits what this project already believes about guards, and it should land before the
+repository is public. It is cheap: read the configured URLs at startup, and if any of them binds beyond
+loopback without `DbDelta:AllowRemoteAccess`, fail to start with an explanation.
+
+### What the Docker path cannot do, and it is not a configuration mistake
+
+Two capabilities are simply absent inside a Linux container, and a newcomer will hit both within minutes:
+
+- **Windows authentication does not work.** `Integrated Security=true` needs a Windows identity, and a Linux
+  container has none. Half the connect screen's auth choices are unavailable; Docker users need SQL logins.
+- **LocalDB is unreachable.** It is Windows-only and local-only — shared memory and named pipes, not a TCP
+  endpoint a container can dial. So the two demo databases, the integration tests and every instruction in
+  this document that mentions `(localdb)\MSSQLLocalDB` belong to the run-it-directly path only.
+
+That second point is why the compose file brings its own SQL Server. Without one, `docker compose up`
+produces a tool with nothing it can connect to, which is a bad first five minutes for a project asking for
+contributors. The bundled server is deliberately volume-less: it is somewhere to point the tool, not
+somewhere to keep anything.
+
+The corollary is that **the Docker path cannot run the integration tests** — they need LocalDB. A container
+can run `DbDelta.Core.Tests` and `DbDelta.Api.Tests` (214 tests, no database) and nothing else. Anyone
+verifying provider behaviour needs a real SQL Server, which the compose file happens to provide.
+
+### One code change the container needed
+
+Saved profiles and the run log resolved to the user's application-data directory and nothing else. Inside a
+container that lands in the writable layer and vanishes when the container is recreated, and an operator who
+cannot predict the path cannot mount a volume at it. Both now read `DbDelta:DataDirectory`
+(`DbDelta__DataDirectory` as an environment variable) and fall back to the old behaviour when it is unset,
+so nothing changes for someone running the API directly. `StorageOptionsTests` covers both paths and that
+the two stores land under the same root, since the point is that one mounted volume covers everything.
+
+### Publishing the repository is not the same as publishing the code
+
+Three things are in the way, and the first is the only urgent one.
+
+**The git history still contains what the working tree does not.** The naming constraint in `CLAUDE.md`
+records that real internal server hostnames were scrubbed before publishing — and they
+were, from the *tree*. Searching all 46 commits finds a real server-name prefix in **two**: the one
+that introduced it and the one that removed it, both on the same day. Publishing this repository as-is
+publishes that. Since it has never been pushed anywhere, rewriting is free, and the choice is between
+`git filter-repo --replace-text` across the two commits and starting the public repository from a single
+squashed commit. No credentials are in the history — the only password-shaped strings are the deliberate
+`hunter2` fixture and the generic examples.
+
+**There is no LICENSE and no README.** The licence is the owner's decision; MIT and Apache-2.0 are the
+usual two, and Apache-2.0's explicit patent grant is the reason to prefer it for a tool a company might
+adopt. The README has to carry the two setup paths, the no-authentication warning, and the fact that the
+apply path writes to databases.
+
+**`CLAUDE.md` ships with the repository.** It is currently the best description of the project's conventions
+and would be genuinely useful to a contributor, but it is written to an audience of one and refers to one developer's
+machine setup in places. It needs a read-through as a public document, or splitting into the part that is project
+convention and the part that is personal setup.
+
+### Docker on the machine this was written on: not possible, and worth recording why
+
+`docker build` has never run against any of this. The development machine is a Windows Server 2022
+Hyper-V **guest**, and the guest is not given nested virtualisation — `VMMonitorModeExtensions` and
+`SecondLevelAddressTranslationExtensions` both report false. Without those, Hyper-V cannot be enabled
+inside it, so WSL2 cannot run, so Docker Desktop cannot run. That is a property of the hypervisor
+configuration, not something installable from inside the guest.
+
+The one path that does not need nested virtualisation is Docker Engine with Windows **process-isolated**
+containers, and it does not help: process isolation runs only Windows images matching the host build, so it
+could never build or run the Linux images this Dockerfile describes. It would also need an elevated install
+and a reboot — the account is in `BUILTIN\Administrators` but UAC-filtered, so any install needs an
+interactive elevation prompt.
+
+So the Docker files are **written and unverified**, which is precisely the state this document has a ledger
+for. They are a proposal until someone with a working daemon runs them.
+
 ## Designed, not built
 
 Everything above that is design rather than description, in one place. `docs/mockup/dbdelta-ux.html` carries
@@ -1060,16 +1159,25 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
+| Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
+| Refusing to bind beyond loopback | The read-only server guard is the pattern to copy | Nothing checks the bound address, so publishing the port exposes an unauthenticated database-writing UI |
 
-Nothing left in this table is silent, and nothing left in it can make the tool write wrong data. Both
-closures, the drift check, the staged path, the filter, user-defined types, the constraints inside a table
-type, sequences, the collation precondition, per-column `COLLATE` in emitted DDL and row-level selection
-are built, and every one of those was here because it could make the tool do the wrong thing quietly.
+Everything that could make the tool quietly write the wrong data is out of this table now: both closures,
+the drift check, the staged path, the filter, user-defined types, the constraints inside a table type,
+sequences, the collation precondition, per-column `COLLATE` in emitted DDL and row-level selection are
+built, and every one of those was here because it could make the tool do the wrong thing quietly.
 
-The three rows that remain are absences rather than faults, and the first of them is a decision rather than
-a gap: data deliberately does not follow the schema scope, `api.ts` is mirrored by hand, and the provider
-abstraction has never met a second engine. None of them can produce a wrong answer or a wrong write — they
-are things the tool does not do, not things it does badly.
+What is left is no longer only absences, which is a change from how this section read a week ago.
+
+Of the five rows, three are absences rather than faults, and the first is a decision rather than a gap:
+data deliberately does not follow the schema scope, `api.ts` is mirrored by hand, and the provider
+abstraction has never met a second engine. None of those can produce a wrong answer or a wrong write.
+
+The last two are new and they are not in that category. The Docker files are the exact failure mode this
+ledger exists to catch — written, plausible, and never executed — and they are labelled that way in the
+files themselves rather than only here. The loopback guard is a real gap that only matters once the
+repository is public, which is also when it stops being theoretical: see *Going open source, and two ways
+in*.
 
 The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
 gaps.** The list of things found only because something was built beside them:

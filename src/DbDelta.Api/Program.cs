@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 builder.Services.Configure<SafetyOptions>(builder.Configuration.GetSection(SafetyOptions.SectionName));
+builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.AddSingleton<IDatabaseProvider, SqlServerProvider>();
 builder.Services.AddSingleton<ConnectionFactory>();
 builder.Services.AddSingleton<ServerClassifier>();

@@ -152,6 +152,20 @@ For UI work run the API and `npm run dev` (port 5200) side by side; Vite proxies
 Two demo databases on LocalDB make the UI worth looking at — recreate them from the script in
 `docs/demo-data.sql` if they are missing.
 
+**There is a second, unverified setup path.** `Dockerfile` and `docker-compose.yml` exist because the plan
+is to publish this with two ways in — run the projects, or run it in Docker. **Neither file has ever been
+built.** This machine is a Hyper-V guest with no nested virtualisation, so no Docker daemon can run on it;
+that is a hypervisor setting, not something installable from inside. Do not describe the Docker path as
+working, and do not quietly fix it up without a daemon to test against. Two things about it are true
+regardless: a Linux container has no Windows identity, so Windows authentication is unavailable there, and
+LocalDB is local-only, so a container cannot reach it at all — which is why the compose file brings its own
+SQL Server. Full reasoning in `docs/PLAN.md`, *Going open source, and two ways in*.
+
+**Where state lives is configurable now.** Saved profiles and the run log resolve to
+`DbDelta:DataDirectory` (`DbDelta__DataDirectory` as an environment variable) and fall back to
+`%APPDATA%\DbDelta` when it is unset. The fallback is what a direct run gets; the setting is what makes a
+mounted volume possible, since a path nobody can predict cannot be mounted.
+
 `src/DbDelta.Api/appsettings.Local.json` is gitignored and overrides `Safety`. Real server-name patterns
 for environment classification and the read-only list belong there, never in the committed defaults: a
 real environment's naming scheme is not something this repo should carry. Without it the shipped

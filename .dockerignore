@@ -1,0 +1,20 @@
+# Build output and dependencies are rebuilt inside the image; copying them in would both bloat the context
+# and risk shipping a stale SPA build or a bin/ from a different platform.
+**/bin/
+**/obj/
+**/node_modules/
+src/DbDelta.Api/wwwroot/
+
+# Never in an image: the local overrides, the saved profiles, the run log, generated scripts.
+**/appsettings.Local.json
+**/profiles.json
+runs/
+*.sync.sql
+
+.git/
+.gitignore
+.vs/
+.vscode/
+.idea/
+docs/
+*.md

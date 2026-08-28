@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DbDelta.Api.Contracts;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 
 namespace DbDelta.Api.Services;
 
@@ -13,14 +14,10 @@ public sealed class ProfileStore
 
     private readonly string _path;
 
-    public ProfileStore()
+    public ProfileStore(IOptions<StorageOptions> storage)
     {
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DbDelta");
-
-        Directory.CreateDirectory(directory);
-        _path = Path.Combine(directory, "profiles.json");
+        ArgumentNullException.ThrowIfNull(storage);
+        _path = Path.Combine(storage.Value.Resolve(), "profiles.json");
     }
 
     public async Task<IReadOnlyList<ConnectionProfile>> ListAsync(CancellationToken cancellationToken = default)

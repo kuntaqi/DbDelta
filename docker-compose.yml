@@ -1,0 +1,49 @@
+# UNVERIFIED — see the note at the top of the Dockerfile. Written on a machine that cannot run Docker.
+#
+# Two services, because a DbDelta container cannot reach the SQL Server most contributors already have.
+# LocalDB is local-only and Windows-only, so it is unreachable from a container by design rather than by
+# misconfiguration — a containerised DbDelta needs a SQL Server it can open a TCP connection to.
+services:
+  dbdelta:
+    build: .
+    # 127.0.0.1 deliberately. DbDelta has no authentication: anyone who can reach this port can apply
+    # changes to any database the container can connect to. Publishing it as "5199:8080" would put a
+    # database-writing UI on every interface.
+    ports:
+      - "127.0.0.1:5199:8080"
+    volumes:
+      # Saved profiles and the run log. Without this they live and die with the container.
+      - dbdelta-state:/var/lib/dbdelta
+    environment:
+      # Servers that can be compared and scripted but never applied to. The shipped defaults only recognise
+      # *-PROD, *-UAT, *-DEV and LocalDB, so anything named differently needs saying here.
+      DbDelta__DataDirectory: /var/lib/dbdelta
+      Safety__ReadOnlyServers__0: "*-PROD"
+    # Lets the container reach a SQL Server running on the host as `host.docker.internal`. Docker Desktop
+    # provides this name already; on plain Linux it needs the mapping below.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      sql:
+        condition: service_healthy
+
+  # A throwaway SQL Server so `docker compose up` gives a newcomer something to point DbDelta at. Not a
+  # place to keep anything: no volume, so it resets when the container is removed.
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "DbDelta_local_only_1"
+    ports:
+      - "127.0.0.1:1433:1433"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  dbdelta-state:

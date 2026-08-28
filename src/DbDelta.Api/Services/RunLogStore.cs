@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 
 namespace DbDelta.Api.Services;
 
@@ -10,13 +11,11 @@ public sealed class RunLogStore
 
     private readonly string _directory;
 
-    public RunLogStore()
+    public RunLogStore(IOptions<StorageOptions> storage)
     {
-        _directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "DbDelta",
-            "runs");
+        ArgumentNullException.ThrowIfNull(storage);
 
+        _directory = Path.Combine(storage.Value.Resolve(), "runs");
         Directory.CreateDirectory(_directory);
     }
 
