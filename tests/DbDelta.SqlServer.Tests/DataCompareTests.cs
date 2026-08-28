@@ -3,7 +3,7 @@ using DbDelta.Core.Model;
 
 namespace DbDelta.SqlServer.Tests;
 
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionD))]
 public sealed class DataCompareTests
 {
     private readonly LocalDbFixture _fixture;

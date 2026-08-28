@@ -6,7 +6,7 @@ namespace DbDelta.SqlServer.Tests;
 // A plan bigger than one fetch. The two-pass design fetches full rows only for what is needed, and the
 // cap that makes that true for a screen is wrong for a script: a script needs every row it will write.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionC))]
 public sealed class LargePlanTests
 {
     private readonly LocalDbFixture _fixture;

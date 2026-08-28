@@ -10,7 +10,7 @@ namespace DbDelta.SqlServer.Tests;
 // against a real server and compare the target afterwards, because the staging table converts text back
 // into types and that is where a datetime or a decimal would quietly come out wrong.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionC))]
 public sealed class StagedBulkTests
 {
     private readonly LocalDbFixture _fixture;

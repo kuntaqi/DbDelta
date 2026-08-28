@@ -7,7 +7,7 @@ namespace DbDelta.SqlServer.Tests;
 // A user-defined type used to be invisible to the reader while its *name* still reached the emitter through
 // the columns that use it, which is worse than being ignored: the script named a type it never created.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionB))]
 public sealed class UserDefinedTypeTests
 {
     private readonly LocalDbFixture _fixture;

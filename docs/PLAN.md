@@ -834,13 +834,73 @@ The split still earns its keep — 5 seconds for 60 tests against 204 for the ot
 reason than when it was drawn. It is no longer "one class dominates"; it is "everything that needs its own
 database costs about the same, and a lot of the suite does not need one."
 
-What the split does not buy is a faster full run — the slow half is essentially the whole suite. The
-remaining lever is parallelism, and it is more attractive now than it was: every class sits in one xUnit
-collection, which serialises the lot, and with no class over 25 seconds the ceiling is no longer set by one
-outlier. The shared fixture is read-only for every test that touches it, so collections could run in
-parallel. Two things still argue against it: each collection needs its own fixture instance unless the
-shared databases are made process-wide, and `InstanceSurveyTests` walks a database list that other
-collections would be creating and dropping underneath it. Not attempted.
+What the split does not buy is a faster full run, and two things since have: dropping databases properly,
+and then parallelism. Together they took the SqlServer suite from **3m31s to 25s**.
+
+### Most of the suite was waiting for connection pools
+
+Parallelism was the obvious lever and it was not the first one. Timing the fixture's own lifecycle put the
+cost somewhere nobody had looked:
+
+```
+fixture InitializeAsync:  272 ms   (create two databases, run both scripts)
+fixture DisposeAsync:    6081 ms   (drop the same two databases)
+```
+
+Six seconds to drop two databases, and the suite creates and drops around fifty of them. That was the
+majority of its runtime, and the cause is not SQL Server being slow at `DROP DATABASE`:
+
+| dropping one scratch database | ms |
+|---|---|
+| after a pooled connection to it | 3,050 |
+| after `SqlConnection.ClearPool` for that connection string | **9** |
+
+ADO.NET keeps connections open in its pool after the code using them is finished, so
+`SET SINGLE_USER WITH ROLLBACK IMMEDIATE` has to wait for them to be evicted before it can take the
+database exclusively. Clearing that one pool first makes the drop instant — a 340x difference on each drop,
+and 3m31s to 1m12s on the suite, from one line in the fixture.
+
+`ClearPool` rather than `ClearAllPools`, which measures the same and reaches into every other pool in the
+process. Harmless while the suite is serial and exactly the wrong thing to have left lying around for the
+next section.
+
+One other thing fell out of the same measurement. `InstanceSurveyTests` was the slowest class at 11.5
+seconds, and about ten of those were a single test proving that a connection to a nonexistent database
+fails — the shared connection string carries a 30-second timeout and SqlClient retries a failed connect once
+after ten. What is under test there is the reporting, not the waiting, so that one connection asks for a
+five-second timeout and no retry.
+
+### Then parallelism, and the deadlock it took to find out it was safe
+
+xUnit runs collections in parallel and everything within a collection in sequence, and every class was in
+one collection. Splitting them into four takes the suite from 1m12s to 25s.
+
+The obstacle was the fixture, not the tests. A collection fixture gets one instance per collection, so four
+collections would mean four fixtures dropping and recreating the same two databases while tests read them.
+The alternative was per-collection database names, which is 118 call sites of `LocalDbFixture.SourceDatabase`
+across 22 files. So the shared pair is built **once per process** instead, reference-counted, with the last
+collection to finish tearing it down. That is a dozen lines in one file, and it is safe for the reason the
+split was drawn in the first place: every test that touches the shared pair only reads it, and everything
+that writes creates its own scratch database. Those names were already unique across the whole suite —
+checked, not assumed.
+
+**Then the suite failed one run in five, and the reason was worth knowing.** Not an assertion — a
+`SqlException`:
+
+> Transaction (Process ID 52) was deadlocked on lock resources with another process and has been chosen as
+> the deadlock victim. Rerun the transaction.
+
+Enumerating every database on the instance takes server-level metadata locks. The collections running
+alongside spend their time creating and dropping databases, which take the same locks. Two test classes ask
+what is on the whole instance, and nothing else in the suite is exposed to it, so those reads retry on error
+1205 — which is what SQL Server's own message asks for, and safe because they are pure reads. Twelve
+consecutive clean runs after it, against a fault that was appearing about once in five.
+
+**The retry belongs in the tests and not in the provider, but there is a real finding underneath it.** The
+product never enumerates databases while creating them, so it does not face the test harness's version of
+this. It can still face the user's version: somebody surveying an instance while a DBA creates a database
+would get error 1205 and a survey that failed with an unhelpful message. `ListDatabasesAsync` catches a
+permission error and not a deadlock. That is a genuine gap this exercise turned up and did not fix.
 
 **What the measurement turned up, and it was not a test problem.** `LargePlanTests` writes nothing — it
 streams 1200 key/hash pairs and then fetches those 1200 rows — and cost 29 seconds. Profiling the phases

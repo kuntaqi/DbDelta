@@ -10,7 +10,7 @@ namespace DbDelta.SqlServer.Tests;
 // Parent closure is only worth anything if the rows it adds make the script run. These go to the server:
 // seed a child, let closure walk up, execute, then read the target back.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionD))]
 public sealed class ParentClosureIntegrationTests
 {
     private readonly LocalDbFixture _fixture;

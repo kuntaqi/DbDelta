@@ -209,20 +209,27 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   the fast half:
 
   ```
-  dotnet test --filter "Speed!=Slow"    # ~5s: everything except the database-creating tests
-  dotnet test                            # ~3.5min: the whole thing, before committing
+  dotnet test --filter "Speed!=Slow"    # ~6s: everything except the database-creating tests
+  dotnet test                            # ~50s: the whole thing, before committing
   ```
 
   `Speed=Slow` marks the classes that create their own database, move the 1200-row fixture table, or walk
   every database on the instance. The line is exactly *"does this test need more than the shared source and
   target pair"*, so which side a class belongs on is readable from the test itself — a class with no
   `CreateScratchTargetAsync` / `CreateEmptyTargetAsync` call belongs in the fast half.
-  **The fast half is not proof.** It is 60 of 121 SqlServer tests and applies no script to any database, so
+  **The fast half is not proof.** It is 60 of 125 SqlServer tests and applies no script to any database, so
   it cannot tell you a script runs. Run the whole suite before committing.
 
   `SpeedTraitTests` holds the split honest: it fails if a class that takes the LocalDB fixture is not marked
   slow, or if one is marked slow without needing a database. A trait is a string in an attribute, and a
   misspelled one would drop its tests out of *both* filters at once.
+- **The integration classes are spread over four xUnit collections, which is what makes them run in
+  parallel.** Membership is balanced by measured cost, so a class's collection says nothing about what it
+  tests. The shared source and target pair is built once per process and reference-counted — do not give a
+  collection its own fixture instance, and do not write to the shared pair from a test; anything that writes
+  creates its own scratch database, and those names must stay unique across the whole suite. Two classes
+  enumerate every database on the instance and retry on deadlock (error 1205), because the collections
+  beside them are creating and dropping databases and both take server-level metadata locks.
 - LocalDB caps a database at 10 GB and accepts local connections only, so volume behaviour at real
   scale cannot be proven here — only that the queries are correct.
 - Connection profiles live in `%APPDATA%\DbDelta\profiles.json`, never in the repo, and **store no

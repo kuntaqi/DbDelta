@@ -20,40 +20,86 @@ public sealed class LocalDbFixture : IAsyncLifetime
     public static string ConnectionStringFor(string database) =>
         $@"Server=(localdb)\MSSQLLocalDB;Database={database};Integrated Security=true;TrustServerCertificate=true;Connect Timeout=30";
 
+    // The shared pair is built once per process and torn down once, however many collections ask for it.
+    //
+    // xUnit gives a collection fixture one instance per collection, so splitting the classes into several
+    // collections — which is what makes them run in parallel — would otherwise mean several fixtures, all
+    // dropping and recreating the same two databases while tests were reading them. The alternative was
+    // per-collection database names, and that is 118 call sites of `LocalDbFixture.SourceDatabase` across
+    // 22 files; this is a dozen lines in one.
+    //
+    // Sharing them is safe because every test that touches the shared pair only reads it. Anything that
+    // writes creates its own scratch database, and those names are unique across the whole suite.
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static Task<string?>? _ready;
+    private static int _users;
+
     public async Task InitializeAsync()
+    {
+        await Gate.WaitAsync();
+
+        try
+        {
+            _users++;
+            _ready ??= BuildAsync();
+        }
+        finally
+        {
+            Gate.Release();
+        }
+
+        UnavailableReason = await _ready.ConfigureAwait(false);
+        Available = UnavailableReason is null;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Gate.WaitAsync();
+
+        try
+        {
+            // Only the last collection to finish tears the pair down. Dropping it when the first one
+            // finishes would pull the databases out from under everything still running.
+            if (--_users > 0 || !Available)
+            {
+                return;
+            }
+
+            _ready = null;
+        }
+        finally
+        {
+            Gate.Release();
+        }
+
+        await DropAsync(SourceDatabase);
+        await DropAsync(TargetDatabase);
+    }
+
+    // Returns null when it worked, and the reason when LocalDB is not there — so the outcome can be awaited
+    // by every collection rather than each of them probing again.
+    private static async Task<string?> BuildAsync()
     {
         try
         {
             await using var connection = new SqlConnection(Master);
             await connection.OpenAsync();
-            Available = true;
         }
         catch (SqlException ex)
         {
-            UnavailableReason = ex.Message;
-            return;
+            return ex.Message;
         }
         catch (InvalidOperationException ex)
         {
-            UnavailableReason = ex.Message;
-            return;
+            return ex.Message;
         }
 
         await DropAsync(SourceDatabase);
         await DropAsync(TargetDatabase);
         await CreateAsync(SourceDatabase, SourceScript);
         await CreateAsync(TargetDatabase, TargetScript);
-    }
 
-    public async Task DisposeAsync()
-    {
-        if (!Available)
-        {
-            return;
-        }
-
-        await DropAsync(SourceDatabase);
-        await DropAsync(TargetDatabase);
+        return null;
     }
 
     // The emitter test mutates its target, so it gets a disposable copy rather than the shared one
@@ -152,7 +198,20 @@ public sealed class LocalDbFixture : IAsyncLifetime
         }
     }
 
-    private static async Task DropAsync(string database) =>
+    // The pool clear is not tidiness, it is the difference between 9ms and three seconds.
+    //
+    // ADO.NET keeps connections to a database open in its pool after the code using them is done, so
+    // SET SINGLE_USER WITH ROLLBACK IMMEDIATE has to wait for them to be evicted before it can take the
+    // database exclusively. Measured on this machine: 3,050ms without, 9ms with. Multiplied by the ~50
+    // scratch databases this suite creates and drops, that was the majority of its whole runtime.
+    //
+    // ClearPool rather than ClearAllPools, which would work equally well and would reach into every other
+    // pool in the process — harmless while the suite is serial, and exactly the wrong thing to leave lying
+    // around for whenever it is not.
+    private static async Task DropAsync(string database)
+    {
+        SqlConnection.ClearPool(new SqlConnection(ConnectionStringFor(database)));
+
         await ExecuteOnMasterAsync($"""
             IF DB_ID('{database}') IS NOT NULL
             BEGIN
@@ -160,6 +219,7 @@ public sealed class LocalDbFixture : IAsyncLifetime
                 DROP DATABASE [{database}];
             END
             """);
+    }
 
     private static async Task ExecuteOnMasterAsync(string sql)
     {
@@ -361,5 +421,21 @@ public sealed class LocalDbFixture : IAsyncLifetime
         """;
 }
 
+// Four collections rather than one, because xUnit runs collections in parallel and everything in a single
+// collection in sequence. They all share one process-wide pair of databases, so the split costs nothing in
+// setup — it exists only to let four classes be in flight at once.
+//
+// Membership is balanced by measured cost rather than by subject, so the slowest classes do not queue behind
+// one another. That means a class's collection says nothing about what it tests, which is worth knowing
+// before looking for a meaning that is not there.
 [CollectionDefinition(nameof(LocalDbCollection))]
 public sealed class LocalDbCollection : ICollectionFixture<LocalDbFixture>;
+
+[CollectionDefinition(nameof(LocalDbCollectionB))]
+public sealed class LocalDbCollectionB : ICollectionFixture<LocalDbFixture>;
+
+[CollectionDefinition(nameof(LocalDbCollectionC))]
+public sealed class LocalDbCollectionC : ICollectionFixture<LocalDbFixture>;
+
+[CollectionDefinition(nameof(LocalDbCollectionD))]
+public sealed class LocalDbCollectionD : ICollectionFixture<LocalDbFixture>;

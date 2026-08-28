@@ -12,7 +12,7 @@ namespace DbDelta.SqlServer.Tests;
 // than an object_id. The reader joined every row to sys.objects on that id, so type rows matched nothing
 // and vanished, and the join was comparing two different id spaces to do it.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionD))]
 public sealed class RoutineTypeClosureTests
 {
     private readonly LocalDbFixture _fixture;

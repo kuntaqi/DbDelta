@@ -6,7 +6,7 @@ using Microsoft.Data.SqlClient;
 namespace DbDelta.SqlServer.Tests;
 
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionC))]
 public sealed class DataEmitterTests
 {
     private readonly LocalDbFixture _fixture;

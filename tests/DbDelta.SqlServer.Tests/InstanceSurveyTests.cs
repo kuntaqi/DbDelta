@@ -19,8 +19,8 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var databases = await new SqlServerProvider()
-            .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master"));
+        var databases = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+            .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master")));
 
         var source = databases.Single(d => d.Name == LocalDbFixture.SourceDatabase);
 
@@ -39,8 +39,8 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var databases = await new SqlServerProvider()
-            .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master"));
+        var databases = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+            .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master")));
 
         Assert.DoesNotContain(databases, d =>
             d.Name is "master" or "model" or "msdb" or "tempdb");
@@ -53,8 +53,8 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var detail = await new SqlServerProvider()
-            .DescribeDatabaseAsync(LocalDbFixture.ConnectionStringFor(LocalDbFixture.SourceDatabase));
+        var detail = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+            .DescribeDatabaseAsync(LocalDbFixture.ConnectionStringFor(LocalDbFixture.SourceDatabase)));
 
         // Checked against the schema reader rather than against numbers written here: two different queries
         // agreeing is worth testing, and a hardcoded count only records what the fixture happened to hold.
@@ -75,8 +75,13 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var detail = await new SqlServerProvider()
-            .DescribeDatabaseAsync(LocalDbFixture.ConnectionStringFor("DbDelta_NoSuchDatabase"));
+        // A short timeout and no connect retry, which is worth spelling out: the shared connection string
+        // carries a 30-second timeout and SqlClient retries a failed connect once after ten seconds, so
+        // this one test used to spend about ten seconds proving a connection fails. What is under test is
+        // the reporting, not the waiting.
+        var detail = await new SqlServerProvider().DescribeDatabaseAsync(
+            @"Server=(localdb)\MSSQLLocalDB;Database=DbDelta_NoSuchDatabase;Integrated Security=true;"
+            + "TrustServerCertificate=true;Connect Timeout=5;ConnectRetryCount=0");
 
         Assert.NotNull(detail.Problem);
         Assert.Equal("DbDelta_NoSuchDatabase", detail.Name);

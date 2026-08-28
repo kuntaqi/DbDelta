@@ -8,7 +8,7 @@ namespace DbDelta.SqlServer.Tests;
 // script contained nothing for it. Nothing caught it because neither the fixture nor the demo data had a
 // sequence — which is why both do now.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionB))]
 public sealed class SequenceTests
 {
     private readonly LocalDbFixture _fixture;

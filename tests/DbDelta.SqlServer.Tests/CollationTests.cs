@@ -9,7 +9,7 @@ namespace DbDelta.SqlServer.Tests;
 // genuinely does not differ for case sensitivity. Without that half the rule is only an assertion that
 // the rule is what it is.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionD))]
 public sealed class CollationTests
 {
     private readonly LocalDbFixture _fixture;

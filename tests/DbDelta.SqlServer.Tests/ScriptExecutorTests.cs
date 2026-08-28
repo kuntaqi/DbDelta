@@ -5,7 +5,7 @@ using DbDelta.Core.Scripting;
 namespace DbDelta.SqlServer.Tests;
 
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionC))]
 public sealed class ScriptExecutorTests
 {
     private readonly LocalDbFixture _fixture;

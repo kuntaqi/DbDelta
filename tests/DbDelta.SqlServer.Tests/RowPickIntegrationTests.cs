@@ -9,7 +9,7 @@ namespace DbDelta.SqlServer.Tests;
 // update, 3 an insert, 4 a delete — so narrowing to one row and checking the other two are untouched is a
 // real test of the narrowing rather than of a filter that happens to keep everything.
 [Trait("Speed", "Slow")]
-[Collection(nameof(LocalDbCollection))]
+[Collection(nameof(LocalDbCollectionD))]
 public sealed class RowPickIntegrationTests
 {
     private readonly LocalDbFixture _fixture;
