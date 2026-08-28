@@ -1,6 +1,5 @@
 using System.Text.Json;
 using DbDelta.Api.Contracts;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
 namespace DbDelta.Api.Services;
@@ -89,52 +88,34 @@ public sealed class ProfileStore
             throw new InvalidOperationException("A profile needs a name to be found by later.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.ConnectionString))
+        // The decomposition itself lives in ConnectionEndpoint, because the recently-compared list needs the
+        // same answer to "which parts of a connection are safe to write down".
+        try
         {
-            var builder = new SqlConnectionStringBuilder(request.ConnectionString);
-            var (server, port) = Split(builder.DataSource);
+            var endpoint = ConnectionEndpoint.From(
+                request.ConnectionString,
+                request.Server,
+                request.Port,
+                request.Database,
+                request.Authentication,
+                request.Username,
+                request.TrustServerCertificate);
 
             return new ConnectionProfile(
                 request.Name.Trim(),
-                server,
-                port,
-                builder.InitialCatalog,
-                builder.IntegratedSecurity ? "Windows" : "SqlLogin",
-                builder.IntegratedSecurity ? null : NullIfEmpty(builder.UserID),
-                builder.TrustServerCertificate);
+                endpoint.Server,
+                endpoint.Port,
+                endpoint.Database,
+                endpoint.Authentication,
+                endpoint.Username,
+                endpoint.TrustServerCertificate);
         }
-
-        if (string.IsNullOrWhiteSpace(request.Server) || string.IsNullOrWhiteSpace(request.Database))
+        catch (InvalidOperationException)
         {
             throw new InvalidOperationException(
                 "A profile needs at least a server and a database — those are what it exists to remember.");
         }
-
-        var sqlLogin = string.Equals(request.Authentication, "SqlLogin", StringComparison.OrdinalIgnoreCase);
-
-        return new ConnectionProfile(
-            request.Name.Trim(),
-            request.Server.Trim(),
-            request.Port,
-            request.Database.Trim(),
-            sqlLogin ? "SqlLogin" : "Windows",
-            sqlLogin ? NullIfEmpty(request.Username) : null,
-            request.TrustServerCertificate);
     }
-
-    // "HOST,1433" carries its port in the data source; a named instance carries a path instead and must
-    // keep it whole.
-    private static (string Server, int? Port) Split(string dataSource)
-    {
-        var comma = dataSource.LastIndexOf(',');
-
-        return comma > 0 && int.TryParse(dataSource[(comma + 1)..].Trim(), out var port)
-            ? (dataSource[..comma].Trim(), port)
-            : (dataSource.Trim(), null);
-    }
-
-    private static string? NullIfEmpty(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private async Task WriteAsync(List<ConnectionProfile> profiles, CancellationToken cancellationToken) =>
         await File.WriteAllTextAsync(_path, JsonSerializer.Serialize(profiles, Json), cancellationToken)

@@ -230,6 +230,35 @@ export const profileApi = {
   },
 }
 
+export interface ComparedEndpoint {
+  server: string
+  port: number | null
+  database: string
+  authentication: AuthMode
+  username: string | null
+  trustServerCertificate: boolean
+}
+
+// A pair that was compared, and compared successfully. No password: the shape has nowhere to put one.
+export interface ComparedPair {
+  source: ComparedEndpoint
+  target: ComparedEndpoint
+  at: string
+}
+
+export const recentApi = {
+  list: async () => {
+    const response = await fetch('/api/recent')
+    if (!response.ok) throw new Error('Could not read the recent pairs')
+    return (await response.json()) as ComparedPair[]
+  },
+  forget: async () => {
+    const response = await fetch('/api/recent', { method: 'DELETE' })
+    if (!response.ok) throw new Error('Could not clear the recent pairs')
+    return (await response.json()) as ComparedPair[]
+  },
+}
+
 export interface InstanceDatabase {
   name: string
   state: string

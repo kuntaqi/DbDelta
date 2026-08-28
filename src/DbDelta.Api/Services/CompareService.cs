@@ -16,6 +16,7 @@ public sealed class CompareService
     private readonly ConnectionFactory _connections;
     private readonly ServerClassifier _classifier;
     private readonly CompareSessionStore _sessions;
+    private readonly RecentPairStore _recent;
     private readonly SafetyOptions _safety;
 
     public CompareService(
@@ -23,12 +24,14 @@ public sealed class CompareService
         ConnectionFactory connections,
         ServerClassifier classifier,
         CompareSessionStore sessions,
+        RecentPairStore recent,
         IOptions<SafetyOptions> safety)
     {
         _provider = provider;
         _connections = connections;
         _classifier = classifier;
         _sessions = sessions;
+        _recent = recent;
         _safety = safety.Value;
     }
 
@@ -94,6 +97,14 @@ public sealed class CompareService
             CollationPrecondition.EvaluateSchema(source, target, session.CollationFacts));
 
         _sessions.Add(session);
+
+        // After the comparison, not before: a pair that could not be read is not one worth offering back.
+        // Both schemas have been read by this point, so this pair demonstrably works.
+        await _recent.RecordAsync(
+            ConnectionEndpoint.From(request.Source),
+            ConnectionEndpoint.From(request.Target),
+            cancellationToken).ConfigureAwait(false);
+
         return Describe(session);
     }
 

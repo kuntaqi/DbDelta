@@ -8,7 +8,9 @@ import {
   type ObjectDetail,
   type ObjectSummary,
   type ConnectionProfile,
+  type ComparedPair,
   profileApi,
+  recentApi,
   type ProbeResponse,
   type ExcludedObject,
   type RequiredObject,
@@ -393,6 +395,7 @@ export default function App() {
   const [excluded, setExcluded] = useState<ExcludedObject[]>([])
   const [profiles, setProfiles] = useState<ConnectionProfile[]>([])
   const [sourceProfileName, setSourceProfileName] = useState('')
+  const [recent, setRecent] = useState<ComparedPair[]>([])
   const [targetProfileName, setTargetProfileName] = useState('')
   const [screen, setScreen] = useState<Screen>('connections')
   const [showSame, setShowSame] = useState(false)
@@ -415,6 +418,33 @@ export default function App() {
       .then(setProfiles)
       .catch(() => setProfiles([]))
   }, [])
+
+  useEffect(() => {
+    recentApi
+      .list()
+      .then(setRecent)
+      .catch(() => setRecent([]))
+  }, [])
+
+  // Both sides at once, which is the whole point: a profile fills one side and still leaves the other to
+  // choose. The password is the one thing neither remembers, so under a SQL login it stays blank.
+  function loadPair(pair: ComparedPair) {
+    const side = (endpoint: ComparedPair['source']): ConnectionRequest => ({
+      connectionString: null,
+      server: endpoint.server,
+      port: endpoint.port,
+      database: endpoint.database,
+      authentication: endpoint.authentication,
+      username: endpoint.username,
+      password: null,
+      trustServerCertificate: endpoint.trustServerCertificate,
+    })
+
+    setSource(side(pair.source))
+    setTarget(side(pair.target))
+    setSourceProbe(null)
+    setTargetProbe(null)
+  }
 
   // Loading a profile fills in everything except the password, which is the one thing a profile never
   // holds. Under a SQL login it stays blank and has to be typed — that is the trade, stated in the UI.
@@ -569,6 +599,42 @@ export default function App() {
               {busy && <span className="spinner push">working&hellip;</span>}
             </div>
             <div className="app-body">
+              {/* Profiles remember one connection each, which still leaves two selections every time. The
+                  thing anyone repeats is the pair, so this fills both sides at once. */}
+              {recent.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div className="row" style={{ gap: 6, alignItems: 'baseline' }}>
+                    <span className="lbl" style={{ margin: 0 }}>Recently compared</span>
+                    <span className="push" />
+                    <button
+                      type="button"
+                      className="chip"
+                      onClick={() => run(() => recentApi.forget(), setRecent)}
+                    >
+                      Forget these
+                    </button>
+                  </div>
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    {recent.map((pair) => (
+                      <button
+                        key={`${pair.source.server}/${pair.source.database}->${pair.target.server}/${pair.target.database}`}
+                        type="button"
+                        className="chip"
+                        title={`Compared ${new Date(pair.at).toLocaleString()}`}
+                        onClick={() => loadPair(pair)}
+                      >
+                        <span className="mono">{pair.source.database}</span>
+                        <span className="dim"> &rarr; </span>
+                        <span className="mono">{pair.target.database}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="dim" style={{ margin: '6px 0 0', fontSize: 11.5 }}>
+                    Pairs that compared successfully. Both sides are filled in except the password, which is
+                    never stored — under a SQL login it still has to be typed.
+                  </p>
+                </div>
+              )}
               <div className="conns">
                 <ConnectionCard
                   role="Source"

@@ -229,6 +229,13 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   password** — server, port, database, auth mode, username and the trust flag only. A SQL login password is
   asked for each session and kept in memory for that session. The rule is held by the request shape:
   `SaveProfileRequest` has no password field, and a pasted connection string is taken apart rather than
-  stored. `.gitignore` already excludes `profiles.json`, `appsettings.Local.json`, `runs/` and `*.sync.sql`.
+  stored. `.gitignore` excludes `profiles.json`, `recent.json`, `appsettings.Local.json`, `runs/` and
+  `*.sync.sql`.
+- **`recent.json` holds the pairs that compared successfully**, beside the profiles and under the same rule:
+  `ComparedEndpoint` has no password field, so nothing has to remember to strip one. It is written after a
+  comparison succeeds, so a pair that could not connect is never offered back, and writing it can never be
+  the reason a compare fails — a corrupt or unwritable file reads as "nothing remembered". A pair is
+  directional and deduplicated by (source server, source database, target server, target database); the
+  decomposition of a pasted connection string is shared with the profile store in `ConnectionEndpoint`.
 - Never point a write operation at a production server. `Safety:ReadOnlyServers` in config exists for this
   and its apply path is hard-blocked, not merely warned.

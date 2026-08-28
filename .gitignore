@@ -23,3 +23,4 @@ runs/
 *.sync.sql
 wwwroot/
 .playwright-mcp/
+recent.json

@@ -939,10 +939,31 @@ not the repository.
 
 Two consequences worth stating:
 
-- **Recently-compared pairs are derivable, profiles are not the same thing.** The run log already persists
-  to `%APPDATA%\DbDelta\runs\*.json`, so a "recently compared" list can be built from what actually ran
-  without storing anything new. A profile is a saved *intent* to connect; a run is a record that one
-  happened.
+- **Recently-compared pairs turned out not to be derivable from the run log, and the earlier draft of this
+  section said they were.** The idea was sound — a run is a record that a comparison happened, so why store
+  anything new — and it fails on three counts. A run entry carries `SourceDatabase`, `TargetServer` and
+  `TargetDatabase` but **no source server**, so the source connection cannot be reconstructed at all. It
+  carries no auth mode, username, port or trust flag for either side, so nothing could fill a form. And only
+  `ApplyService` ever writes one, so the log records *applies* — a comparison that was reviewed and not
+  applied, which is most of them, leaves no trace. So `recent.json` sits beside `profiles.json` and holds
+  the pairs directly.
+- **A pair is remembered only when it compared successfully.** A pair that could not connect is not worth
+  offering back, and recording failures would fill the list with the attempts someone was in the middle of
+  correcting. It is written after both schemas have been read, which is the point at which the pair has
+  demonstrably worked.
+- **A pair is directional, and the same pair twice is one entry.** Identity is source server, source
+  database, target server, target database, case-insensitively — comparing prod to uat is not the same act
+  as comparing uat to prod, and offering one when the other was meant would point a sync the wrong way.
+  Comparing the same pair again moves it up rather than appearing twice, because the list is about what to
+  offer next and not a history of attempts.
+- **The no-password rule is held by the shape, again.** `ComparedEndpoint` has no field for one, so nothing
+  downstream has to remember to strip it — the same reasoning that keeps it out of `SaveProfileRequest`. The
+  decomposition that takes a pasted connection string apart now lives in `ConnectionEndpoint`, shared with
+  the profile store, because a second implementation of "which parts of a connection are safe to write down"
+  is the last thing this should have.
+- **Writing it can never be the reason a compare fails.** The list is a convenience and the comparison has
+  already succeeded by the time it is written, so an unwritable or corrupt file reads as "nothing
+  remembered" rather than throwing. The next successful compare writes a good file over a bad one.
 - **A profile is not a session.** Compare sessions — including key overrides and plan picks — live in API
   memory and are lost on restart. A profile shortens the retyping; it does not restore a comparison.
 

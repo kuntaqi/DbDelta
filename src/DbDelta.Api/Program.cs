@@ -21,6 +21,7 @@ builder.Services.AddSingleton<CompareSessionStore>();
 builder.Services.AddSingleton<IScriptExecutor, SqlServerScriptExecutor>();
 builder.Services.AddSingleton<RunLogStore>();
 builder.Services.AddSingleton<ProfileStore>();
+builder.Services.AddSingleton<RecentPairStore>();
 builder.Services.AddScoped<CompareService>();
 builder.Services.AddScoped<ApplyService>();
 builder.Services.AddScoped<DataCompareService>();
@@ -498,6 +499,13 @@ api.MapDelete("/profiles/{name}", async (
     ProfileStore profiles,
     CancellationToken cancellationToken) =>
     Results.Ok(await profiles.DeleteAsync(name, cancellationToken)));
+
+// Pairs, not connections. Profiles remember one side each, which still leaves two selections every time.
+api.MapGet("/recent", async (RecentPairStore recent, CancellationToken cancellationToken) =>
+    Results.Ok(await recent.ListAsync(cancellationToken)));
+
+api.MapDelete("/recent", async (RecentPairStore recent, CancellationToken cancellationToken) =>
+    Results.Ok(await recent.ForgetAsync(cancellationToken)));
 
 api.MapGet("/runs", async (ApplyService service, CancellationToken cancellationToken) =>
     Results.Ok(await service.RunsAsync(cancellationToken)));
