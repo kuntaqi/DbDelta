@@ -122,6 +122,7 @@ export interface ScriptResponse {
   requiredRows: RequiredRows[]
   excluded: ExcludedObject[]
   staged: StagedTable[]
+  narrowings: string[]
 }
 
 async function post<T>(url: string, body: unknown): Promise<T> {
@@ -375,6 +376,8 @@ export interface SelectedTable {
   table: string
   mode: string
   topCount: number
+  // null means the whole table. A list means those rows and no others, empty included.
+  pickedRows: string[] | null
 }
 
 export const planApi = {
@@ -385,6 +388,7 @@ export const planApi = {
     mode: TableDataMode,
     topCount: number,
     filter: string | null,
+    rows: string[] | null = null,
   ) =>
     postJson<{ selected: SelectedTable[] }>(`/api/compare/${compareId}/data/select`, {
       table,
@@ -392,6 +396,7 @@ export const planApi = {
       mode,
       topCount,
       filter,
+      rows,
     }),
   selection: async (compareId: string) => {
     const response = await fetch(`/api/compare/${compareId}/data/select`)

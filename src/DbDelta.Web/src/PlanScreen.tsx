@@ -114,6 +114,21 @@ export function PlanScreen({
               </div>
             ))}
 
+            {script.narrowings.length > 0 && (
+              <div className="warnline info">
+                <span className="g same">◇</span>
+                <div>
+                  <b>Some tables are in for particular rows, not all of them.</b> The count that matters is
+                  the one nobody picked, so it is repeated every time this script is built.
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {script.narrowings.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {script.excluded.length > 0 && (
               <div className="warnline">
                 <span className="g del">&minus;</span>

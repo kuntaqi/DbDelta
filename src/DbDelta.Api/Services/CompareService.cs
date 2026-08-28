@@ -231,7 +231,8 @@ public sealed class CompareService
                     r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))
                 .ToList(),
             SchemaSelectionService.Exclusions(session),
-            combined.Loads.Select(l => new StagedTableDto(l.Table, l.RowCount, l.DataFileName)).ToList());
+            combined.Loads.Select(l => new StagedTableDto(l.Table, l.RowCount, l.DataFileName)).ToList(),
+            rows.Narrowings);
 
         return new BuiltScript { Script = combined, Response = response };
     }
@@ -252,16 +253,32 @@ public sealed class CompareService
         var ranked = order.Ordered.Concat(order.Cyclic).ToList();
 
         var picked = new List<TableDataChanges>();
+        var narrowings = new List<string>();
 
         foreach (var table in ranked.Where(session.DataSelections.ContainsKey))
         {
+            var selection = session.DataSelections[table];
+
             var changes = await data
-                .ChangesAsync(session, table, session.DataSelections[table], cancellationToken)
+                .ChangesAsync(session, table, selection, cancellationToken)
                 .ConfigureAwait(false);
 
             if (changes is not null)
             {
                 picked.Add(changes);
+                continue;
+            }
+
+            // A narrowed table that keeps nothing still sits in the plan looking selected, and would
+            // otherwise contribute no rows and no explanation. A table with no differences at all needs no
+            // such note, which is why only narrowed ones are reported here.
+            if (selection.Rows is { } rows)
+            {
+                narrowings.Add(rows.Count == 0
+                    ? $"{table.QualifiedName}: in the plan with no rows picked, so it contributes nothing."
+                    : $"{table.QualifiedName}: none of its {rows.Count} picked row(s) are among its "
+                        + "differences any more, so it contributes nothing. Compare it again to see what "
+                        + "it holds now.");
             }
         }
 
@@ -298,6 +315,27 @@ public sealed class CompareService
                 }
             }
 
+            // A narrowed table says so every time the script is built, because the number that matters is
+            // the one nobody picked. Two hundred rows ticked out of five thousand looks like a finished
+            // job on screen and is not one.
+            if (changes.Narrowing is { } narrowing)
+            {
+                narrowings.Add(
+                    $"{table.QualifiedName}: {narrowing.Picked} of {narrowing.Available} changed row(s) "
+                    + "picked. The rest are not in this plan.");
+
+                // The picks were made against an earlier comparison; this script is built against the
+                // database as it is now. A row that has since been fixed, deleted, or moved out of range
+                // is not silently dropped from a plan someone already read.
+                if (narrowing.Unmatched.Count > 0)
+                {
+                    narrowings.Add(
+                        $"{table.QualifiedName}: {narrowing.Unmatched.Count} picked row(s) are no longer "
+                        + "among its differences and have been left out. Compare the table again to see "
+                        + "what it holds now.");
+                }
+            }
+
             emitted.Add(_provider.CreateDataScriptEmitter().Emit(changes, _safety.MaxInlineTableBytes));
         }
 
@@ -319,6 +357,7 @@ public sealed class CompareService
             DeleteWarnings = warnings,
             RequiredRows = closure.Added,
             ClosureWarnings = closure.Warnings,
+            Narrowings = narrowings,
             Rows = RowStateSnapshot.From(closure.Tables)
         };
     }

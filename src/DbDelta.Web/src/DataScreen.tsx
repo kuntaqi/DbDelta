@@ -71,7 +71,12 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
     }
   }
 
-  const picked = selected !== null && inPlan.some((s) => s.table === selected.qualifiedName)
+  const entry = selected === null ? undefined : inPlan.find((s) => s.table === selected.qualifiedName)
+  const picked = entry !== undefined
+  // null is the whole table; a list is a narrowing to those keys, empty included.
+  const pickedRows = entry?.pickedRows ?? null
+  const narrowed = pickedRows !== null
+  const changedCount = result === null ? 0 : result.insertCount + result.updateCount + result.deleteCount
   const scanned = new Map(scan?.tables.map((t) => [t.table, t]) ?? [])
 
   // Which tables differ is only knowable by comparing them, so the list stays complete until a scan
@@ -94,18 +99,33 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
     }
   }
 
-  async function toggle(next: boolean) {
+  async function toggle(next: boolean, rows: string[] | null = null) {
     if (!selected) return
     setBusy(true)
     setError(null)
     try {
-      const response = await planApi.select(comparison.id, selected.qualifiedName, next, mode, topCount, mode === 'Filter' ? filter : null)
+      const response = await planApi.select(comparison.id, selected.qualifiedName, next, mode, topCount, mode === 'Filter' ? filter : null, rows)
       setInPlan(response.selected)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  // Switching between the whole table and a list of rows. Turning narrowing on starts from nothing rather
+  // than from everything on screen: the screen holds the first 200 differences, so "everything shown"
+  // would silently mean "and none of the other 4,800".
+  function setNarrowing(on: boolean) {
+    void toggle(true, on ? [] : null)
+  }
+
+  function toggleRow(key: string) {
+    if (pickedRows === null) return
+    void toggle(
+      true,
+      pickedRows.includes(key) ? pickedRows.filter((k) => k !== key) : [...pickedRows, key],
+    )
   }
 
   useEffect(() => {
@@ -588,11 +608,34 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
 
               {busy && <div style={{ padding: 20 }} className="dim">Comparing…</div>}
 
+              {result && result.rows.length > 0 && picked && mode === 'AllRows' && (
+                <div className="actionbar" style={{ borderTop: 0 }}>
+                  <span className="guard">
+                    <span className={`g ${narrowed ? 'add' : 'same'}`}>{narrowed ? '✓' : '◇'}</span>
+                    {narrowed
+                      ? `${pickedRows!.length} of ${changedCount} changed row(s) picked. Only these go in the plan.`
+                      : `All ${changedCount} changed row(s) go in the plan.`}
+                  </span>
+                  <span className="push" />
+                  {/* The list stops at 200 rows, so picking through a large table is not something this
+                      offers to do. Saying it here is the difference between a limit and a trap. */}
+                  {narrowed && result.rows.length < changedCount && (
+                    <span className="dim" style={{ marginRight: 10 }}>
+                      showing the first {result.rows.length}; the rest cannot be ticked
+                    </span>
+                  )}
+                  <button type="button" className="btn" disabled={busy} onClick={() => setNarrowing(!narrowed)}>
+                    {narrowed ? 'Take the whole table' : 'Pick rows instead'}
+                  </button>
+                </div>
+              )}
+
               {result && result.rows.length > 0 && (
                 <div style={{ overflowX: 'auto' }}>
                   <table className="grid">
                     <thead>
                       <tr>
+                        {narrowed && <th style={{ width: 34 }} />}
                         <th style={{ width: 90 }}>Change</th>
                         <th style={{ width: 120 }}>{result.keyColumns.join(', ')}</th>
                         <th>Cells</th>
@@ -601,6 +644,17 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                     <tbody>
                       {result.rows.map((row) => (
                         <tr key={row.key}>
+                          {narrowed && (
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Include ${row.display}`}
+                                checked={pickedRows!.includes(row.key)}
+                                disabled={busy}
+                                onChange={() => toggleRow(row.key)}
+                              />
+                            </td>
+                          )}
                           <td>
                             <span className={`g ${CLASS_TONE[row.classification]}`}>
                               {CLASS_GLYPH[row.classification]}

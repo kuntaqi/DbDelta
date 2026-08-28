@@ -114,7 +114,10 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    dedup by change-unit identity. That is what makes overlapping selections structurally unable to emit a
    statement twice. The schema screen offers two scopes — *Picked items* and *Entire database* — and under
    the second, unticking records a first-class `Exclusion` that re-escalation cannot undo. Scope covers the
-   schema only; a table's rows enter the plan when that table is picked on the data screen.
+   schema only; a table's rows enter the plan when that table is picked on the data screen. A picked table
+   can then be narrowed to particular rows, but only under `AllRows` and only from the 200 the screen
+   shows — so narrowing starts from nothing rather than from everything on screen, and the plan repeats
+   "N of M changed rows" for as long as it lasts.
 3. **Limited row modes must suppress deletes.** Under `Top N` or `Filter`, a row absent from the source only
    means "outside the limit" — honouring deletes would wipe the target while "seeding" it. Correctness rule,
    not a preference. The other half of the same rule is closure: a picked object pulls in what it references

@@ -35,12 +35,17 @@ internal sealed class TableState
 
     public long TargetRowCount { get; }
 
+    public RowNarrowing? Narrowing { get; init; }
+
     // What an inserted row actually carries, which is what a foreign key can be read out of.
     public IReadOnlyList<string> AllColumns =>
         KeyColumns.Concat(Columns).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     public static TableState From(TableDataChanges changes) =>
-        new(changes.Table, changes.KeyColumns, changes.Columns, changes.Changes, changes.TargetRowCount);
+        new(changes.Table, changes.KeyColumns, changes.Columns, changes.Changes, changes.TargetRowCount)
+        {
+            Narrowing = changes.Narrowing
+        };
 
     // Is a row with these values already going in? Asked before fetching, so a parent referenced by two
     // different children is pulled in once.
@@ -94,6 +99,7 @@ internal sealed class TableState
             KeyColumns = KeyColumns,
             Columns = Columns,
             Changes = _changes,
-            TargetRowCount = TargetRowCount
+            TargetRowCount = TargetRowCount,
+            Narrowing = Narrowing
         };
 }

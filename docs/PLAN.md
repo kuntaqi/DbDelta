@@ -277,6 +277,33 @@ Escalating the schema scope must not quietly start comparing 263 tables' data. S
 schema change units; a table's rows enter the plan when that table is picked on the data screen. That is a
 narrowing of the original design, taken deliberately.
 
+**Row-level selection is a narrowing of a picked table, and its shape is set by the 200-row cap.** The
+data screen fetches and shows the first 200 differences, because the two-pass design fetches only what is
+displayed. So a pick can only ever be made from rows that were on screen, and a table with five thousand
+differences cannot be worked through row by row. That rules out row selection as a way of *building* a
+plan, and leaves it as a way of *narrowing* one: a table is either taken whole, which is what picking a
+table has always meant, or reduced to a list of keys.
+
+The two are exclusive by construction — `DataSelection.Rows` is null for the whole table and a set
+otherwise — which is why the lattice's collapse never has to arbitrate between them here. Null and empty
+are deliberately different: an empty set is a table narrowed to nothing, and reading it as "everything"
+would write a whole table off the back of someone clearing the last tick.
+
+Turning narrowing on therefore starts from nothing rather than from every row on screen. "Everything
+shown" would quietly mean "and none of the other 4,800", which is the trap this is shaped to avoid. For
+the same reason the plan repeats *"N of M changed rows picked"* every time a script is built, and refuses
+to combine row picks with `Top N` or `Filter`: those are already narrowings, and picking within one gives
+"these three of the top hundred", which nobody can check later.
+
+A pick is a key, and keys are re-derived from a fresh comparison whenever a script is built — so a picked
+row can simply not be there any more, having been fixed, deleted, or fallen outside a window. Those come
+back as unmatched and are reported. A narrowed table that ends up keeping nothing is reported too, because
+otherwise it sits in the plan looking selected while contributing no rows and no explanation.
+
+Note what this does *not* do: `SelectionScope.Row` in the schema cart still matches nothing, because schema
+change units have no rows to key on and never will. The lattice's third level is real in the data path and
+decorative in the cart.
+
 **What a change unit is here.** One differing object is one unit, and the kind is part of its identity —
 `create`, `alter` or `drop`. That is what lets an exclusion be bound to a change rather than to an object:
 refusing today's `DROP` of a table does not also suppress an `ALTER` of it in a later comparison, because
@@ -923,18 +950,19 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
+| Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
 
 Nothing left in this table is silent, and nothing left in it can make the tool write wrong data. Both
 closures, the drift check, the staged path, the filter, user-defined types, the constraints inside a table
-type, sequences, the collation precondition and per-column `COLLATE` in emitted DDL are built, and every
-one of those was here because it could make the tool do the wrong thing quietly.
+type, sequences, the collation precondition, per-column `COLLATE` in emitted DDL and row-level selection
+are built, and every one of those was here because it could make the tool do the wrong thing quietly.
 
-The three rows that remain are absences rather than faults: row selection stops at the table by decision,
-`api.ts` is mirrored by hand, and the provider abstraction has never met a second engine. None of them can
-produce a wrong answer or a wrong write — they are things the tool does not do, not things it does badly.
+The three rows that remain are absences rather than faults, and the first of them is a decision rather than
+a gap: data deliberately does not follow the schema scope, `api.ts` is mirrored by hand, and the provider
+abstraction has never met a second engine. None of them can produce a wrong answer or a wrong write — they
+are things the tool does not do, not things it does badly.
 
 The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
 gaps.** The list of things found only because something was built beside them:

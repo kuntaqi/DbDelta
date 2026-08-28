@@ -12,6 +12,9 @@ public sealed class TableDataChanges
 
     public required IReadOnlyList<DataChange> Changes { get; init; }
 
+    // Null when the whole table was taken, which is what picking a table has always meant.
+    public RowNarrowing? Narrowing { get; init; }
+
     // Needed for the blast-radius guard: two deletes out of five rows is a different decision from
     // two out of five million.
     public long TargetRowCount { get; init; }

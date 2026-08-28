@@ -452,7 +452,23 @@ public sealed class DataCompareService
             Check(session, table, request.Filter);
         }
 
-        session.DataSelections[table.Identity] = new DataSelection(mode, request.TopCount, request.Filter);
+        // A limited window and a row list are both narrowings, and stacking them means the picks are
+        // taken from whichever rows the window happened to show. That is answerable but not reviewable —
+        // "these three of the top hundred" is not something anyone can check later — so the two are kept
+        // apart rather than composed.
+        if (request.Rows is not null && mode != TableDataMode.AllRows)
+        {
+            throw new InvalidOperationException(
+                $"Rows can only be picked under All rows. {request.Table} is set to {mode}, which is "
+                + "already a narrowing, and picking within one would hide which rows were on offer.");
+        }
+
+        session.DataSelections[table.Identity] = new DataSelection(
+            mode,
+            request.TopCount,
+            request.Filter,
+            request.Rows is null ? null : request.Rows.ToHashSet(StringComparer.Ordinal));
+
         return Selection(session);
     }
 
@@ -484,7 +500,11 @@ public sealed class DataCompareService
         ArgumentNullException.ThrowIfNull(session);
 
         return new DataSelectionResponse(session.DataSelections
-            .Select(pair => new SelectedTable(pair.Key.QualifiedName, pair.Value.Mode.ToString(), pair.Value.TopCount))
+            .Select(pair => new SelectedTable(
+                pair.Key.QualifiedName,
+                pair.Value.Mode.ToString(),
+                pair.Value.TopCount,
+                pair.Value.Rows?.Order(StringComparer.Ordinal).ToList()))
             .OrderBy(s => s.Table, StringComparer.OrdinalIgnoreCase)
             .ToList());
     }
@@ -533,22 +553,31 @@ public sealed class DataCompareService
             return null;
         }
 
+        // Narrowed before anything is fetched, so a plan of three rows reads three rows off the server
+        // rather than reading them all and discarding the rest.
+        var picks = RowPicks.Apply(result.Differences, selection.Rows);
+
+        if (picks.Kept.Count == 0)
+        {
+            return null;
+        }
+
         var fetched = columns.ComparedColumns.Concat(request.KeyColumns)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         var sourceRows = (await _provider.CreateRowDetailReader(session.SourceConnectionString)
             .FetchAsync(source, request, fetched,
-                result.Differences.Where(d => d.Classification != RowClassification.Delete).Select(d => d.Key).ToList(),
+                picks.Kept.Where(d => d.Classification != RowClassification.Delete).Select(d => d.Key).ToList(),
                 cancellationToken).ConfigureAwait(false))
             .ToDictionary(r => r.Key, StringComparer.Ordinal);
 
         var targetRows = (await _provider.CreateRowDetailReader(session.TargetConnectionString)
             .FetchAsync(target, request, fetched,
-                result.Differences.Where(d => d.Classification == RowClassification.Delete).Select(d => d.Key).ToList(),
+                picks.Kept.Where(d => d.Classification == RowClassification.Delete).Select(d => d.Key).ToList(),
                 cancellationToken).ConfigureAwait(false))
             .ToDictionary(r => r.Key, StringComparer.Ordinal);
 
-        var changes = result.Differences
+        var changes = picks.Kept
             .Select(difference =>
             {
                 var row = difference.Classification == RowClassification.Delete
@@ -583,7 +612,10 @@ public sealed class DataCompareService
             KeyColumns = request.KeyColumns,
             Columns = columns.ComparedColumns,
             Changes = changes,
-            TargetRowCount = volume.Tables.FirstOrDefault(v => v.Table == table)?.RowCount ?? 0
+            TargetRowCount = volume.Tables.FirstOrDefault(v => v.Table == table)?.RowCount ?? 0,
+            Narrowing = picks.IsNarrowed
+                ? new RowNarrowing(picks.Kept.Count, picks.AvailableCount, picks.Unmatched)
+                : null
         };
     }
 

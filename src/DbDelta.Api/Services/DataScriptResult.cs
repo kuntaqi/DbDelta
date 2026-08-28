@@ -15,6 +15,11 @@ public sealed class DataScriptResult
 
     public required IReadOnlyList<string> ClosureWarnings { get; init; }
 
+    // Tables narrowed to particular rows, and picks that no longer match anything. Its own channel: a
+    // narrowing is not a closure problem and not something to acknowledge, it is the plan describing what
+    // it deliberately left out.
+    public required IReadOnlyList<string> Narrowings { get; init; }
+
     // What the target held, for the rows this plan writes, at the moment it was built. Compared against
     // the same thing at apply time, this is what catches a row that moved in between.
     public required RowStateSnapshot Rows { get; init; }
@@ -25,6 +30,7 @@ public sealed class DataScriptResult
         DeleteWarnings = [],
         RequiredRows = [],
         ClosureWarnings = [],
+        Narrowings = [],
         Rows = RowStateSnapshot.From([])
     };
 }
