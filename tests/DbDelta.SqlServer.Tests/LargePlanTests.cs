@@ -37,10 +37,25 @@ public sealed class LargePlanTests
 
         Assert.Equal(1200, keys.Count);
 
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
         var rows = await new SqlServerRowDetailReader(sourceConnection).FetchAsync(
             table, request, ["MetricId", "Label", "Amount", "At"], keys);
 
+        clock.Stop();
+
         Assert.Equal(keys.Count, rows.Count);
         Assert.Equal(keys.Count, rows.Select(r => r.Key).Distinct().Count());
+
+        // A budget, not a benchmark. This fetch used to take 27 seconds, because addressing rows with
+        // `WHERE <key expression> IN (@k0…@k499)` re-evaluates that nvarchar(max) expression once per list
+        // element — 1200 rows against 500 keys is 600,000 LOB concatenations. Joining to the keys instead
+        // made it 91ms. The number here is deliberately far above 91ms and far below 27s: a correctness
+        // test cannot see the difference between those two, so nothing else in the suite would notice the
+        // shape being changed back.
+        Assert.True(
+            clock.Elapsed < TimeSpan.FromSeconds(8),
+            $"fetching {keys.Count} rows took {clock.Elapsed.TotalSeconds:N1}s; the row detail query has "
+            + "probably gone back to an IN list over the key expression");
     }
 }

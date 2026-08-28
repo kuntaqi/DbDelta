@@ -171,8 +171,8 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   the fast half:
 
   ```
-  dotnet test --filter "Speed!=Slow"    # ~7s: everything except the database-creating tests
-  dotnet test                            # ~6min: the whole thing, before committing
+  dotnet test --filter "Speed!=Slow"    # ~5s: everything except the database-creating tests
+  dotnet test                            # ~3.5min: the whole thing, before committing
   ```
 
   `Speed=Slow` marks the classes that create their own database, move the 1200-row fixture table, or walk

@@ -43,17 +43,34 @@ public sealed class SqlServerRowDetailReader : IRowDetailReader
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var batch in keys.Chunk(KeysPerQuery))
+        // Distinct, because the keys arrive from a set on the compare side but nothing in the signature
+        // says so, and the join below would return a row once per matching entry where IN returned it once.
+        var wanted = keys.Distinct(StringComparer.Ordinal).ToList();
+
+        foreach (var batch in wanted.Chunk(KeysPerQuery))
         {
-            var parameters = string.Join(", ", batch.Select((_, i) => $"@k{i}"));
+            var keyRows = string.Join(", ", batch.Select((_, i) => $"(@k{i})"));
 
             // Selecting by the same canonical key expression the compare produced keeps this addressing
             // rows exactly the way the merge join identified them, rather than re-deriving the key.
+            //
+            // Joined to the keys rather than `WHERE <expression> IN (@k0…@k499)`, and the difference is
+            // not stylistic. An IN list expands to one comparison per element, and each one re-evaluates
+            // the key expression — which is an nvarchar(max) CONCAT, so 1200 rows against 500 keys meant
+            // 600,000 LOB concatenations. Measured on the 1200-row fixture: 17.5 seconds for the IN form,
+            // 54ms for this one. The join evaluates the expression once per row and hashes it.
+            //
+            // Bounding the expression to nvarchar(400) would also have fixed it (293ms) but is not worth
+            // the risk: the expression produces the key that identifies a row, and a truncated key silently
+            // matches the wrong one. Nothing about the digest changes here — only how it is compared.
+            //
+            // A table value constructor takes at most 1000 rows, so KeysPerQuery cannot be raised past it
+            // without changing this shape again.
             var sql = $"""
                 SELECT {keyExpression} AS [k],
                        {string.Join(",\n                       ", columns.Select(c => quoter.Quote(c)))}
                 FROM {quoter.Qualify(table.Identity)}
-                WHERE {keyExpression} IN ({parameters});
+                JOIN (VALUES {keyRows}) AS [dbdelta_key]([k]) ON [dbdelta_key].[k] = {keyExpression};
                 """;
 
             await using var command = new SqlCommand(sql, connection) { CommandTimeout = 0 };

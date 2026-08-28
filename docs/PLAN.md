@@ -756,8 +756,8 @@ connections is the only prerequisite anywhere in the app.
 
 ### The test suite is split by what a test needs, because the cost is all in one place
 
-Measured on a warm LocalDB, the SqlServer suite was 340 seconds across 118 tests, and the distribution is
-not a curve — it is a cliff:
+Measured on a warm LocalDB, the SqlServer suite was 340 seconds across 118 tests, and the distribution was
+not a curve — it was a cliff:
 
 | Class | Tests | Seconds |
 |---|---|---|
@@ -767,12 +767,12 @@ not a curve — it is a cliff:
 | … fourteen more, 3 to 17 seconds each | 54 | 157 |
 | the remaining seven classes | 57 | 6 |
 
-Seven classes hold 57 tests and cost six seconds between them. The other seventeen hold 61 tests and cost
-the remaining 334. So the split is by what a test *needs*: `Speed=Slow` is any class that creates its own database, moves the
-1200-row fixture table, or opens a connection per database on the instance; the fast half reads the shared
-source and target pair and nothing else. That line is readable from the test — a class with no
-`CreateScratchTargetAsync` or `CreateEmptyTargetAsync` call is in the fast half — which matters more than a
-threshold in seconds, because a threshold rots and a rule does not.
+Seven classes held 57 tests and cost six seconds between them. The other seventeen held 61 tests and cost
+the remaining 334. So the split is by what a test *needs*: `Speed=Slow` is any class that creates its own
+database, moves the 1200-row fixture table, or opens a connection per database on the instance; the fast
+half reads the shared source and target pair and nothing else. That line is readable from the test — a class
+with no `CreateScratchTargetAsync` or `CreateEmptyTargetAsync` call is in the fast half — which matters more
+than a threshold in seconds, because a threshold rots and a rule does not.
 
 `dotnet test` still runs everything. Making the fast half the default was considered and rejected: this
 project already worries about a green run that proves less than it appears to (see the skip note in
@@ -781,22 +781,67 @@ total — 60 and 61 — so a mistyped trait shows up as tests missing from both 
 smaller run. `SpeedTraitTests` asserts the rule directly, and was checked by removing a trait and watching
 it name the class.
 
-What the split does not buy is a faster full run: the slow half alone is 5m36s against the whole suite's
-5m40s. Wall clock for everything is unchanged, and the only lever left on it is parallelism. Every class
-sits in one xUnit collection today, which serialises the lot; the shared fixture is read-only for every
-test that touches it, so collections could run in parallel, but the best case is bounded by StagedBulkTests
-at 125 seconds and the instance survey walks a database list that other collections would be creating and
-dropping underneath it. Not attempted.
+**And then the profiling below removed the cliff, which is worth recording because it changes how this
+section reads.** Fixing the row detail fetch took the suite to 209 seconds across 121 tests, and the
+distribution is now a plateau rather than a drop: the largest class is `CollationEmitTests` at 25 seconds,
+`StagedBulkTests` fell from 125 to 17, and `LargePlanTests` left the top ten entirely. What is left in the
+slow half is almost entirely the cost of creating a scratch database and applying a script to it, spread
+evenly over seventeen classes.
 
-**What the measurement turned up that is not a test problem.** `LargePlanTests` writes nothing — it streams
-1200 key/hash pairs and then fetches those 1200 rows — and costs 29 seconds. Database creation is not the
-cause; a bare `CREATE DATABASE` on this LocalDB is 78ms. What is left is the digest expression itself: every
-column goes through `CONCAT(N'|', DATALENGTH, N':', CONVERT(nvarchar(max), col))`, and the row detail fetch
-then matches 500 of those `nvarchar(max)` strings per query with `WHERE <expression> IN (…)`, which no index
-can help. 1200 rows should not cost 29 seconds, so the expression is worth profiling before anyone trusts
-the two-pass design at the scale it was written for. LocalDB cannot prove behaviour at real volume, but it
-has just produced a reason to look.
+The split still earns its keep — 5 seconds for 60 tests against 204 for the other 61 — but for a different
+reason than when it was drawn. It is no longer "one class dominates"; it is "everything that needs its own
+database costs about the same, and a lot of the suite does not need one."
 
+What the split does not buy is a faster full run — the slow half is essentially the whole suite. The
+remaining lever is parallelism, and it is more attractive now than it was: every class sits in one xUnit
+collection, which serialises the lot, and with no class over 25 seconds the ceiling is no longer set by one
+outlier. The shared fixture is read-only for every test that touches it, so collections could run in
+parallel. Two things still argue against it: each collection needs its own fixture instance unless the
+shared databases are made process-wide, and `InstanceSurveyTests` walks a database list that other
+collections would be creating and dropping underneath it. Not attempted.
+
+**What the measurement turned up, and it was not a test problem.** `LargePlanTests` writes nothing — it
+streams 1200 key/hash pairs and then fetches those 1200 rows — and cost 29 seconds. Profiling the phases
+put all of it in one place:
+
+```
+      0 ms  connection open
+    628 ms  SqlServerSchemaReader.ReadAsync (whole database)
+     43 ms  RowHashReader.StreamAsync (1200 rows)
+  27655 ms  RowDetailReader.FetchAsync (1200 rows, 3 batches)
+```
+
+So the digest expression was innocent: computing it for 1200 rows, hashing each one and sorting the lot
+under a binary collation costs 43ms. The whole 29 seconds was the row detail fetch, and the first guess
+about *why* was wrong too. It is not the `nvarchar(max)` type on its own, and it is not parameter binding —
+inlining the keys as literals was exactly as slow. Four shapes, same 500 keys, same 500 rows back:
+
+| predicate | ms |
+|---|---|
+| `WHERE <key expression> IN (@k0…@k499)` — as shipped | 17,531 |
+| the same, with the inner `CONVERT` bounded to `nvarchar(400)` | 293 |
+| the same, wrapped in `CONVERT(nvarchar(400), …)` on the outside | 15,934 |
+| `JOIN (VALUES (@k0), …) AS k ON k.[k] = <key expression>` | **54** |
+
+**An `IN` list expands to one comparison per element, and each comparison re-evaluates the expression on
+its left.** 1200 rows against 500 keys is 600,000 evaluations of an `nvarchar(max)` `CONCAT`. A join
+evaluates it once per row and hashes the result. That also explains the third row of the table: wrapping
+the outside changes the comparison's type but not how many times the LOB concatenation underneath it runs.
+
+The fix is the join. Bounding the expression would also have worked and was rejected: that expression
+*is* the key that identifies a row, and a key truncated at 400 characters silently addresses the wrong one.
+Nothing about the digest changed — only how it is compared. `FetchAsync` for 1200 keys went from 27.7
+seconds to 91ms, and the whole SqlServer suite from 5m31s to 3m26s, since every test that moves rows was
+paying this.
+
+Two things follow. A table value constructor accepts at most 1000 rows, so `KeysPerQuery` can no longer be
+raised past that without changing the shape again — it is 500. And the keys are deduplicated before the
+join, because a join returns a row per matching entry where `IN` returned it once; the compare side always
+had a set, but nothing in the signature said so.
+
+The general lesson is worth keeping, because it was nearly missed twice: **this was found by measuring, and
+both hypotheses formed before measuring were wrong.** The suspect was the digest expression, which turned
+out to cost 43ms, and then the LOB type, which turned out to be a distant second to the predicate shape.
 ## Build order
 
 1. **Done.** Solution skeleton + Core model & diff engine + unit tests (no DB).
