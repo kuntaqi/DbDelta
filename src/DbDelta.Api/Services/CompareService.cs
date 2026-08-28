@@ -187,6 +187,86 @@ public sealed class CompareService
             script.Steps.Select(s => s.Sql).ToList());
     }
 
+    // What building the script would come to, answered without building it. The two halves are not equally
+    // knowable: the schema half is emitted here and measured exactly, because that is string building over
+    // schemas already in memory and costs no database access at all. The data half is a range, because its
+    // size depends on how many rows differ and only the two-pass compare establishes that.
+    //
+    // One database round trip, for the row counts. Building the script for real can be minutes of fetching.
+    public async Task<PlanEstimateResponse> EstimateAsync(
+        CompareSession session,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var closure = SchemaSelectionService.Closure(session);
+        var schemaBytes = System.Text.Encoding.UTF8.GetByteCount(
+            new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection).ToSql());
+
+        var volume = session.DataSelections.Count == 0
+            ? null
+            : await _provider.CreateVolumeReader(session.SourceConnectionString)
+                .ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        var target = session.DataSelections.Count == 0
+            ? null
+            : await _provider.CreateVolumeReader(session.TargetConnectionString)
+                .ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        var estimate = PlanSizeEstimator.Estimate(
+            session.DataSelections.Select(pair => Input(session, pair.Key, pair.Value, volume, target)),
+            schemaBytes,
+            _safety.MaxInlineTableBytes,
+            _safety.MaxReviewableScriptBytes);
+
+        return new PlanEstimateResponse(
+            estimate.SchemaBytes,
+            estimate.MinBytes,
+            estimate.MaxBytes,
+            estimate.MinRows,
+            estimate.MaxRows,
+            estimate.TablesCounted,
+            estimate.TablesNotScanned,
+            estimate.RowsAreExact,
+            estimate.Verdict.ToString(),
+            _safety.MaxReviewableScriptBytes,
+            estimate.Notes);
+    }
+
+    private static TableSizeInput Input(
+        CompareSession session,
+        ObjectIdentity table,
+        DataSelection selection,
+        DatabaseVolume? source,
+        DatabaseVolume? target)
+    {
+        var left = source?.Tables.FirstOrDefault(t => t.Table == table);
+        var right = target?.Tables.FirstOrDefault(t => t.Table == table);
+
+        // Width from the data pages alone. TotalBytes carries the indexes as well, and an index does not
+        // become text in a script.
+        var rows = Math.Max(1, left?.RowCount ?? 1);
+        var bytesPerRow = (left?.DataBytes ?? 0) / rows;
+
+        var scan = session.Scan.GetValueOrDefault(table.QualifiedName);
+
+        // Top N is its own ceiling: the compare never looks past that many source rows, so neither can the
+        // number written. A filter has no knowable ceiling short of running it.
+        var sourceRows = selection.Mode == TableDataMode.TopN
+            ? Math.Min(selection.TopCount, left?.RowCount ?? 0)
+            : left?.RowCount ?? 0;
+
+        return new TableSizeInput(
+            table.QualifiedName,
+            Scanned: scan is { Comparable: true },
+            Differs: scan?.Differs ?? false,
+            // Narrowed to particular rows is the one case where the count is a pick rather than a guess.
+            ExactRows: selection.Rows?.Count,
+            sourceRows,
+            right?.RowCount ?? 0,
+            bytesPerRow);
+    }
+
     public async Task<BuiltScript> ScriptAsync(
         CompareSession session,
         DataCompareService data,

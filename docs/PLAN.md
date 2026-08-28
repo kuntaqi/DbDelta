@@ -939,6 +939,49 @@ not a mockup, not a test fixture, not a doc. The tests here assert *containment*
 databases are present, the system databases are not) and never the whole list, for the same reason.
 
 
+
+### Estimating the script before building it, and the false floor that first produced
+
+`ExceedsReviewableSize` was answered the wrong way round: assemble the whole script, measure the string,
+set a flag. Correct as reporting and useless as a decision, because by then the expensive part has already
+happened — building a plan of fifty tables fetches every changed row out of both databases first. It was
+also never displayed, so a script past the limit read exactly like one under it. Both are fixed: the plan
+screen shows the measured answer, and the data screen can ask for an estimate beforehand.
+
+The two halves of a script are not equally knowable, and the estimate does not pretend otherwise:
+
+**The schema half is measured, not estimated.** Emitting DDL is string building over schemas already in
+memory with no database access at all, so the estimate simply emits it and counts the bytes. Verified
+against the demo pair: estimate 3,884 bytes, actual 3,884 bytes, and it is the small half anyway — 390
+objects came to 152 KB against a real database.
+
+**The data half is a range**, because two separate things about it are unknown. How many rows differ is
+unknown until they are compared; the scan says only *whether* a table differs. And how wide a row is as SQL
+is approximated from how wide it is on disk, which is loose in both directions — numbers written as text are
+wider than their binary form, unicode text is narrower because the page holds two bytes per character, and
+the measurement carries page slack that overstates narrow rows.
+
+Staging is what keeps the upper bound worth printing. Past a threshold a table's rows leave the script
+entirely, so each table contributes at most that threshold however many rows it holds — otherwise the
+ceiling would be "every row of every picked table" and useless.
+
+#### The first version reported a floor above the truth
+
+It composed only the row uncertainty and treated the width as a known quantity times a fudge factor. Against
+the demo pair it reported **210 KB to 232 KB for a script that came out at 81 KB**. The row count was right
+— 1,200 rows really were inserted — and the width was nearly three times too high.
+
+A minimum above the actual value is not a cautious estimate, it is a false statement, and it would have sent
+someone narrowing a plan that was already fine. The fix is that the range has to compose *both*
+uncertainties: the floor takes the fewest rows at the narrowest plausible width, the ceiling takes the most
+rows at the widest. Re-measured on the same plan: **56 KB to 233 KB against an actual 81 KB**, which
+contains it. Wide, and honestly wide — the notes on the response say why rather than leaving the figures to
+imply precision they do not have.
+
+One consequence worth keeping. `RowsAreExact` is deliberately about the rows and not the bytes: narrowing a
+table to a row list makes the count exact, and says nothing about how wide those rows are. An earlier
+`IsExact` claimed both and was the same error in miniature.
+
 ### Comparing two instances, and the assumption that nearly made it useless
 
 Surveying one instance answers "what is on this server". Comparing two answers "what does this server have

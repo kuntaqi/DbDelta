@@ -80,6 +80,15 @@ export function PlanScreen({
             Generated script
             <span className="plain rt">
               {script.stepCount} steps &middot; {(script.byteSize / 1024).toFixed(1)} kB
+              {/* Computed since the beginning and never shown, so a script past the reviewable limit read
+                  exactly like one under it. The data screen estimates this before the build; this is the
+                  measured answer. */}
+              {script.exceedsReviewableSize && (
+                <>
+                  {' '}
+                  <span className="badge prod">too large to review here</span>
+                </>
+              )}
             </span>
           </div>
           <div className="codewrap" style={{ maxHeight: 420, overflowY: 'auto' }}>

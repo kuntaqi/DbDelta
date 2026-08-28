@@ -158,6 +158,27 @@ export const api = {
     return (await response.json()) as ObjectDetail
   },
   script: (compareId: string) => post<ScriptResponse>(`/api/compare/${compareId}/script`, {}),
+  // Before the script rather than after it: building one can be minutes of fetching rows, this is one
+  // round trip for the row counts.
+  estimate: async (compareId: string) => {
+    const response = await fetch(`/api/compare/${compareId}/estimate`)
+    if (!response.ok) throw new Error(await readError(response))
+    return (await response.json()) as PlanEstimateResponse
+  },
+}
+
+export interface PlanEstimateResponse {
+  schemaBytes: number
+  minBytes: number
+  maxBytes: number
+  minRows: number
+  maxRows: number
+  tables: number
+  tablesNotScanned: number
+  rowsAreExact: boolean
+  verdict: 'Within' | 'Possibly' | 'Exceeds'
+  reviewableLimitBytes: number
+  notes: string[]
 }
 
 export interface ApplyResponse {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  api,
   dataApi,
   formatBytes,
   planApi,
@@ -13,6 +14,7 @@ import {
   type TableDataMode,
   type TableRow,
   type VolumeSummary,
+  type PlanEstimateResponse,
 } from './api'
 
 const MODES: { value: TableDataMode; label: string }[] = [
@@ -58,6 +60,7 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
   const [scanLimitMb, setScanLimitMb] = useState(200)
   const [keyChoice, setKeyChoice] = useState<KeyChoiceResponse | null>(null)
   const [draftKey, setDraftKey] = useState<string[]>([])
+  const [estimate, setEstimate] = useState<PlanEstimateResponse | null>(null)
 
   async function run<T>(action: () => Promise<T>, then: (value: T) => void) {
     setBusy(true)
@@ -578,6 +581,57 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
                   </div>
                 )}
 
+                {estimate && (
+                  <div className={`warnline ${estimate.verdict === 'Within' ? 'info' : 'warn'}`}>
+                    <span className="g">{estimate.verdict === 'Within' ? '◇' : '!'}</span>
+                    <div>
+                      <b>
+                        {estimate.rowsAreExact
+                          ? `This plan would produce ${formatBytes(estimate.maxBytes)}.`
+                          : `This plan would produce between ${formatBytes(estimate.minBytes)} and ${formatBytes(estimate.maxBytes)}.`}
+                      </b>{' '}
+                      {formatBytes(estimate.schemaBytes)} of that is schema, measured rather than estimated.
+                      {estimate.tables > 0 && (
+                        <>
+                          {' '}
+                          {estimate.minRows === estimate.maxRows
+                            ? `${estimate.maxRows.toLocaleString()} row(s)`
+                            : `Between ${estimate.minRows.toLocaleString()} and ${estimate.maxRows.toLocaleString()} rows`}{' '}
+                          would move across {estimate.tables} table(s).
+                        </>
+                      )}
+                      {estimate.verdict === 'Exceeds' && (
+                        <>
+                          {' '}
+                          <b>
+                            That is past the {formatBytes(estimate.reviewableLimitBytes)} reviewable limit even
+                            at the low end.
+                          </b>{' '}
+                          Narrow the plan, or download the script instead of reading it here.
+                        </>
+                      )}
+                      {estimate.verdict === 'Possibly' && (
+                        <>
+                          {' '}
+                          <b>
+                            The high end is past the {formatBytes(estimate.reviewableLimitBytes)} reviewable
+                            limit.
+                          </b>{' '}
+                          Whether it gets there depends on how many rows actually differ, which only comparing
+                          them establishes.
+                        </>
+                      )}
+                      <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                        {estimate.notes.map((note) => (
+                          <li key={note} style={{ fontSize: 11.5 }}>
+                            {note}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
                 {result && (
                   <div className="tiles">
                     <div className="tile">
@@ -708,6 +762,16 @@ export function DataScreen({ comparison }: { comparison: CompareResponse }) {
             : `${inPlan.length} table(s) of data in the plan: ${inPlan.map((s) => s.table).join(', ')}`}
         </span>
         <span className="push" />
+        {/* Before building the script rather than after it. Building one fetches every changed row from
+            both databases, which is minutes on a large plan; this is one round trip for the row counts. */}
+        <button
+          type="button"
+          className="chip"
+          disabled={busy}
+          onClick={() => run(() => api.estimate(comparison.id), setEstimate)}
+        >
+          Estimate the script
+        </button>
         {selected && selected.hasKey && selected.onBothSides && (
           <button
             type="button"

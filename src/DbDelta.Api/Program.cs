@@ -208,6 +208,19 @@ api.MapGet("/compare/{id}/objects/{objectId}", (
     return detail is null ? Results.NotFound() : Results.Ok(detail);
 });
 
+// Before the script, not after it. Building one can be minutes of fetching rows; this is one round trip.
+api.MapGet("/compare/{id}/estimate", async (
+    string id,
+    CompareService service,
+    CompareSessionStore sessions,
+    CancellationToken cancellationToken) =>
+{
+    var session = sessions.Find(id);
+    return session is null
+        ? Results.NotFound()
+        : Results.Ok(await service.EstimateAsync(session, cancellationToken));
+});
+
 api.MapPost("/compare/{id}/script", async (
     string id,
     ScriptRequest request,
