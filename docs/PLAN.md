@@ -470,9 +470,9 @@ hand-written parser would — so `Segment Segment AND AND` passes the validator 
 
 Three consequences worth stating:
 
-- **Functions are refused, including harmless ones.** `At > DATEADD(day, -7, GETDATE())` does not pass. That
-  is a real loss, and the way back is an allowlist of provably side-effect-free built-ins rather than a
-  general exception. A date literal covers most of what it was wanted for.
+- **A short list of functions is accepted, and the list is drawn by determinism rather than by safety.**
+  `YEAR(CreatedOn) = 2026` and `LEN(Name) > 5` pass; `At > DATEADD(day, -7, GETDATE())` still does not, and
+  for two separate reasons worth keeping apart. See *The filter allowlist* below.
 - **The columns checked against are the ones on both sides.** A predicate naming a source-only column would
   pass a source-side check and fail on the target, which is a worse way to find out.
 - **The refusal names what is available.** An unknown identifier is far more often a typo than an attack, so
@@ -480,6 +480,48 @@ Three consequences worth stating:
 
 The control commits on a button or Enter rather than on each keystroke: a predicate is not usable half typed,
 and comparing per character would run a query per character and show an error for every unfinished word.
+
+
+### The filter allowlist, and why determinism decided it rather than safety
+
+Refusing every function was the safe first answer and a real loss: `YEAR(CreatedOn) = 2026` is an ordinary
+thing to want. Widening it turned out to involve two hazards that pull in different directions, and only one
+of them is about security.
+
+**The security one is already handled, and not by the allowlist.** A scalar user-defined function in T-SQL
+must be schema-qualified, and this alphabet has never accepted a dot outside a number — so `dbo.Sneaky(x)`
+fails on `dbo` being an unknown identifier, before any function list is consulted. SQL Server enforces the
+same rule from its own side, which is worth quoting because it is the load-bearing fact: an unqualified name
+gets *"'Sneaky' is not a recognized built-in function name."* Verified against a real server with a real UDF.
+So permitting unqualified names cannot reach user code, and the list does not have to carry that weight.
+
+**The hazard that is this tool's own is determinism**, and it does not exist anywhere else in the design. A
+predicate is embedded into *two* queries, against two databases, on two connections, at two moments. Anything
+answering differently between them selects a different set of rows on each side — and the merge join reads
+that difference as rows inserted and deleted when nothing changed. `GETDATE()` is the obvious one.
+`DB_NAME()` is the sharper one: the two sides are *always* different databases, so it is guaranteed to
+disagree. `FORMAT` depends on the connection's culture. Each of those is refused by name, with the reason:
+
+> `'DB_NAME'` cannot be used in a filter because it answers with the database it is asked in, and the two
+> sides are different databases. The predicate is run once against each database, on separate connections, so
+> anything that answers differently between the two makes the comparison read rows as inserted and deleted
+> when nothing changed.
+
+**Where the list stops is a principle, not a cut-off.** It holds only functions every argument of which is
+an ordinary expression. `DATEADD(day, -1, x)`, `DATEPART(year, x)` and `CAST(x AS INT)` each take a bare word
+that is neither a column nor a literal, so admitting them would mean teaching the alphabet to accept words
+that are not columns — which is the one thing this check exists not to do. They stay out until the alphabet
+grows a category for them deliberately, and the refusal says exactly that rather than implying the functions
+are dangerous.
+
+Two smaller decisions fell out of it. A name only counts as a function where one is being called, so a bare
+`LEN` is still an identifier that is not a column — and the message says so specifically rather than listing
+columns. And a column is checked before the function list, because a table is entitled to a column called
+`Year` or `Left`, and reading the word as a function would refuse a filter over a column that exists.
+
+Verified end to end against the demo data: `YEAR(At) = 2026`, `LEN(Label) > 6`, `UPPER(Label) LIKE 'ROW 1%'`,
+`ABS(Amount) > 1000` and the nested `LEN(LTRIM(Label)) > 6` all run and return differing counts, while the
+clock, identity, external-data and bare-word cases are each refused with their own reason.
 
 **Deletes must be suppressed whenever the row set is limited.** Under `All rows`, a row present on the
 target but absent from the source means *delete*. Under `Top N` it only means *outside the top 100* — so

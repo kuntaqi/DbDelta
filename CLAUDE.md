@@ -134,6 +134,14 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
 4. **`CREATE VIEW`/`PROCEDURE`/`FUNCTION`/`TRIGGER`/`SCHEMA` must each begin a T-SQL batch.** The script is
    deliberately one transaction with no `GO`, so these need `EXEC sp_executesql` wrapping. Also
    `DBCC CHECKIDENT … RESEED` after seeding any identity table.
+5. **A filter predicate is checked by alphabet, and its function allowlist is drawn by determinism.** The
+   predicate is embedded into two queries against two databases on two connections, so anything answering
+   differently between them — `GETDATE()`, `DB_NAME()`, `FORMAT` — makes the merge join report rows as
+   inserted and deleted when nothing changed. That, not injection, is why the list is short: reaching user
+   code is already impossible because a scalar UDF must be schema-qualified and the alphabet rejects a dot.
+   The list also holds only functions whose arguments are ordinary expressions, which is why `DATEADD`,
+   `DATEPART` and `CAST` are out — each takes a bare word that is not a column, and admitting one would mean
+   widening the alphabet. Don't add a name without checking it against both rules.
 
 ## Build order
 
