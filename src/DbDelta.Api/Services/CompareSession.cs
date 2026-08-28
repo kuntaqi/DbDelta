@@ -31,6 +31,14 @@ public sealed class CompareSession
     // moving rows is the heavier decision of the two, so it stays per-table rather than per-database.
     public Dictionary<ObjectIdentity, DataSelection> DataSelections { get; } = new();
 
+    // What the collation names in these two schemas actually mean, resolved once from the server. They
+    // cannot change while the session lasts, and every data operation needs them.
+    public Dictionary<string, CollationFact> CollationFacts { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // The whole-comparison collation picture, computed once against each table's declared key. A table
+    // whose key was chosen by hand afterwards is re-checked with that key when it is actually compared.
+    public List<CollationFinding> CollationFindings { get; } = [];
+
     // Which tables actually differ is not known until they are compared, so the result is kept for the
     // session rather than recomputed every time the screen opens.
     public Dictionary<string, Contracts.TableScanRow> Scan { get; } = new(StringComparer.OrdinalIgnoreCase);

@@ -173,3 +173,34 @@ USE DbDelta_Demo_Tgt;
 GO
 CREATE SEQUENCE dbo.TicketNumber AS INT START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE NO CYCLE;
 GO
+
+-- Collation: three columns that cover the three answers the precondition can give. Invoice.Amount is the
+-- same on both sides. Invoice.Reference differs only in name (Latin1_General_CI_AS against
+-- SQL_Latin1_General_CP1_CI_AS) and behaves identically, which is the case that used to raise an alarm
+-- for nothing. Invoice.Label differs in code page, which makes identical bytes hash differently and blocks
+-- the table's data compare outright.
+USE DbDelta_Demo_Src;
+GO
+CREATE TABLE dbo.Invoice (
+    InvoiceId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Invoice PRIMARY KEY,
+    Reference   VARCHAR(20) COLLATE Latin1_General_CI_AS NOT NULL,
+    Label       VARCHAR(40) COLLATE Latin1_General_CI_AS NOT NULL,
+    Amount      DECIMAL(18,2) NOT NULL
+);
+GO
+INSERT dbo.Invoice (Reference, Label, Amount) VALUES
+    ('REF-001', 'Opening balance', 1200.00),
+    ('REF-002', 'Adjustment', -35.50);
+GO
+USE DbDelta_Demo_Tgt;
+GO
+CREATE TABLE dbo.Invoice (
+    InvoiceId   INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Invoice PRIMARY KEY,
+    Reference   VARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    Label       VARCHAR(40) COLLATE Cyrillic_General_CI_AS NOT NULL,
+    Amount      DECIMAL(18,2) NOT NULL
+);
+GO
+INSERT dbo.Invoice (Reference, Label, Amount) VALUES
+    ('REF-001', 'Opening balance', 1200.00);
+GO

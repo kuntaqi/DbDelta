@@ -37,6 +37,9 @@ public sealed class SqlServerProvider : IDatabaseProvider
     public IKeyUniquenessChecker CreateKeyUniquenessChecker(string connectionString) =>
         new SqlServerKeyUniquenessChecker(connectionString);
 
+    public ICollationFactReader CreateCollationFactReader(string connectionString) =>
+        new SqlServerCollationFactReader(connectionString);
+
     public async Task<ServerInfo> ProbeAsync(
         string connectionString,
         CancellationToken cancellationToken = default)

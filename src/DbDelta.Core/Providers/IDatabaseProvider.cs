@@ -28,6 +28,10 @@ public interface IDatabaseProvider
 
     IKeyUniquenessChecker CreateKeyUniquenessChecker(string connectionString);
 
+    // Collation facts are a property of the server, not of a database, but they are asked through a
+    // connection because that is the only thing this interface has. Names in, meanings out.
+    ICollationFactReader CreateCollationFactReader(string connectionString);
+
     Task<ServerInfo> ProbeAsync(string connectionString, CancellationToken cancellationToken = default);
 
     // Server-level, not per-database: one connection answers for every database on the instance. A direct

@@ -542,12 +542,46 @@ before the view it selects from. Three mechanisms, in order of preference:
 sizing are DBA decisions, and a database created with the wrong collation is painful to undo. A missing
 database is reported, not provisioned. A database that exists but is empty is fine to work with.
 
-**Collation is checked, but as a warning rather than a precondition.** A target whose collation differs from
-the source changes string comparison and therefore changes the row hashes the data compare depends on. The
-mismatch is detected and surfaced — `CompareService` compares the two `DATABASEPROPERTYEX` values and adds a
-warning saying data compare results cannot be trusted — but it rides along with the schema comparison's other
-warnings and stops nothing. A data compare on a collation-mismatched pair still runs and still returns diffs.
-"Reported before any compare runs" is what this should be; today the person has to read the warning and decide.
+**Collation is a precondition, and the check is narrower than the name comparison it replaced.** The old
+version compared the two databases' `DATABASEPROPERTYEX` values and, if they differed, said data compare
+could not be trusted. Three things were wrong with that. It stopped nothing. It named no table or column,
+so there was nothing to act on. And it compared *names*: `Latin1_General_CI_AS` against
+`SQL_Latin1_General_CP1_CI_AS` is the commonest mismatch in the wild, the two behave identically, and the
+warning fired on it every time. A warning that is usually wrong and never blocking gets read once.
+
+So the question moved from the database to the column, and from the name to what the name means —
+`COLLATIONPROPERTY` gives the code page and the comparison style, asked once per comparison for the handful
+of distinct collations two schemas actually use. Of the columns a comparison reads, three cases arise and
+only two matter.
+
+*Code page, on a non-Unicode column — blocking.* The row hash converts each value to `nvarchar`, and that
+conversion decodes the stored bytes through the column's code page. Byte `0xE0` is `à` under 1252 and `а`
+under 1251, so identical bytes hash differently: the compare reports a difference that does not exist, and
+the update it proposes cannot round-trip, because a character the target's code page has no room for is
+stored as a question mark. Wrong in, wrong out, silent at both ends. `CollationTests` proves the hash
+divergence against a server rather than asserting it, because the rule is only worth as much as that claim.
+
+*Sensitivity, on a key column — blocking.* The merge join decides "same row" by comparing key text
+ordinally; the database decides it by its own collation. With one side case-insensitive and the other not,
+two source rows can be one target row: rows are reported missing that are not, and the inserts emitted for
+them collide with the target's own unique index.
+
+*Sensitivity, on any other compared column — advisory.* Values are hashed exactly, so nothing about this
+comparison changes. It is the target's own later comparisons that will behave differently, which is worth
+saying and worth nothing more.
+
+Anything else — different names, same code page, same sensitivity — produces no finding at all. A blocking
+finding stops that table's data compare where the missing key already does, as *not comparable* with the
+column and the reason; the schema compare is untouched, since collation differences are exactly what it
+exists to show. And when the database defaults differ while no compared column is affected, the compare
+screen says so in as many words, because otherwise the absence of a warning reads as the check not running.
+
+A column's collation is what makes this checkable at all, and `sys.columns.collation_name` reports the
+*effective* one — a column with no explicit `COLLATE` reports the database default it inherited. Nothing
+has to walk up to the database to find out. What is still missing is the other direction: the emitter does
+not write `COLLATE` per column, so a table it creates takes the target database's default whatever the
+source column said. For a compare that is fine, since the check above catches the consequence. For the
+"build a replica elsewhere" use case it is a real gap.
 
 ### FK map: a neighbourhood diagram, not an ER chart
 
@@ -871,19 +905,20 @@ the call site is missing — which is what makes them cheap and also what makes 
 
 | Idea | Where the design already lives | What is actually missing |
 |---|---|---|
-| Collation as a precondition | `CompareService` detects and warns | The warning stops nothing; a mismatched pair still compares data |
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
+| Per-column `COLLATE` in emitted DDL | The reader carries each column's effective collation | A created table takes the target database's default, whatever the source column said |
 
-Nothing left in this table is silent. Both closures, the drift check, the staged path, the filter,
-user-defined types and the constraints inside a table type are built, and every one of those was here
-because it could make the tool do the wrong thing quietly.
+Nothing left in this table is silent, and nothing left in it can make the tool write wrong data. Both
+closures, the drift check, the staged path, the filter, user-defined types, the constraints inside a table
+type, sequences and the collation precondition are built, and every one of those was here because it could
+make the tool do the wrong thing quietly.
 
-Four rows remain, and only one of them can affect what gets written: **collation is detected and warned
-about but does not stop a data compare**, so a mismatched pair still produces diffs whose row hashes cannot
-be trusted. The other three are absences rather than faults — row selection stops at the table by decision,
-`api.ts` is mirrored by hand, and the provider abstraction has never met a second engine.
+The four rows that remain are absences rather than faults: row selection stops at the table by decision,
+`api.ts` is mirrored by hand, the provider abstraction has never met a second engine, and emitted DDL does
+not carry per-column collation — which costs nothing for a comparison, since the precondition catches the
+consequence, and matters only for building a replica somewhere else.
 
 The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
 gaps.** The list of things found only because something was built beside them:
@@ -895,8 +930,19 @@ gaps.** The list of things found only because something was built beside them:
   and the plainest case of all: the plan listed the object and the script had nothing in it
 - a third collation on the very machine this is developed on, visible only once a screen existed that could
   show a whole instance at once
+- **a definition that does not begin with `CREATE`** — 209 of 2424 programmables across one real instance
+  open with a comment, and every one of them was emitted as a plain `CREATE` that fails on any target the
+  object already exists on. Its twin lived one layer down, in the comparer: SQL Server stores a
+  `CREATE OR ALTER` by blanking the `OR ALTER` into spaces, whitespace collapsing was the only reason that
+  ever compared clean, and an apostrophe in a leading comment stopped the collapsing
+- **a collation warning that fired on the one pair that did not matter** — the two names most likely to
+  differ in practice mean the same code page and the same sensitivity, so the check spent its credibility
+  where nothing was wrong and had none left for a code page difference, which is the case that silently
+  changes what gets written
 
 Every one of those was invisible while this section claimed to be complete. The pattern is worth naming: the
 gaps were not in the code that was being reviewed, they were in the *fixtures* — no sequence, no table-type
-constraint, no table with more than 500 changed rows. A gap that nothing exercises cannot be seen by reading,
-only by adding the case that would have failed.
+constraint, no table with more than 500 changed rows, no definition with a comment above it, no second code
+page. A gap that nothing exercises cannot be seen by reading, only by adding the case that would have failed.
+And the last two of those were not found by reading at all: they were found by pointing the tool at a real
+instance, where the fixtures' idea of normal stopped applying.

@@ -80,6 +80,17 @@ public sealed class DataCompareService
                 continue;
             }
 
+            // Re-checked here rather than read off the session, because the key may have been chosen by
+            // hand since the comparison and the key is half of what the answer depends on.
+            var collation = CollationPrecondition.Evaluate(
+                source, target, key, columns.ComparedColumns, session.CollationFacts);
+
+            if (CollationPrecondition.Blocks(collation))
+            {
+                rows.Add(new TableScanRow(name, false, CollationReason(collation), false, 0, 0));
+                continue;
+            }
+
             comparable.Add(new FingerprintRequest(source, key, columns.ComparedColumns));
         }
 
@@ -124,6 +135,19 @@ public sealed class DataCompareService
             rows.Count(r => r.Reason?.StartsWith("skipped", StringComparison.Ordinal) == true),
             maxTableBytes,
             rows);
+    }
+
+    // Names the column and says what about it, because "collation mismatch" on its own leaves the person
+    // to work out which of several columns and why — and the why decides whether the fix is a rebuild of
+    // the column or nothing at all.
+    private static string CollationReason(IReadOnlyList<CollationFinding> findings)
+    {
+        var blocking = findings.Where(f => f.Risk == CollationRisk.Blocking).ToList();
+        var first = blocking[0];
+        var rest = blocking.Count > 1 ? $" ({blocking.Count - 1} other column(s) too)" : string.Empty;
+
+        return $"collation: {first.Column} is {first.SourceCollation} on the source and "
+            + $"{first.TargetCollation} on the target — {first.Reason}{rest}";
     }
 
     public static TableScanResponse? CachedScan(CompareSession session)
@@ -644,6 +668,21 @@ public sealed class DataCompareService
         };
 
         var columns = ColumnSetResolver.Resolve(source, target, compareRequest);
+
+        // A precondition rather than a warning on the result: the numbers this would return are wrong, so
+        // returning them with a note above would be worse than returning nothing. Schema-only asks no
+        // question about values, so it is allowed through.
+        if (mode != TableDataMode.SchemaOnly)
+        {
+            var collation = CollationPrecondition.Evaluate(
+                source, target, key, columns.ComparedColumns, session.CollationFacts);
+
+            if (CollationPrecondition.Blocks(collation))
+            {
+                throw new InvalidOperationException(
+                    $"{request.Table} cannot have its data compared. {CollationReason(collation)}");
+            }
+        }
 
         if (mode == TableDataMode.SchemaOnly || !columns.CanCompare)
         {

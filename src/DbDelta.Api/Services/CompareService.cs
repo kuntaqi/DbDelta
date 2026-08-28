@@ -81,9 +81,69 @@ public sealed class CompareService
             ComparedAt = DateTimeOffset.UtcNow
         };
 
+        // Before anything can be compared, not as a note attached to the result. This is the whole point
+        // of the change: the collation question is answered while the pair is being established, so the
+        // data screens can refuse a table outright instead of showing numbers with a caveat above them.
+        foreach (var (name, fact) in await CollationFactsAsync(
+            sourceConnection, targetConnection, source, target, cancellationToken).ConfigureAwait(false))
+        {
+            session.CollationFacts[name] = fact;
+        }
+
+        session.CollationFindings.AddRange(
+            CollationPrecondition.EvaluateSchema(source, target, session.CollationFacts));
+
         _sessions.Add(session);
         return Describe(session);
     }
+
+    // Names from both schemas in one ask. The source is tried first because it answers for almost every
+    // name; the target is only asked about what came back unresolved, which happens when the two are
+    // different servers and one has a collation the other has never heard of.
+    private async Task<IReadOnlyDictionary<string, CollationFact>> CollationFactsAsync(
+        string sourceConnection,
+        string targetConnection,
+        DatabaseSchema source,
+        DatabaseSchema target,
+        CancellationToken cancellationToken)
+    {
+        var names = CollationNames(source).Concat(CollationNames(target))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (names.Count == 0)
+        {
+            return new Dictionary<string, CollationFact>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var facts = new Dictionary<string, CollationFact>(
+            await _provider.CreateCollationFactReader(sourceConnection).ReadAsync(names, cancellationToken)
+                .ConfigureAwait(false),
+            StringComparer.OrdinalIgnoreCase);
+
+        var missing = facts.Where(f => !f.Value.Resolved).Select(f => f.Key).ToList();
+
+        if (missing.Count > 0)
+        {
+            var second = await _provider.CreateCollationFactReader(targetConnection)
+                .ReadAsync(missing, cancellationToken).ConfigureAwait(false);
+
+            foreach (var (name, fact) in second.Where(f => f.Value.Resolved))
+            {
+                facts[name] = fact;
+            }
+        }
+
+        return facts;
+    }
+
+    private static IEnumerable<string> CollationNames(DatabaseSchema schema) =>
+        schema.Tables
+            .SelectMany(t => t.Columns)
+            .Select(c => c.Collation)
+            .Append(schema.Collation)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!);
 
     public CompareResponse Describe(CompareSession session)
     {
@@ -267,17 +327,54 @@ public sealed class CompareService
     {
         var warnings = new List<string>();
 
-        if (!string.Equals(session.Source.Collation, session.Target.Collation, StringComparison.OrdinalIgnoreCase))
-        {
-            warnings.Add(
-                $"Source is {session.Source.Collation} and target is {session.Target.Collation}. "
-                + "String comparison differs between them, so data compare results cannot be trusted until this is resolved.");
-        }
+        warnings.AddRange(CollationWarnings(session));
 
         warnings.AddRange(session.Source.ReadWarnings.Select(w => $"Source: {w}"));
         warnings.AddRange(session.Target.ReadWarnings.Select(w => $"Target: {w}"));
 
         return warnings;
+    }
+
+    // The database defaults differing is not the headline it used to be. What matters is whether any
+    // column this tool would read is affected, and the two questions have different answers often enough
+    // that reporting the first one taught people to skip the message.
+    private static IEnumerable<string> CollationWarnings(CompareSession session)
+    {
+        var blocked = session.CollationFindings
+            .Where(f => f.Risk == CollationRisk.Blocking)
+            .Select(f => f.Table.QualifiedName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (blocked.Count > 0)
+        {
+            var named = string.Join(", ", blocked.Take(5));
+            var rest = blocked.Count > 5 ? $", and {blocked.Count - 5} more" : string.Empty;
+
+            yield return $"{blocked.Count} table(s) cannot have their data compared because a collation "
+                + $"difference would change the answer: {named}{rest}. Schema compare is unaffected — open "
+                + "one of these tables on the data screen for the column and the reason.";
+        }
+
+        var advisory = session.CollationFindings.Count(f => f.Risk == CollationRisk.Advisory);
+
+        if (advisory > 0)
+        {
+            yield return $"{advisory} column(s) differ in case or accent sensitivity without affecting this "
+                + "comparison: values are matched exactly here, so the difference shows up in how the target "
+                + "behaves afterwards, not in what is compared now.";
+        }
+
+        // Saying so explicitly is the point. The defaults differing is the thing a person notices, and
+        // without this line the absence of a warning reads as the check not having run.
+        if (blocked.Count == 0
+            && !string.Equals(session.Source.Collation, session.Target.Collation, StringComparison.OrdinalIgnoreCase))
+        {
+            yield return $"The database collations differ — source {session.Source.Collation}, target "
+                + $"{session.Target.Collation} — but no column being compared is affected by it. Data compare "
+                + "is safe to run.";
+        }
     }
 
     private static IReadOnlyList<TypeCount> Counts(CompareSession session) =>
