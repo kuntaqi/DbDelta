@@ -6,14 +6,20 @@ internal static class TSqlWriter
 {
     private static readonly SqlServerQuoter Q = SqlServerQuoter.Instance;
 
-    public static string ColumnDefinition(ColumnDefinition column, bool includeDefault)
+    public static string ColumnDefinition(
+        ColumnDefinition column,
+        bool includeDefault,
+        string? databaseCollation = null)
     {
         if (column.ComputedExpression is not null)
         {
             return $"{Q.Quote(column.Name)} AS {column.ComputedExpression}";
         }
 
-        var text = $"{Q.Quote(column.Name)} {SqlTypeText.Declare(column.DataType)}";
+        // COLLATE belongs immediately after the type, ahead of IDENTITY and the nullability — which costs
+        // nothing here, since an identity column is never a string.
+        var text = $"{Q.Quote(column.Name)} {SqlTypeText.Declare(column.DataType)}"
+            + CollationClause(column, databaseCollation);
 
         if (column.Identity is not null)
         {
@@ -30,13 +36,45 @@ internal static class TSqlWriter
         return text;
     }
 
-    public static string CreateTable(TableDefinition table)
+    public static string CreateTable(TableDefinition table, string? databaseCollation = null)
     {
         var columns = table.Columns
             .OrderBy(c => c.OrdinalPosition)
-            .Select(c => "    " + ColumnDefinition(c, includeDefault: true));
+            .Select(c => "    " + ColumnDefinition(c, includeDefault: true, databaseCollation));
 
         return $"CREATE TABLE {Q.Qualify(table.Identity)} (\n{string.Join(",\n", columns)}\n);";
+    }
+
+    // A column takes the collation of the database it is created in unless the statement says otherwise,
+    // so the clause is written exactly when the source column would not get what it needs for free.
+    //
+    // Checked against a server rather than assumed, because the rule for ALTER is the one that could have
+    // gone either way: ALTER COLUMN with no COLLATE resets the column to the database default — it does
+    // not keep what the column already had. So omitting the clause is a statement about the result, not a
+    // saving on noise, and a script that omits it everywhere would quietly recollate half a database.
+    //
+    // Where the target's own default is unknown, the clause goes in regardless. Being verbose is a
+    // reviewing cost; being wrong is a data one.
+    private static string CollationClause(ColumnDefinition column, string? databaseCollation)
+    {
+        if (column.Collation is null
+            || (databaseCollation is not null
+                && string.Equals(column.Collation, databaseCollation, StringComparison.OrdinalIgnoreCase)))
+        {
+            return string.Empty;
+        }
+
+        // A collation name cannot be bracket-quoted the way an identifier can, so it goes into the
+        // statement as written. It comes from the server's own catalog, and this says so out loud rather
+        // than trusting that quietly.
+        if (!column.Collation.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+        {
+            throw new InvalidOperationException(
+                $"{column.Name} reports a collation that is not a plain name ({column.Collation}), and a "
+                + "collation cannot be quoted in T-SQL.");
+        }
+
+        return $" COLLATE {column.Collation}";
     }
 
     public static string AddPrimaryKey(ObjectIdentity table, PrimaryKeyDefinition key) =>
@@ -72,14 +110,22 @@ internal static class TSqlWriter
     public static string DropIndex(ObjectIdentity table, string name) =>
         $"DROP INDEX {Q.Quote(name)} ON {Q.Qualify(table)};";
 
-    public static string AddColumn(ObjectIdentity table, ColumnDefinition column) =>
-        $"ALTER TABLE {Q.Qualify(table)} ADD {ColumnDefinition(column, includeDefault: true)};";
+    public static string AddColumn(
+        ObjectIdentity table,
+        ColumnDefinition column,
+        string? databaseCollation = null) =>
+        $"ALTER TABLE {Q.Qualify(table)} ADD "
+        + $"{ColumnDefinition(column, includeDefault: true, databaseCollation)};";
 
     public static string DropColumn(ObjectIdentity table, string name) =>
         $"ALTER TABLE {Q.Qualify(table)} DROP COLUMN {Q.Quote(name)};";
 
-    public static string AlterColumn(ObjectIdentity table, ColumnDefinition column) =>
-        $"ALTER TABLE {Q.Qualify(table)} ALTER COLUMN {ColumnDefinition(column, includeDefault: false)};";
+    public static string AlterColumn(
+        ObjectIdentity table,
+        ColumnDefinition column,
+        string? databaseCollation = null) =>
+        $"ALTER TABLE {Q.Qualify(table)} ALTER COLUMN "
+        + $"{ColumnDefinition(column, includeDefault: false, databaseCollation)};";
 
     public static string AddCheckConstraint(ObjectIdentity table, CheckConstraintDefinition check) =>
         $"ALTER TABLE {Q.Qualify(table)} ADD CONSTRAINT {Q.Quote(check.Name)} CHECK {check.Expression};";

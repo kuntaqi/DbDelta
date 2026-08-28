@@ -67,11 +67,18 @@ public sealed class LocalDbFixture : IAsyncLifetime
     }
 
     // A database that exists but holds nothing, which is the provisioning case rather than a diff.
-    public async Task<string> CreateEmptyTargetAsync(string suffix)
+    //
+    // The collation is worth being able to set: everything on one LocalDB instance shares a default, so a
+    // fixture that never varies it cannot tell a script that reproduces the source's collations from one
+    // that silently takes the target's. That is the whole of the replica case.
+    public async Task<string> CreateEmptyTargetAsync(string suffix, string? collation = null)
     {
         var name = $"{TargetDatabase}_{suffix}";
         await DropAsync(name);
-        await ExecuteOnMasterAsync($"CREATE DATABASE [{name}];");
+
+        await ExecuteOnMasterAsync(
+            $"CREATE DATABASE [{name}]{(collation is null ? string.Empty : $" COLLATE {collation}")};");
+
         return ConnectionStringFor(name);
     }
 

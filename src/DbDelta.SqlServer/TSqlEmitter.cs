@@ -48,8 +48,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         EmitDrops(steps, changes, target);
         EmitTypes(steps, changes, source, target);
         EmitSequences(steps, changes, source);
-        EmitTableCreations(steps, changes, sourceTables, newTypes);
-        EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred);
+        EmitTableCreations(steps, changes, sourceTables, newTypes, target.Collation);
+        EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred, target.Collation);
         EmitProgrammables(steps, changes, source);
 
         return new SyncScript
@@ -121,11 +121,11 @@ public sealed class TSqlEmitter : IScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.CreateTypes,
                 $"create type {change.Identity.QualifiedName}",
-                CreateType(type)));
+                CreateType(type, target.Collation)));
         }
     }
 
-    private static string CreateType(UserDefinedTypeDefinition type)
+    private static string CreateType(UserDefinedTypeDefinition type, string? databaseCollation)
     {
         var name = SqlServerQuoter.Instance.Qualify(type.Identity);
 
@@ -137,7 +137,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             // put one. Passing the names through would produce a statement SQL Server refuses to parse.
             var parts = type.Columns
                 .OrderBy(c => c.OrdinalPosition)
-                .Select(c => "    " + TSqlWriter.ColumnDefinition(c, includeDefault: false)
+                .Select(c => "    " + TSqlWriter.ColumnDefinition(c, includeDefault: false, databaseCollation)
                     + (c.DefaultExpression is null ? string.Empty : $" DEFAULT {c.DefaultExpression}"))
                 .ToList();
 
@@ -307,7 +307,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         List<ScriptStep> steps,
         List<ObjectDiff> changes,
         Dictionary<ObjectIdentity, TableDefinition> sourceTables,
-        HashSet<ObjectIdentity> newTypes)
+        HashSet<ObjectIdentity> newTypes,
+        string? databaseCollation)
     {
         foreach (var change in changes.Where(c => c.Kind == DiffKind.SourceOnly && c.Identity.Type == ObjectType.Table))
         {
@@ -319,7 +320,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.CreateTables,
                 $"create table {table.Identity.QualifiedName}",
-                Batch(TSqlWriter.CreateTable(table), UsesNewType(table, newTypes))));
+                Batch(TSqlWriter.CreateTable(table, databaseCollation), UsesNewType(table, newTypes))));
 
             if (table.PrimaryKey is not null)
             {
@@ -368,7 +369,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         List<ObjectDiff> changes,
         Dictionary<ObjectIdentity, TableDefinition> sourceTables,
         Dictionary<ObjectIdentity, TableDefinition> targetTables,
-        HashSet<ObjectIdentity> deferred)
+        HashSet<ObjectIdentity> deferred,
+        string? databaseCollation)
     {
         foreach (var change in changes.Where(c => c.Kind == DiffKind.Different && c.Identity.Type == ObjectType.Table))
         {
@@ -387,7 +389,7 @@ public sealed class TSqlEmitter : IScriptEmitter
                 switch (child.Identity.Type)
                 {
                     case ObjectType.Column:
-                        EmitColumnChange(steps, child, table, source, target, rebuilt, defer);
+                        EmitColumnChange(steps, child, table, source, target, rebuilt, defer, databaseCollation);
                         break;
 
                     case ObjectType.Index:
@@ -421,7 +423,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         TableDefinition source,
         TableDefinition target,
         HashSet<string> rebuilt,
-        bool defer)
+        bool defer,
+        string? databaseCollation)
     {
         var name = child.Identity.Name;
 
@@ -446,7 +449,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             steps.Add(new ScriptStep(
                 ScriptPhase.AlterColumns,
                 $"add column {table.QualifiedName}.{name}",
-                TSqlWriter.AddColumn(table, column)));
+                TSqlWriter.AddColumn(table, column, databaseCollation)));
             return;
         }
 
@@ -479,7 +482,7 @@ public sealed class TSqlEmitter : IScriptEmitter
         steps.Add(new ScriptStep(
             ScriptPhase.AlterColumns,
             $"alter column {table.QualifiedName}.{name}",
-            TSqlWriter.AlterColumn(table, column)));
+            TSqlWriter.AlterColumn(table, column, databaseCollation)));
     }
 
     private static void EmitIndexChange(

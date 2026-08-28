@@ -578,10 +578,28 @@ screen says so in as many words, because otherwise the absence of a warning read
 
 A column's collation is what makes this checkable at all, and `sys.columns.collation_name` reports the
 *effective* one — a column with no explicit `COLLATE` reports the database default it inherited. Nothing
-has to walk up to the database to find out. What is still missing is the other direction: the emitter does
-not write `COLLATE` per column, so a table it creates takes the target database's default whatever the
-source column said. For a compare that is fine, since the check above catches the consequence. For the
-"build a replica elsewhere" use case it is a real gap.
+has to walk up to the database to find out.
+
+**And the emitter writes that collation back, which is what closes the loop.** A column takes the collation
+of the database it is created in unless the statement says otherwise, so a script that never writes
+`COLLATE` builds a replica whose text columns are all quietly recollated to the target's default. The clause
+now goes in exactly where the source column would not get what it needs for free — that is, wherever it
+differs from the *target* database's default — so the script reproduces the source without a `COLLATE` on
+every string column in it. Where the target's own default cannot be read, the clause goes in regardless:
+being verbose costs a reviewer, being wrong costs data.
+
+The rule for `ALTER COLUMN` is the one that could have gone either way, so it was checked rather than
+assumed: **`ALTER COLUMN` with no `COLLATE` resets the column to the database default — it does not keep
+what the column had.** Omitting the clause is therefore a statement about the result, not a saving on noise.
+It also means a collation difference is something this tool can *fix*: the same `ALTER COLUMN` that the
+schema compare offers is what unblocks a table the data precondition refused, and after applying it the
+refusal goes away on its own. Blocked, scripted, applied, comparable — the two halves are one feature.
+
+Table type columns get the same treatment, for the same reason and with the same failure mode.
+
+What none of this does is change a *database's* default collation, and it should not: that is a
+`CREATE DATABASE` decision, the tool does not create databases, and altering it on a live one is a rebuild
+rather than a setting.
 
 ### FK map: a neighbourhood diagram, not an ER chart
 
@@ -908,17 +926,15 @@ the call site is missing — which is what makes them cheap and also what makes 
 | Row-level selection, and data under `Database` scope | `SelectionScope.Row` exists in the cart model and the scope control is built | Selection stops at the table, by decision; scope covers the schema only, so neither reaches rows |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | `api.ts` is hand-maintained, so a contract change has to be mirrored twice |
 | PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
-| Per-column `COLLATE` in emitted DDL | The reader carries each column's effective collation | A created table takes the target database's default, whatever the source column said |
 
 Nothing left in this table is silent, and nothing left in it can make the tool write wrong data. Both
 closures, the drift check, the staged path, the filter, user-defined types, the constraints inside a table
-type, sequences and the collation precondition are built, and every one of those was here because it could
-make the tool do the wrong thing quietly.
+type, sequences, the collation precondition and per-column `COLLATE` in emitted DDL are built, and every
+one of those was here because it could make the tool do the wrong thing quietly.
 
-The four rows that remain are absences rather than faults: row selection stops at the table by decision,
-`api.ts` is mirrored by hand, the provider abstraction has never met a second engine, and emitted DDL does
-not carry per-column collation — which costs nothing for a comparison, since the precondition catches the
-consequence, and matters only for building a replica somewhere else.
+The three rows that remain are absences rather than faults: row selection stops at the table by decision,
+`api.ts` is mirrored by hand, and the provider abstraction has never met a second engine. None of them can
+produce a wrong answer or a wrong write — they are things the tool does not do, not things it does badly.
 
 The honest caveat, and it has now been earned twice over: **this is a claim about the gaps known to be
 gaps.** The list of things found only because something was built beside them:
@@ -939,10 +955,14 @@ gaps.** The list of things found only because something was built beside them:
   differ in practice mean the same code page and the same sensitivity, so the check spent its credibility
   where nothing was wrong and had none left for a code page difference, which is the case that silently
   changes what gets written
+- **every fixture database sharing one default collation** — a source and a target created on the same
+  instance produce identical columns whether or not the emitter writes `COLLATE`, so no test that compared
+  the two could tell that it never did. The fixture had to be able to vary the default before the gap was
+  even observable
 
 Every one of those was invisible while this section claimed to be complete. The pattern is worth naming: the
 gaps were not in the code that was being reviewed, they were in the *fixtures* — no sequence, no table-type
-constraint, no table with more than 500 changed rows, no definition with a comment above it, no second code
-page. A gap that nothing exercises cannot be seen by reading, only by adding the case that would have failed.
-And the last two of those were not found by reading at all: they were found by pointing the tool at a real
-instance, where the fixtures' idea of normal stopped applying.
+constraint, no table with more than 500 changed rows, no definition with a comment above it, no second
+code page, no second database default. A gap that nothing exercises cannot be seen by reading, only by
+adding the case that would have failed. Two of those were not found by reading at all: they were found by
+pointing the tool at a real instance, where the fixtures' idea of normal stopped applying.
