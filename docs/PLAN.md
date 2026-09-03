@@ -944,6 +944,17 @@ had a set, but nothing in the signature said so.
 The general lesson is worth keeping, because it was nearly missed twice: **this was found by measuring, and
 both hypotheses formed before measuring were wrong.** The suspect was the digest expression, which turned
 out to cost 43ms, and then the LOB type, which turned out to be a distant second to the predicate shape.
+## Known defects
+
+- **Non-rowstore indexes are emitted as ordinary `CREATE INDEX`** —
+  [#1](https://github.com/kuntaqi/DbDelta/issues/1). `type_desc` is read but collapsed to a boolean
+  `IsClustered` in the reader, so `SPATIAL`, `XML` and the columnstore kinds all lose their identity
+  before the emitter sees them. A database holding a spatial index cannot be applied at all: the emit
+  fails with error 1978 and the whole transaction rolls back. Reproduced from scratch, not just observed
+  in the wild. Spatial DDL also needs `SET QUOTED_IDENTIFIER ON`, which the script prologue does not set.
+  Refusing to emit the index, and saying so, is preferable to writing a different kind of index — the same
+  posture as a keyless table waiting for a key.
+
 ## Build order
 
 1. **Done.** Solution skeleton + Core model & diff engine + unit tests (no DB).
