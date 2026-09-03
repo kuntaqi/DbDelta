@@ -955,6 +955,19 @@ out to cost 43ms, and then the LOB type, which turned out to be a distant second
   Refusing to emit the index, and saying so, is preferable to writing a different kind of index — the same
   posture as a keyless table waiting for a key.
 
+- **A narrowing `ALTER COLUMN` silently rewrites existing target data** —
+  [#4](https://github.com/kuntaqi/DbDelta/issues/4). `DECIMAL(18,4) → DECIMAL(18,2)` rounds every value,
+  `DATETIME2(7) → (0)` drops the fractional seconds and can move a timestamp forward, and the apply
+  reports **Committed** with `destructiveSteps` empty. A string narrowing happens to be safe only because
+  the server refuses it, so the protection is accidental rather than designed. After the apply the schemas
+  match, so a fresh compare says the databases agree — nothing records that values changed. This is also
+  the analysis the mockup's *Panel Strategy* item assumed already existed; it does not.
+
+- **A renamed view or routine is recreated under its old name** —
+  [#3](https://github.com/kuntaqi/DbDelta/issues/3). `sp_rename` updates `sys.objects.name` but not
+  `sys.sql_modules.definition`, so emitting the stored body creates the object under the name the body
+  carries. The apply reports success and the next compare never converges.
+
 ## Build order
 
 1. **Done.** Solution skeleton + Core model & diff engine + unit tests (no DB).

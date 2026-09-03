@@ -1105,9 +1105,12 @@
                 benar-benar dipakai untuk menimbang konsekuensi. Di kartu koneksi ia berarti satu query
                 katalog tambahan sebelum user meminta apa pun.</td></tr>
             <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>2</td>
-              <td class="txt"><b>Belum dikerjakan.</b> Emitter memang memilih strategi &mdash; mis. melebarkan
-                <span class="mono">NVARCHAR(20)</span> ke <span class="mono">(40)</span> lewat
-                <span class="mono">ALTER</span> tanpa rebuild &mdash; tapi tidak melaporkan alasannya ke UI.
+              <td class="txt"><b>Belum dikerjakan, dan lebih besar dari kelihatannya.</b> Catatan lama di
+                sini menyebut &ldquo;emitter memang memilih strategi, tapi tidak melaporkan alasannya&rdquo;.
+                Itu <b>tidak benar</b>: perubahan kolom selalu ditulis sebagai
+                <span class="mono">ALTER TABLE &hellip; ALTER COLUMN</span> polos &mdash; tidak ada
+                keputusan ALTER-versus-rebuild, tidak ada analisis apakah perubahannya kehilangan data. Jadi
+                ini bukan pekerjaan UI: analisisnya harus dibangun dulu, panelnya baru jadi keluarannya. Dan analisis itu punya nilai keamanan sendiri &mdash; tanpanya, penyempitan kolom menulis ulang data target secara diam-diam (isu #4).
                 Satu-satunya entri di daftar ini yang masih menganggur.</td></tr>
           </tbody>
         </table>
