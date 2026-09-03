@@ -1079,22 +1079,36 @@
   <section class="screen" id="gap">
     <div class="screen-head"><span class="screen-num">&mdash;</span><h2>Dirancang, tidak dibangun</h2></div>
     <p class="screen-note">Mockup pertama menggambar hal-hal berikut sebagai kenyataan. Tidak satu pun ada di
-      aplikasi. Dicatat di sini supaya dokumen ini tidak menjanjikan yang tidak dimiliki &mdash; desainnya
-      masih tercatat di <span class="mono">docs/PLAN.md</span> kalau nanti dikerjakan.</p>
+      aplikasi, dan dicatat di sini supaya dokumen ini tidak menjanjikan yang tidak dimiliki. Tapi
+      &ldquo;tidak ada&rdquo; punya dua sebab yang berbeda, dan membedakannya penting: sebagian
+      <strong>sudah diputuskan tidak dibangun</strong> karena ada cara lain yang dipilih &mdash; itu bukan
+      pekerjaan tertunda, dan tidak perlu dikerjakan kecuali keputusannya dicabut. Hanya yang bertanda
+      <strong>belum dikerjakan</strong> yang masih menganggur; desainnya ada di
+      <span class="mono">docs/PLAN.md</span>.</p>
+    <p class="screen-note">Daftar ini menyusut: dari sepuluh gagasan awal, <strong>tujuh sudah dibangun</strong>
+      &mdash; dependency closure, scope escalation, exclusion kelas satu, mode Filter, filter arah di FK map,
+      profil koneksi tersimpan (tanpa password), dan checkbox per baris. Tiga sisanya ada di bawah.</p>
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
         <span class="mono">gap ledger</span><span class="dim mono push">3 item</span></div>
       <div class="gridwrap">
         <table class="grid">
-          <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
+          <thead><tr><th>Gagasan</th><th>Layar</th><th>Status &amp; sebabnya</th></tr></thead>
           <tbody>
-            <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>4</td>
-              <td class="txt">Satu grid gabungan dengan kolom Change menggantikannya.</td></tr>
+            <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>3</td>
+              <td class="txt"><b>Diputuskan tidak dibangun.</b> Satu grid gabungan dengan kolom Change
+                menggantikannya, dan itu lebih baik: satu tempat untuk melihat seluruh perubahan sebuah
+                tabel, bukan tiga tab yang harus dibolak-balik.</td></tr>
             <tr><td class="txt"><b>Readout ukuran database</b> (Data / Log / Rows)</td><td>1</td>
-              <td class="txt">Ada per tabel di layar 3, tidak di kartu koneksi.</td></tr>
-            <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>3</td>
-              <td class="txt">Emitter memang memilih strategi, tapi tidak melaporkan alasannya ke UI.</td></tr>
+              <td class="txt"><b>Diputuskan tidak dibangun.</b> Ukuran ada per tabel di layar 3, tempat ia
+                benar-benar dipakai untuk menimbang konsekuensi. Di kartu koneksi ia berarti satu query
+                katalog tambahan sebelum user meminta apa pun.</td></tr>
+            <tr><td class="txt"><b>Panel Strategy</b> &mdash; &ldquo;ALTER aman, tanpa kehilangan data&rdquo;</td><td>2</td>
+              <td class="txt"><b>Belum dikerjakan.</b> Emitter memang memilih strategi &mdash; mis. melebarkan
+                <span class="mono">NVARCHAR(20)</span> ke <span class="mono">(40)</span> lewat
+                <span class="mono">ALTER</span> tanpa rebuild &mdash; tapi tidak melaporkan alasannya ke UI.
+                Satu-satunya entri di daftar ini yang masih menganggur.</td></tr>
           </tbody>
         </table>
       </div>
