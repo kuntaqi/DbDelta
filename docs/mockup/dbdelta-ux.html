@@ -703,7 +703,12 @@
     <div class="screen-head"><span class="screen-num">03</span><h2>Data compare</h2></div>
     <p class="screen-note">Kiri: daftar tabel dengan footprint, tombol scan, dan filter yang menyembunyikan
       tabel yang sama. Kanan: tabel terpilih dengan mode data, kartu angka, dan grid diff per sel.
-      Pemilihan untuk sync plan <strong>per tabel</strong>.</p>
+      Pemilihan untuk sync plan bisa <strong>per tabel</strong> atau <strong>per baris</strong> &mdash; grid
+      diff punya checkbox di tiap baris, dan tabel yang dipersempit begitu hanya membawa baris yang dicentang.
+      Penyempitan baris <strong>hanya berlaku di bawah mode All rows</strong>, dan di situ delete
+      <strong>tidak</strong> ditekan: kamu menyebut barisnya satu per satu, jadi baris delete yang dicentang
+      memang dihapus. Yang ditekan adalah delete di bawah <span class="mono">Top N</span> dan
+      <span class="mono">Filter</span>, karena di sana ketidakhadiran sebuah baris tidak membuktikan apa pun.</p>
     <div class="ask"><b>Kenapa scan itu tombol:</b> mengetahui tabel mana yang beda berarti membandingkan
       semuanya. Dengan checksum per tabel itu 4,4 detik untuk 165 tabel &mdash; cepat, tapi tetap kerja, dan
       tabel di atas batas ukuran dilaporkan sebagai dilewati, bukan disembunyikan.</div>
@@ -1079,14 +1084,11 @@
 
     <div class="app">
       <div class="app-bar"><span class="dots"><i></i><i></i><i></i></span>
-        <span class="mono">gap ledger</span><span class="dim mono push">4 item</span></div>
+        <span class="mono">gap ledger</span><span class="dim mono push">3 item</span></div>
       <div class="gridwrap">
         <table class="grid">
           <thead><tr><th>Gagasan</th><th>Layar</th><th>Kenapa belum</th></tr></thead>
           <tbody>
-            <tr><td class="txt"><b>Checkbox per baris</b> di grid data</td><td>4</td>
-              <td class="txt">Pemilihan berhenti di tingkat tabel, sesuai keputusan yang diambil. Scope
-                <span class="mono">Row</span> sudah didukung model cart.</td></tr>
             <tr><td class="txt"><b>Tab Inserts / Updates / Deletes</b></td><td>4</td>
               <td class="txt">Satu grid gabungan dengan kolom Change menggantikannya.</td></tr>
             <tr><td class="txt"><b>Readout ukuran database</b> (Data / Log / Rows)</td><td>1</td>
