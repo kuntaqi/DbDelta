@@ -485,10 +485,21 @@ public sealed class TSqlEmitter : IScriptEmitter
             }
         }
 
+        // A narrowing change is destructive even though it drops nothing: the server rounds DECIMAL scale
+        // and DATETIME2 precision without complaint, so left unflagged it would rewrite existing rows and
+        // report success. The verdict is type arithmetic over both sides, already known here.
+        var existing = target.Columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        var narrowing = existing is null
+            ? ColumnNarrowing.None
+            : NarrowingAnalyzer.Analyse(existing, column);
+
         steps.Add(new ScriptStep(
             ScriptPhase.AlterColumns,
-            $"alter column {table.QualifiedName}.{name}",
-            TSqlWriter.AlterColumn(table, column, databaseCollation)));
+            narrowing.LosesData
+                ? $"alter column {table.QualifiedName}.{name} — {narrowing.Reason}"
+                : $"alter column {table.QualifiedName}.{name}",
+            TSqlWriter.AlterColumn(table, column, databaseCollation),
+            Destructive: narrowing.LosesData));
     }
 
     private static void EmitIndexChange(

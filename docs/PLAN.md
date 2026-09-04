@@ -955,18 +955,45 @@ out to cost 43ms, and then the LOB type, which turned out to be a distant second
   Refusing to emit the index, and saying so, is preferable to writing a different kind of index — the same
   posture as a keyless table waiting for a key.
 
-- **A narrowing `ALTER COLUMN` silently rewrites existing target data** —
-  [#4](https://github.com/kuntaqi/DbDelta/issues/4). `DECIMAL(18,4) → DECIMAL(18,2)` rounds every value,
-  `DATETIME2(7) → (0)` drops the fractional seconds and can move a timestamp forward, and the apply
-  reports **Committed** with `destructiveSteps` empty. A string narrowing happens to be safe only because
-  the server refuses it, so the protection is accidental rather than designed. After the apply the schemas
-  match, so a fresh compare says the databases agree — nothing records that values changed. This is also
-  the analysis the mockup's *Panel Strategy* item assumed already existed; it does not.
-
 - **A renamed view or routine is recreated under its old name** —
   [#3](https://github.com/kuntaqi/DbDelta/issues/3). `sp_rename` updates `sys.objects.name` but not
   `sys.sql_modules.definition`, so emitting the stored body creates the object under the name the body
   carries. The apply reports success and the next compare never converges.
+
+### A narrowing column change is destructive, even though it drops nothing
+
+Closes [#4](https://github.com/kuntaqi/DbDelta/issues/4).
+
+The apply had four guards and none of them covered this: `ALTER COLUMN` from `DECIMAL(18,4)` to
+`DECIMAL(18,2)` rounds every value in the column, `DATETIME2(7)` to `(0)` drops the fractional seconds
+and can move a timestamp *forward* past a whole second, and the server reports success both times. Only the
+string case was safe, and only because SQL Server happens to refuse it — the protection was accidental
+rather than designed, and it covered the loud half while leaving the silent half open.
+
+`NarrowingAnalyzer` decides the question from the two types alone. That is the point: both sides are
+already known from the comparison, so the verdict costs nothing and is available *before* anything runs —
+no probe query, no round trip. It reports:
+
+- **length, precision or scale going down**, including `MAX` becoming a fixed size;
+- **a step down a numeric ladder** — `bigint → int → smallint → tinyint`, `float → real`;
+- **unicode to non-unicode**, which is a narrowing however much longer the target gets, because the risk
+  is the code page rather than the length;
+- **nullable becoming NOT NULL**, which fails on any existing NULL;
+- **a user-defined type on either side**, reported as needing a look rather than guessed at — an alias
+  type's width lives in its own definition, so nothing can be concluded from the reference.
+
+The emitter marks such a step `Destructive`, which puts it behind the same explicit consent as a drop, and
+carries the reason in the step's description so the gate can say *why* rather than just counting. The
+guard's wording changed with it: no longer "drop objects or columns" but "drop objects or columns, or
+change a column in a way that rewrites data already there".
+
+Two details worth keeping. The reason text distinguishes **the server will refuse this** from **the server
+will do it quietly**, because those need different reactions from whoever is reading. And a temporal type
+carries its fractional-seconds digits in `Precision`, not `Scale` — the reader puts them there so the
+type renders as `DATETIME2(3)` rather than `DATETIME2(23,3)`. A first version of the unit test built the
+type with `Scale` and passed for the wrong reason; the live repro then showed the precision branch firing
+with an "overflow" message, which is the wrong warning for a value that is being rounded. The test now
+uses the shape the reader actually produces.
 
 ## Build order
 

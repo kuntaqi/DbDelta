@@ -25,11 +25,14 @@ public static class ApplyGuards
         }
 
         // Drops are the irreversible part of a schema sync, so they need their own consent rather than
-        // riding along with everything else that was ticked.
+        // riding along with everything else that was ticked. A narrowing column change belongs here too:
+        // it drops nothing, but the server rounds decimal scale and datetime precision without refusing,
+        // so it rewrites existing rows while reporting success.
         if (context.DestructiveSteps.Count > 0 && !context.AllowDestructive)
         {
             blockers.Add(
-                $"{context.DestructiveSteps.Count} step(s) drop objects or columns. Acknowledge them explicitly to continue.");
+                $"{context.DestructiveSteps.Count} step(s) drop objects or columns, or change a column in a "
+                + "way that rewrites data already there. Acknowledge them explicitly to continue.");
         }
 
         return blockers;
