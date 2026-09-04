@@ -19,7 +19,7 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var databases = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+        var databases = await LocalDbFixture.WithQuietInstanceAsync(() => new SqlServerProvider()
             .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master")));
 
         var source = databases.Single(d => d.Name == LocalDbFixture.SourceDatabase);
@@ -39,7 +39,7 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var databases = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+        var databases = await LocalDbFixture.WithQuietInstanceAsync(() => new SqlServerProvider()
             .ListDatabasesAsync(LocalDbFixture.ConnectionStringFor("master")));
 
         Assert.DoesNotContain(databases, d =>
@@ -53,7 +53,7 @@ public sealed class InstanceSurveyTests
     {
         Skip.IfNot(_fixture.Available, $"LocalDB is not available: {_fixture.UnavailableReason}");
 
-        var detail = await Deadlocks.RetryingAsync(() => new SqlServerProvider()
+        var detail = await LocalDbFixture.WithQuietInstanceAsync(() => new SqlServerProvider()
             .DescribeDatabaseAsync(LocalDbFixture.ConnectionStringFor(LocalDbFixture.SourceDatabase)));
 
         // Checked against the schema reader rather than against numbers written here: two different queries

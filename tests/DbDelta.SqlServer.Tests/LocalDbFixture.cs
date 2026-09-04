@@ -221,12 +221,54 @@ public sealed class LocalDbFixture : IAsyncLifetime
             """);
     }
 
+    // Enumerating every database on the instance takes server-level metadata locks, and so does creating
+    // or dropping one — so the two collide, and the engine ends it either by picking a deadlock victim
+    // (1205) or by killing the losing session outright. An earlier version retried the first of those and
+    // was surprised by the second. Retrying is the wrong shape anyway: the collision only exists because
+    // the tests do both at once, never because the product does, so the fix is to stop doing both at once.
+    //
+    // Creates and drops take one slot each, so they still run beside each other — that parallelism is
+    // what makes the suite quick. An instance-wide read drains every slot, so it runs with the instance
+    // standing still. Every create and drop in the suite goes through ExecuteOnMasterAsync, which is what
+    // makes one gate enough.
+    private const int ChurnSlots = 8;
+    private static readonly SemaphoreSlim Churn = new(ChurnSlots, ChurnSlots);
+
+    // Reads the whole instance with nothing being created or dropped anywhere in the suite.
+    public static async Task<T> WithQuietInstanceAsync<T>(Func<Task<T>> read)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+
+        for (var slot = 0; slot < ChurnSlots; slot++)
+        {
+            await Churn.WaitAsync();
+        }
+
+        try
+        {
+            return await read();
+        }
+        finally
+        {
+            Churn.Release(ChurnSlots);
+        }
+    }
+
     private static async Task ExecuteOnMasterAsync(string sql)
     {
-        await using var connection = new SqlConnection(Master);
-        await connection.OpenAsync();
-        await using var command = new SqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
+        await Churn.WaitAsync();
+
+        try
+        {
+            await using var connection = new SqlConnection(Master);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(sql, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            Churn.Release();
+        }
     }
 
     private const string SourceScript = """

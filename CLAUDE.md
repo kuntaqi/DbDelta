@@ -228,8 +228,12 @@ patterns only recognise `*-DEV` / `*-UAT` / `*-PROD` and LocalDB.
   tests. The shared source and target pair is built once per process and reference-counted — do not give a
   collection its own fixture instance, and do not write to the shared pair from a test; anything that writes
   creates its own scratch database, and those names must stay unique across the whole suite. Two classes
-  enumerate every database on the instance and retry on deadlock (error 1205), because the collections
-  beside them are creating and dropping databases and both take server-level metadata locks.
+  enumerate every database on the instance, which takes the same server-level metadata locks as the `CREATE`
+  and `DROP DATABASE` going on in the collections beside them. Those reads run through
+  `LocalDbFixture.WithQuietInstanceAsync`, which holds the churn still for their duration rather than
+  retrying the collision — the retry it replaced caught error 1205 but not the other way the engine ends
+  the same conflict, which is killing the losing session. Every `CREATE`/`DROP DATABASE` the fixture issues
+  must go through `ExecuteOnMasterAsync` or the gate does not see it.
 - LocalDB caps a database at 10 GB and accepts local connections only, so volume behaviour at real
   scale cannot be proven here — only that the queries are correct.
 - Connection profiles live in `%APPDATA%\DbDelta\profiles.json`, never in the repo, and **store no

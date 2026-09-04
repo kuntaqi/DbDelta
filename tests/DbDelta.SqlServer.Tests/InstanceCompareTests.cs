@@ -142,14 +142,15 @@ public sealed class InstanceCompareTests
         }
     }
 
-    // Retried: this reads every database on the instance, which deadlocks against the CREATE and DROP
-    // DATABASE going on in the collections running beside it. See Deadlocks.
+    // Reads every database on the instance, which takes the same server-level locks as the CREATE and
+    // DROP DATABASE going on in the collections beside it. The gate holds those still for the duration
+    // rather than retrying the collision. See LocalDbFixture.WithQuietInstanceAsync.
     private static async Task<IReadOnlyList<Core.Model.DatabaseSummary>> ListAsync() =>
-        await Deadlocks.RetryingAsync(() => new SqlServerProvider().ListDatabasesAsync(
+        await LocalDbFixture.WithQuietInstanceAsync(() => new SqlServerProvider().ListDatabasesAsync(
             LocalDbFixture.ConnectionStringFor(LocalDbFixture.SourceDatabase)));
 
     private static async Task<Core.Model.DatabaseDetail> DescribeAsync(string database) =>
-        await Deadlocks.RetryingAsync(() => new SqlServerProvider().DescribeDatabaseAsync(
+        await LocalDbFixture.WithQuietInstanceAsync(() => new SqlServerProvider().DescribeDatabaseAsync(
             LocalDbFixture.ConnectionStringFor(database)));
 
     private static async Task ExecuteAsync(string connectionString, string sql)

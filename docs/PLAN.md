@@ -902,6 +902,32 @@ this. It can still face the user's version: somebody surveying an instance while
 would get error 1205 and a survey that failed with an unhelpful message. `ListDatabasesAsync` catches a
 permission error and not a deadlock. That is a genuine gap this exercise turned up and did not fix.
 
+**Twelve clean runs were not twelve hundred, and the retry turned out to cover only half the hazard.**
+Closes [#5](https://github.com/kuntaqi/DbDelta/issues/5). A later full run failed on
+`System_databases_are_left_out` with a different exception:
+
+> Cannot continue the execution because the session is in the kill state.
+
+Same collision, different ending. When the losing side is killed rather than chosen as a deadlock victim
+there is no 1205, so `when (ex.Number == 1205)` does not match and the test fails instead of retrying.
+Widening the predicate was the cheap answer. Removing the race was the better one, for the reason the
+paragraph above already gives: a hazard only the test harness can create is worth taking away rather than
+surviving, and every extra error number admitted to a retry predicate is a guess about engine behaviour
+this project has not established.
+
+xUnit has no way to say *this collection does not run beside that one* — `DisableParallelization` on a
+collection definition is a v3 feature and this is 2.9.3 — so the exclusion is a gate in the fixture
+instead. Eight slots; every `CREATE`/`DROP DATABASE` takes one, an instance-wide read drains all eight.
+Churn and surveys can no longer overlap, and nothing retries anything, so `Deadlocks` is gone rather than
+extended. It holds only as long as the writes stay funnelled through `ExecuteOnMasterAsync` — three call
+sites today — which is why that is written down in `CLAUDE.md` as a rule and not left to be noticed.
+
+**What it costs is not honestly measured yet.** The verifying run was 128 passed in 5m29s, but that machine
+was I/O saturated at the time and an earlier unrelated run on it took 35 minutes, so that number is mostly
+disk, not gate. What the gate itself adds is bounded by the duration of the two instance-wide reads and
+does not grow with load; the 25s figure from the split above is the number to compare against once there is
+a quiet machine to compare on.
+
 **What the measurement turned up, and it was not a test problem.** `LargePlanTests` writes nothing — it
 streams 1200 key/hash pairs and then fetches those 1200 rows — and cost 29 seconds. Profiling the phases
 put all of it in one place:
