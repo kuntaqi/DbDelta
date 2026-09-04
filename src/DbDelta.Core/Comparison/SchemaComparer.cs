@@ -274,7 +274,7 @@ public sealed class SchemaComparer
             var properties = new List<PropertyDiff>();
             AddEnum(properties, "Kind", src.Kind, tgt.Kind);
 
-            if (!SqlBodyNormalizer.AreEquivalent(src.Definition, tgt.Definition, _options.IgnoreWhitespaceInBodies))
+            if (!BodiesMatch(identity, src.Definition, tgt.Definition))
             {
                 properties.Add(new PropertyDiff("Definition", src.Definition, tgt.Definition));
             }
@@ -304,7 +304,7 @@ public sealed class SchemaComparer
             Add(properties, "Table", src.Table.QualifiedName, tgt.Table.QualifiedName);
             Add(properties, "Disabled", src.IsDisabled, tgt.IsDisabled);
 
-            if (!SqlBodyNormalizer.AreEquivalent(src.Definition, tgt.Definition, _options.IgnoreWhitespaceInBodies))
+            if (!BodiesMatch(identity, src.Definition, tgt.Definition))
             {
                 properties.Add(new PropertyDiff("Definition", src.Definition, tgt.Definition));
             }
@@ -415,13 +415,26 @@ public sealed class SchemaComparer
     {
         var properties = new List<PropertyDiff>();
 
-        if (!SqlBodyNormalizer.AreEquivalent(source, target, _options.IgnoreWhitespaceInBodies))
+        if (!BodiesMatch(identity, source, target))
         {
             properties.Add(new PropertyDiff("Definition", source, target));
         }
 
         return Result(identity, properties);
     }
+
+    // The name inside each stored CREATE is replaced by the catalog's before the two are compared. Left in,
+    // a renamed object could never converge: sp_rename leaves the old name in the body, so a source that
+    // says CREATE VIEW dbo.vOld and a target correctly created as dbo.v differ forever over a name that is
+    // no part of what either object does — and the two were already paired by the catalog name, so the
+    // header adds nothing to the question. It also settles brackets and a missing schema, which is the
+    // same false difference the blanked OR ALTER used to be. The reported PropertyDiff carries the raw
+    // definitions, so what the user reads is what the databases hold.
+    private bool BodiesMatch(ObjectIdentity identity, string source, string target) =>
+        SqlBodyNormalizer.AreEquivalent(
+            ProgrammableHeaderReader.WithCanonicalName(source, identity),
+            ProgrammableHeaderReader.WithCanonicalName(target, identity),
+            _options.IgnoreWhitespaceInBodies);
 
     private static ObjectDiff Result(ObjectIdentity identity, List<PropertyDiff> properties) =>
         new()

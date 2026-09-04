@@ -1,3 +1,4 @@
+using DbDelta.Core.Comparison;
 using DbDelta.Core.Model;
 
 namespace DbDelta.SqlServer;
@@ -181,7 +182,7 @@ internal static class TSqlWriter
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        var start = FirstStatement(definition);
+        var start = ProgrammableHeaderReader.FirstStatement(definition);
         const string create = "CREATE";
 
         if (start + create.Length > definition.Length
@@ -193,59 +194,6 @@ internal static class TSqlWriter
         var cut = start + create.Length;
 
         return string.Concat(definition.AsSpan(0, cut), " OR ALTER", definition.AsSpan(cut));
-    }
-
-    // Index of the first thing that is not whitespace or a comment. T-SQL block comments nest, so the
-    // depth is counted rather than scanning for the first "*/".
-    private static int FirstStatement(string text)
-    {
-        var i = 0;
-
-        while (i < text.Length)
-        {
-            if (char.IsWhiteSpace(text[i]))
-            {
-                i++;
-                continue;
-            }
-
-            if (i + 1 < text.Length && text[i] == '-' && text[i + 1] == '-')
-            {
-                var end = text.IndexOf('\n', i);
-                i = end < 0 ? text.Length : end + 1;
-                continue;
-            }
-
-            if (i + 1 < text.Length && text[i] == '/' && text[i + 1] == '*')
-            {
-                var depth = 1;
-                i += 2;
-
-                while (i < text.Length && depth > 0)
-                {
-                    if (i + 1 < text.Length && text[i] == '/' && text[i + 1] == '*')
-                    {
-                        depth++;
-                        i += 2;
-                    }
-                    else if (i + 1 < text.Length && text[i] == '*' && text[i + 1] == '/')
-                    {
-                        depth--;
-                        i += 2;
-                    }
-                    else
-                    {
-                        i++;
-                    }
-                }
-
-                continue;
-            }
-
-            break;
-        }
-
-        return i;
     }
 
     public static string ReseedIdentity(ObjectIdentity table, string column, long value) =>

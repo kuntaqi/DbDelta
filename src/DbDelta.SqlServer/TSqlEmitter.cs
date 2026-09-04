@@ -683,11 +683,46 @@ public sealed class TSqlEmitter : IScriptEmitter
                 continue;
             }
 
+            var (body, note) = WithCatalogName(definition, change.Identity);
+            var what = $"{change.Identity.Type.ToString().ToLowerInvariant()} {change.Identity.QualifiedName}";
+
             steps.Add(new ScriptStep(
                 ScriptPhase.Programmables,
-                $"{change.Identity.Type.ToString().ToLowerInvariant()} {change.Identity.QualifiedName}",
-                TSqlWriter.ExecuteAsBatch(TSqlWriter.CreateOrAlter(definition))));
+                note is null ? what : $"{what} — {note}",
+                TSqlWriter.ExecuteAsBatch(TSqlWriter.CreateOrAlter(body))));
         }
+    }
+
+    // sp_rename updates sys.objects.name and leaves sys.sql_modules.definition alone, so a renamed object's
+    // stored text says CREATE ... <old name> for the rest of its life. Emitting that verbatim creates the
+    // old name on the target: the apply reports success, the target holds an object nobody asked for, and
+    // no later compare can converge. The name is taken from the catalog the comparison was built from
+    // instead — which is also the only thing that fixes a header with no schema on it, where what the
+    // CREATE lands on depends on the default schema of whoever runs the script.
+    //
+    // Only the header is rewritten. A body can name itself elsewhere — a scripted comment header, a
+    // RAISERROR, a recursive EXEC — and those are deliberately left alone: the aim is a target object
+    // identical to the source object, and the source carries exactly the same stale text. A recursive call
+    // to the old name is already broken on the source, since nothing answers to that name there either.
+    private static (string Body, string? Note) WithCatalogName(string definition, ObjectIdentity identity)
+    {
+        var header = ProgrammableHeaderReader.Read(definition);
+
+        if (header is null)
+        {
+            return (definition, "the CREATE in the stored body was not recognised, so it is emitted as stored");
+        }
+
+        if (header.Names(identity))
+        {
+            return (definition, null);
+        }
+
+        var note = header.Schema is null
+            ? $"the stored body creates it unqualified as {header.Name}, so the schema is stated explicitly"
+            : $"the stored body still creates it as {header.Schema}.{header.Name}, so the name comes from the catalog";
+
+        return (header.ReplaceIn(definition, SqlServerQuoter.Instance.Qualify(identity)), note);
     }
 
     // Does any column name a type this script is creating? If so the statement cannot be compiled with

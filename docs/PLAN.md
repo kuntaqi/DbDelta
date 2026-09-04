@@ -981,10 +981,59 @@ out to cost 43ms, and then the LOB type, which turned out to be a distant second
   Refusing to emit the index, and saying so, is preferable to writing a different kind of index — the same
   posture as a keyless table waiting for a key.
 
-- **A renamed view or routine is recreated under its old name** —
-  [#3](https://github.com/kuntaqi/DbDelta/issues/3). `sp_rename` updates `sys.objects.name` but not
-  `sys.sql_modules.definition`, so emitting the stored body creates the object under the name the body
-  carries. The apply reports success and the next compare never converges.
+### An object's name comes from the catalog, not from the body that says it
+
+Closes [#3](https://github.com/kuntaqi/DbDelta/issues/3).
+
+`sp_rename` updates `sys.objects.name` and does not touch `sys.sql_modules.definition`, so a renamed view
+or routine says `CREATE ... <old name>` inside itself for the rest of its life. There is no flag for it —
+the disagreement between the two catalog views is the only evidence. Emitting the stored text created the
+*old* name on the target: the plan asked for two objects, two different ones appeared, and the apply
+reported success. That silence is what made it worse than the emit failures either side of it in this
+list; nothing said the target was now wrong.
+
+The name is taken from the identity the comparison was built from, rewritten into the same header the
+`CREATE OR ALTER` rewrite already had to find. **Only the header.** A body can name itself elsewhere — a
+scripted comment banner, a `RAISERROR`, a recursive `EXEC` — and those are left exactly as the source
+holds them, because the aim is a target object identical to the source object and the source carries the
+same stale text. A recursive call to the old name is already broken on the source, where nothing answers
+to that name either; reproducing that faithfully is right, and "fixing" it would invent a difference.
+
+The same rewrite closes a second hole that was never reported: a header with no schema on it. `CREATE VIEW
+vCategory` lands in the default schema of whoever runs the script, which need not be the schema the object
+sits in on the source, so an unqualified header counts as a disagreement and gets qualified.
+
+**Emitting the right name is only half of it, and the half that is easy to stop at.** The source body still
+says the old name, so a correctly created target and its source differ textually forever — the same
+non-convergence, now with the right object on the target. So the comparison stops reading names out of
+bodies: both sides' headers are canonicalised to their own catalog identity before the bodies are compared.
+That is not a fudge to make a test pass. The two objects were *already* paired by catalog name, so the
+header contributes nothing to "are these the same object", and nothing about either object's behaviour
+lives in it. It also settles two false differences that predate the rename case — brackets around the name
+(this tool brackets everything it emits; a hand-written body does not) and a missing schema — which are the
+same shape as the blanked `OR ALTER` the normalizer already had to absorb. The reported `PropertyDiff`
+still carries the raw definitions, so what a user reads is what the databases hold.
+
+Where the parser lives is a deliberate choice: `ProgrammableHeaderReader` sits in Core, beside
+`SqlBodyNormalizer`, because the two callers are on opposite sides of the provider boundary — the emitter
+writes the catalog name, the comparer stops caring about the body's — and Core cannot reference a provider.
+It is T-SQL-shaped text handling in an engine-neutral project, which the normalizer established already.
+
+It parses only as far as the name, and **anything it does not recognise comes back as unreadable**. Such a
+body is emitted as stored, which is the behaviour that existed before any of this, but its step says so
+instead of passing for an ordinary one. The reader also fails closed on a malformed header rather than
+inventing a name: `CREATE VIEW dbo.` would otherwise parse as an object called `AS`, so the words that can
+legally follow a name are refused as names. A server cannot store a definition that malformed — the guard
+is there so a body this tool cannot read is handed back as unreadable instead of quietly renamed.
+
+Verified against the reported repro on a real server, with each half switched off in turn to see which
+assertion catches it: without the emit rewrite the script says `CREATE OR ALTER VIEW dbo.vCategoryOld`,
+and without the comparison change the second compare reports `Different View dbo.vCategory` — the apply
+converging is the assertion that the second half exists for.
+
+One thing the report asked to check turned out not to apply. The drift check does re-read the target and
+run it through this same comparison, so it inherits the fix, but object *fingerprints* are a data-compare
+mechanism — `BINARY_CHECKSUM` over a table's rows — and no fingerprint covers a programmable's name.
 
 ### A narrowing column change is destructive, even though it drops nothing
 

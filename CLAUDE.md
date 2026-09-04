@@ -133,7 +133,12 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    derived from the selection on every read, never stored in it, so unticking removes what it alone required.
 4. **`CREATE VIEW`/`PROCEDURE`/`FUNCTION`/`TRIGGER`/`SCHEMA` must each begin a T-SQL batch.** The script is
    deliberately one transaction with no `GO`, so these need `EXEC sp_executesql` wrapping. Also
-   `DBCC CHECKIDENT … RESEED` after seeding any identity table.
+   `DBCC CHECKIDENT … RESEED` after seeding any identity table. And **the name a programmable is created
+   under comes from the catalog, never from its own body** — `sp_rename` leaves the old name in
+   `sys.sql_modules`, so the stored text lies about it for the rest of the object's life. The header is
+   rewritten and nothing else in the body is, and the comparison canonicalises the header name away on both
+   sides; either half alone leaves a compare that cannot converge. `ProgrammableHeaderReader` is in Core
+   because both halves need it and Core cannot reference a provider.
 5. **A filter predicate is checked by alphabet, and its function allowlist is drawn by determinism.** The
    predicate is embedded into two queries against two databases on two connections, so anything answering
    differently between them — `GETDATE()`, `DB_NAME()`, `FORMAT` — makes the merge join report rows as
