@@ -28,7 +28,7 @@ public sealed class SqlServerScriptExecutor : IScriptExecutor
 
         try
         {
-            await RunAsync(connection, transaction, "SET XACT_ABORT ON; SET NOCOUNT ON;", cancellationToken)
+            await RunAsync(connection, transaction, "SET XACT_ABORT ON; SET NOCOUNT ON; SET QUOTED_IDENTIFIER ON;", cancellationToken)
                 .ConfigureAwait(false);
 
             foreach (var step in script.Steps)

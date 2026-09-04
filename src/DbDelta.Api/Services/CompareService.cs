@@ -302,7 +302,8 @@ public sealed class CompareService
         var combined = new SyncScript
         {
             Header = script.Header,
-            Steps = steps.OrderBy(s => s.Phase).ToList()
+            Steps = steps.OrderBy(s => s.Phase).ToList(),
+            Refusals = script.Refusals
         };
 
         var sql = combined.ToSql();
@@ -316,7 +317,8 @@ public sealed class CompareService
             combined.Steps.Select(s => new StepDto(s.Phase.ToString(), s.Description, s.Sql, s.Destructive)).ToList(),
             rows.DeleteWarnings,
             closure.Required.Select(r => SchemaSelectionService.Required(session, r)).ToList(),
-            [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. SchemaSelectionService.Unsupported(session), .. rows.ClosureWarnings],
+            [.. closure.Unsatisfiable, .. closure.Blocked.Select(SchemaSelectionService.Conflict), .. rows.ClosureWarnings],
+            [.. SchemaSelectionService.Unsupported(session), .. combined.Refusals],
             rows.RequiredRows
                 .Select(r => new RequiredRowsDto(
                     r.Table.QualifiedName, r.RowCount, r.RequiredBy.QualifiedName, r.ForeignKeyName))

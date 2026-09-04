@@ -91,6 +91,19 @@ internal static class TSqlWriter
 
     public static string CreateIndex(ObjectIdentity table, IndexDefinition index)
     {
+        ArgumentNullException.ThrowIfNull(index);
+
+        return index.Kind switch
+        {
+            IndexKind.Columnstore => CreateColumnstoreIndex(table, index),
+            IndexKind.Xml => CreateXmlIndex(table, index),
+            IndexKind.Spatial => CreateSpatialIndex(table, index),
+            _ => CreateRowstoreIndex(table, index)
+        };
+    }
+
+    private static string CreateRowstoreIndex(ObjectIdentity table, IndexDefinition index)
+    {
         var text = index.IsUnique ? "CREATE UNIQUE " : "CREATE ";
         text += index.IsClustered ? "CLUSTERED INDEX " : "INDEX ";
         text += $"{Q.Quote(index.Name)} ON {Q.Qualify(table)} ({KeyColumns(index.Columns)})";
@@ -106,6 +119,73 @@ internal static class TSqlWriter
         }
 
         return text + ";";
+    }
+
+    // A clustered columnstore covers the whole table and its DDL names no columns — except an ordered one,
+    // whose ORDER list is the only thing it does state, which is why the reader puts exactly those columns
+    // on it and nothing else. A nonclustered one states the columns it holds; there is no ASC or DESC on
+    // any of it, because a columnstore has no key order beyond that ORDER clause.
+    private static string CreateColumnstoreIndex(ObjectIdentity table, IndexDefinition index)
+    {
+        if (index.IsClustered)
+        {
+            var order = index.Columns.Count == 0
+                ? string.Empty
+                : $" ORDER ({string.Join(", ", index.Columns.Select(c => Q.Quote(c.Name)))})";
+
+            return $"CREATE CLUSTERED COLUMNSTORE INDEX {Q.Quote(index.Name)} ON {Q.Qualify(table)}{order};";
+        }
+
+        var text = $"CREATE NONCLUSTERED COLUMNSTORE INDEX {Q.Quote(index.Name)} ON {Q.Qualify(table)} "
+            + $"({string.Join(", ", index.Columns.Select(c => Q.Quote(c.Name)))})";
+
+        if (index.FilterExpression is not null)
+        {
+            text += $" WHERE {index.FilterExpression}";
+        }
+
+        return text + ";";
+    }
+
+    private static string CreateXmlIndex(ObjectIdentity table, IndexDefinition index)
+    {
+        var column = Q.Quote(index.Columns[0].Name);
+
+        if (!string.Equals(index.Extras[XmlExtras.Kind], XmlExtras.Secondary, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"CREATE PRIMARY XML INDEX {Q.Quote(index.Name)} ON {Q.Qualify(table)} ({column});";
+        }
+
+        return $"CREATE XML INDEX {Q.Quote(index.Name)} ON {Q.Qualify(table)} ({column}) "
+            + $"USING XML INDEX {Q.Quote(index.Extras[XmlExtras.PrimaryIndex]!)} "
+            + $"FOR {index.Extras[XmlExtras.SecondaryType]};";
+    }
+
+    // GRIDS and BOUNDING_BOX are each carried only when the scheme has them: an AUTO_GRID scheme rejects
+    // a GRIDS clause, and only a geometry grid takes a bounding box — which it also requires.
+    private static string CreateSpatialIndex(ObjectIdentity table, IndexDefinition index)
+    {
+        var options = new List<string>();
+
+        if (index.Extras[SpatialExtras.BoundingBox] is { } box)
+        {
+            options.Add($"BOUNDING_BOX = ({box})");
+        }
+
+        if (index.Extras[SpatialExtras.Grids] is { } grids)
+        {
+            options.Add($"GRIDS = ({grids})");
+        }
+
+        if (index.Extras[SpatialExtras.CellsPerObject] is { } cells)
+        {
+            options.Add($"CELLS_PER_OBJECT = {cells}");
+        }
+
+        var text = $"CREATE SPATIAL INDEX {Q.Quote(index.Name)} ON {Q.Qualify(table)} "
+            + $"({Q.Quote(index.Columns[0].Name)}) USING {index.Extras[SpatialExtras.Scheme]}";
+
+        return options.Count == 0 ? text + ";" : $"{text} WITH ({string.Join(", ", options)});";
     }
 
     public static string DropIndex(ObjectIdentity table, string name) =>

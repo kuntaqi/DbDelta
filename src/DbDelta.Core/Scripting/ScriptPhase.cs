@@ -20,6 +20,9 @@ public enum ScriptPhase
     AlterColumns,
     Keys,
     Indexes,
+    // A secondary XML index names the primary it hangs off, so it cannot be created in the same phase:
+    // within a phase the order is whatever the diff happened to hand over, and a name decided that.
+    SecondaryIndexes,
     CheckConstraints,
     AddForeignKeys,
     // Child rows go before parents on the way out and after them on the way in, so deletes and

@@ -111,7 +111,7 @@ tests/DbDelta.SqlServer.Tests/  integration against LocalDB, skipped when it is 
 `Core` never references a provider package. The API is the only thing that touches a database — the SPA
 holds no credentials and issues no SQL.
 
-## The four ideas worth understanding before touching the design
+## The six ideas worth understanding before touching the design
 
 These are covered fully in `docs/PLAN.md`; they are listed here so their existence is not missed.
 
@@ -139,7 +139,17 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    rewritten and nothing else in the body is, and the comparison canonicalises the header name away on both
    sides; either half alone leaves a compare that cannot converge. `ProgrammableHeaderReader` is in Core
    because both halves need it and Core cannot reference a provider.
-5. **A filter predicate is checked by alphabet, and its function allowlist is drawn by determinism.** The
+5. **An index has a kind, and the kind decides the statement.** `IndexDefinition.Kind` comes from
+   `sys.indexes.type_desc`; clustering stays separate because a columnstore is either. Spatial and XML
+   indexes cannot be scripted from `sys.indexes` alone — the tessellation and the primary/secondary split
+   come from `sys.spatial_indexes`, `sys.spatial_index_tessellations` and `sys.xml_indexes` — and each
+   option is written **only when the catalog had it**, since an `AUTO_GRID` rejects `GRIDS` and only a
+   geometry grid takes a `BOUNDING_BOX`. A columnstore reports its columns as *included* columns with key
+   ordinal zero, which is why a nonclustered one reads them into `Columns` and a clustered one keeps none.
+   The prologue sets `QUOTED_IDENTIFIER ON` because spatial and XML DDL is refused without it. What cannot
+   be written is refused through `SyncScript.Refusals` and never as a no-op step, and `IndexEmitSupport` is
+   the single place that decides.
+6. **A filter predicate is checked by alphabet, and its function allowlist is drawn by determinism.** The
    predicate is embedded into two queries against two databases on two connections, so anything answering
    differently between them — `GETDATE()`, `DB_NAME()`, `FORMAT` — makes the merge join report rows as
    inserted and deleted when nothing changed. That, not injection, is why the list is short: reaching user

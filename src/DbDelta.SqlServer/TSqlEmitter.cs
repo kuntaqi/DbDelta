@@ -44,20 +44,47 @@ public sealed class TSqlEmitter : IScriptEmitter
             .Select(c => c.Identity)
             .ToHashSet();
 
+        var refusals = new List<string>();
+
         EmitSchemas(steps, changes);
         EmitDrops(steps, changes, target);
         EmitTypes(steps, changes, source, target);
         EmitSequences(steps, changes, source);
-        EmitTableCreations(steps, changes, sourceTables, newTypes, target.Collation);
-        EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred, target.Collation);
+        EmitTableCreations(steps, changes, sourceTables, newTypes, target.Collation, refusals);
+        EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred, target.Collation, refusals);
         EmitProgrammables(steps, changes, source);
 
         return new SyncScript
         {
             Header = $"-- DbDelta · {source.DatabaseName} -> {target.DatabaseName}\n"
                 + $"-- {changes.Count} object(s) changed",
-            Steps = steps.OrderBy(s => s.Phase).ToList()
+            Steps = steps.OrderBy(s => s.Phase).ToList(),
+            Refusals = refusals
         };
+    }
+
+    // One place decides whether an index can be written, so the answer cannot depend on which of the three
+    // paths reached it: creating a table, rebuilding the indexes a changed column depended on, or a
+    // changed index. A refusal is carried out of the script rather than emitted as a comment, because a
+    // step that runs and does nothing would count as committed.
+    private static void AddIndexStep(
+        List<ScriptStep> steps,
+        List<string> refusals,
+        ObjectIdentity table,
+        IndexDefinition index,
+        string description,
+        bool defer)
+    {
+        if (IndexEmitSupport.Refusal(table, index) is { } refusal)
+        {
+            refusals.Add(refusal);
+            return;
+        }
+
+        steps.Add(new ScriptStep(
+            IndexEmitSupport.IsSecondary(index) ? ScriptPhase.SecondaryIndexes : ScriptPhase.Indexes,
+            description,
+            Batch(TSqlWriter.CreateIndex(table, index), defer)));
     }
 
     // Only the schemas this script actually creates something in, which is the schema of every object it
@@ -314,7 +341,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         List<ObjectDiff> changes,
         Dictionary<ObjectIdentity, TableDefinition> sourceTables,
         HashSet<ObjectIdentity> newTypes,
-        string? databaseCollation)
+        string? databaseCollation,
+        List<string> refusals)
     {
         foreach (var change in changes.Where(c => c.Kind == DiffKind.SourceOnly && c.Identity.Type == ObjectType.Table))
         {
@@ -346,10 +374,7 @@ public sealed class TSqlEmitter : IScriptEmitter
 
             foreach (var index in table.Indexes)
             {
-                steps.Add(new ScriptStep(
-                    ScriptPhase.Indexes,
-                    $"index {index.Name}",
-                    TSqlWriter.CreateIndex(table.Identity, index)));
+                AddIndexStep(steps, refusals, table.Identity, index, $"index {index.Name}", defer: false);
             }
 
             foreach (var check in table.CheckConstraints)
@@ -376,7 +401,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         Dictionary<ObjectIdentity, TableDefinition> sourceTables,
         Dictionary<ObjectIdentity, TableDefinition> targetTables,
         HashSet<ObjectIdentity> deferred,
-        string? databaseCollation)
+        string? databaseCollation,
+        List<string> refusals)
     {
         foreach (var change in changes.Where(c => c.Kind == DiffKind.Different && c.Identity.Type == ObjectType.Table))
         {
@@ -395,11 +421,11 @@ public sealed class TSqlEmitter : IScriptEmitter
                 switch (child.Identity.Type)
                 {
                     case ObjectType.Column:
-                        EmitColumnChange(steps, child, table, source, target, rebuilt, defer, databaseCollation);
+                        EmitColumnChange(steps, child, table, source, target, rebuilt, defer, databaseCollation, refusals);
                         break;
 
                     case ObjectType.Index:
-                        EmitIndexChange(steps, child, table, source, rebuilt, defer);
+                        EmitIndexChange(steps, child, table, source, rebuilt, defer, refusals);
                         break;
 
                     case ObjectType.CheckConstraint:
@@ -430,7 +456,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         TableDefinition target,
         HashSet<string> rebuilt,
         bool defer,
-        string? databaseCollation)
+        string? databaseCollation,
+        List<string> refusals)
     {
         var name = child.Identity.Name;
 
@@ -478,10 +505,7 @@ public sealed class TSqlEmitter : IScriptEmitter
 
             if (replacement is not null)
             {
-                steps.Add(new ScriptStep(
-                    ScriptPhase.Indexes,
-                    $"recreate index {replacement.Name}",
-                    Batch(TSqlWriter.CreateIndex(table, replacement), defer)));
+                AddIndexStep(steps, refusals, table, replacement, $"recreate index {replacement.Name}", defer);
             }
         }
 
@@ -508,7 +532,8 @@ public sealed class TSqlEmitter : IScriptEmitter
         ObjectIdentity table,
         TableDefinition source,
         HashSet<string> rebuilt,
-        bool defer)
+        bool defer,
+        List<string> refusals)
     {
         var name = child.Identity.Name;
 
@@ -530,10 +555,7 @@ public sealed class TSqlEmitter : IScriptEmitter
             var index = source.Indexes.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase));
             if (index is not null)
             {
-                steps.Add(new ScriptStep(
-                    ScriptPhase.Indexes,
-                    $"index {name}",
-                    Batch(TSqlWriter.CreateIndex(table, index), defer)));
+                AddIndexStep(steps, refusals, table, index, $"index {name}", defer);
             }
         }
     }

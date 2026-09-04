@@ -119,6 +119,7 @@ export interface ScriptResponse {
   deleteWarnings: string[]
   required: RequiredObject[]
   unsatisfiable: string[]
+  notEmitted: string[]
   requiredRows: RequiredRows[]
   excluded: ExcludedObject[]
   staged: StagedTable[]

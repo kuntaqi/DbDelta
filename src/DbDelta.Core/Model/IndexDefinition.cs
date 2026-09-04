@@ -12,6 +12,8 @@ public sealed class IndexDefinition
 
     public bool IsClustered { get; init; }
 
+    public IndexKind Kind { get; init; } = IndexKind.Rowstore;
+
     public string? FilterExpression { get; init; }
 
     public ProviderExtras Extras { get; init; } = ProviderExtras.Empty;

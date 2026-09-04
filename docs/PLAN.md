@@ -972,14 +972,91 @@ both hypotheses formed before measuring were wrong.** The suspect was the digest
 out to cost 43ms, and then the LOB type, which turned out to be a distant second to the predicate shape.
 ## Known defects
 
-- **Non-rowstore indexes are emitted as ordinary `CREATE INDEX`** —
-  [#1](https://github.com/kuntaqi/DbDelta/issues/1). `type_desc` is read but collapsed to a boolean
-  `IsClustered` in the reader, so `SPATIAL`, `XML` and the columnstore kinds all lose their identity
-  before the emitter sees them. A database holding a spatial index cannot be applied at all: the emit
-  fails with error 1978 and the whole transaction rolls back. Reproduced from scratch, not just observed
-  in the wild. Spatial DDL also needs `SET QUOTED_IDENTIFIER ON`, which the script prologue does not set.
-  Refusing to emit the index, and saying so, is preferable to writing a different kind of index — the same
-  posture as a keyless table waiting for a key.
+None open. The three that were here are closed, each with its design written up below.
+
+### An index has a kind, and it decides the statement
+
+Closes [#1](https://github.com/kuntaqi/DbDelta/issues/1).
+
+`sys.indexes.type_desc` was read and then collapsed to the single boolean `IsClustered`, so everything that
+was not `CLUSTERED` became a plain non-clustered rowstore index. A spatial index was emitted as
+`CREATE INDEX … ([Shape] ASC)`, which fails with error 1978 — and since the script is one transaction, one
+index nobody was thinking about made a whole database impossible to provision. That is what blocked the
+mirror of a GIS database, where spatial and XML indexes are throughout.
+
+The kind now lives on `IndexDefinition.Kind` (`Rowstore`, `Columnstore`, `Xml`, `Spatial`, `Hash`), read
+from `type_desc`, with clustering left on `IsClustered` because the two are orthogonal — a columnstore is
+either. The emitter writes the statement each kind actually takes, and refuses the ones it cannot:
+
+| kind | what is emitted |
+|---|---|
+| rowstore | unchanged, byte for byte |
+| clustered columnstore | `CREATE CLUSTERED COLUMNSTORE INDEX … ON <table>;` — no column list, or `ORDER (…)` if it has one |
+| nonclustered columnstore | the column list, unordered, with the filter if it has one |
+| primary XML | `CREATE PRIMARY XML INDEX … (<col>);` |
+| secondary XML | `… USING XML INDEX <primary> FOR PATH \| VALUE \| PROPERTY` |
+| spatial | the tessellation scheme, and `BOUNDING_BOX` / `GRIDS` / `CELLS_PER_OBJECT` when it has them |
+| hash | refused — see below |
+
+**Two catalog views had to be added**, because a spatial index cannot be scripted from `sys.indexes`
+alone: `sys.spatial_indexes` for the scheme and `sys.spatial_index_tessellations` for the bounding box,
+grid densities and cells per object. `BOUNDING_BOX` is mandatory DDL for a `GEOMETRY_GRID`, and it is not
+recoverable from anywhere else. `sys.xml_indexes` gives the primary/secondary split and resolves the
+primary's name, which the catalog holds only as an index id.
+
+Each option is written **only when the catalog had it**, which is not tidiness: an `AUTO_GRID` scheme
+rejects a `GRIDS` clause, and only a geometry grid takes a bounding box. Defaulting either would produce
+DDL the server refuses. The tessellation itself is carried in `ProviderExtras` rather than on
+`IndexDefinition` — `BOUNDING_BOX` is T-SQL, and extras is where engine-specific facts already went, the
+same choice `FillFactor` made.
+
+**What the probe turned up that the report had not.** A columnstore reports every one of its columns as an
+*included* column with key ordinal zero, both clustered and not. So a columnstore was not being emitted as
+the wrong kind of index — it was being emitted with an **empty key column list**, which is not a statement
+at all. A nonclustered columnstore's column list is what its DDL states, so it is read into `Columns`
+now; a clustered one covers the whole table and names none, so its column rows are dropped, which also
+stops adding a column to the table from looking like a change to the index.
+
+That also settles the report's open question about columnstore comparing identical to a rowstore over the
+same columns. It would not have — but only by accident, because the columns landed in different lists. The
+kind is compared now, so it no longer rests on that.
+
+**The false identity the report was reaching for does exist, one level down.** An *ordered* clustered
+columnstore and an unordered one agree on everything `sys.indexes` reports: same kind, same clustering, no
+columns either way. Only `sys.index_columns.column_store_order_ordinal` separates them, and that column
+arrived in SQL Server 2022 while this tool has to keep reading older servers — so the query that reads it
+is guarded by `COL_LENGTH`, and on a server without the column no `SELECT` runs at all, which is the right
+answer there because an ordered columnstore cannot exist on one. The ORDER columns are then modelled as the
+index's `Columns`, which is what they are: the only columns a clustered columnstore's DDL states. That
+choice means the existing column comparison detects an ORDER change with nothing added to it, and the
+emitter has the list it needs in the place it already looks.
+
+**`SET QUOTED_IDENTIFIER ON` is in the prologue**, because spatial and XML DDL is refused outright without
+it, with msg 1934 saying the SET options are wrong and not which. SqlClient connects with it ON, so the
+apply path never needed it; sqlcmd defaults it OFF, and this script is meant to be runnable by hand. It is
+set before `BEGIN TRANSACTION` and **verified to take effect in the same batch as the `CREATE`**, which
+had to be checked rather than assumed — the script deliberately has no `GO` in it.
+
+**A refusal is now a first-class part of a script.** `SyncScript.Refusals` carries what the emitter would
+not write, and the API folds it into the same list the UI already shows for what closure could not satisfy.
+A refusal is deliberately *not* a step: a step that runs and does nothing would be counted as committed.
+This is the third time the project needed this channel — a CLR type and a differing user-defined type were
+both already silently skipped — and one place, `IndexEmitSupport`, now decides for all three index paths
+(creating a table, rebuilding the indexes a changed column depended on, a changed index), so the answer
+cannot depend on which path reached it.
+
+What is refused: a **hash index**, which exists only inside a memory-optimized table's own `CREATE TABLE`
+and so is not the whole of what would be missing anyway; a **selective XML index**, whose promoted paths
+are a catalog this tool does not read; and any index whose own kind-specific detail could not be read.
+
+**A secondary XML index gets its own phase.** Within a phase the order is whatever the diff handed over,
+which for two indexes on one table is alphabetical — so a secondary XML index called `A` would be created
+before the primary called `Z` that it names. `ScriptPhase.SecondaryIndexes` sits after `Indexes` rather
+than the ordering resting on names.
+
+Verified against the reported repro on a real server, with the kind mapping switched back off to confirm
+the test was not passing for its own reasons: it then emits `CREATE INDEX [SX_SiteShape_Shape] ON [dbo]…`,
+the report's exact wrong output, whose 1978 was measured directly.
 
 ### An object's name comes from the catalog, not from the body that says it
 

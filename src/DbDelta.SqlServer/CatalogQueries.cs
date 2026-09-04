@@ -397,4 +397,76 @@ internal static class CatalogQueries
         JOIN sys.types ty   ON ty.user_type_id = sq.user_type_id
         ORDER BY s.name, sq.name;
         """;
+
+    // A spatial index cannot be scripted from sys.indexes alone: the tessellation scheme lives here, and
+    // BOUNDING_BOX is mandatory in the DDL for a GEOMETRY_GRID. The grid densities and cells per object
+    // come back NULL for the AUTO_GRID schemes, which do not accept a GRIDS clause either.
+    public const string SpatialIndexes = """
+        SELECT
+            s.name                      AS [SchemaName],
+            t.name                      AS [TableName],
+            i.name                      AS [IndexName],
+            si.tessellation_scheme      AS [Scheme],
+            te.bounding_box_xmin        AS [XMin],
+            te.bounding_box_ymin        AS [YMin],
+            te.bounding_box_xmax        AS [XMax],
+            te.bounding_box_ymax        AS [YMax],
+            te.level_1_grid_desc        AS [Level1],
+            te.level_2_grid_desc        AS [Level2],
+            te.level_3_grid_desc        AS [Level3],
+            te.level_4_grid_desc        AS [Level4],
+            te.cells_per_object         AS [CellsPerObject]
+        FROM sys.spatial_indexes si
+        JOIN sys.indexes i  ON i.object_id = si.object_id AND i.index_id = si.index_id
+        JOIN sys.tables t   ON t.object_id = i.object_id
+        JOIN sys.schemas s  ON s.schema_id = t.schema_id
+        LEFT JOIN sys.spatial_index_tessellations te
+            ON te.object_id = si.object_id AND te.index_id = si.index_id
+        WHERE t.is_ms_shipped = 0
+        ORDER BY s.name, t.name, i.name;
+        """;
+
+    // An ordered clustered columnstore states its ORDER columns and an unordered one states none, so the
+    // two are different indexes that agree on everything sys.indexes reports. The ordinal that separates
+    // them arrived in SQL Server 2022, and this tool has to keep reading older servers — hence the guard.
+    // On a server without the column the batch runs no SELECT at all, which is the right answer there: an
+    // ordered columnstore cannot exist on it.
+    public const string ColumnstoreOrder = """
+        IF COL_LENGTH('sys.index_columns', 'column_store_order_ordinal') IS NOT NULL
+        EXEC sp_executesql N'
+            SELECT
+                s.name  AS [SchemaName],
+                t.name  AS [TableName],
+                i.name  AS [IndexName],
+                c.name  AS [ColumnName]
+            FROM sys.index_columns ic
+            JOIN sys.indexes i  ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            JOIN sys.tables t   ON t.object_id = i.object_id
+            JOIN sys.schemas s  ON s.schema_id = t.schema_id
+            JOIN sys.columns c  ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE t.is_ms_shipped = 0
+              AND ic.column_store_order_ordinal > 0
+            ORDER BY s.name, t.name, i.name, ic.column_store_order_ordinal';
+        """;
+
+    // A secondary XML index names the primary one it hangs off, by index_id rather than by name, so the
+    // name is resolved here instead of in a second pass. xml_index_type_description also separates a
+    // selective XML index from an ordinary primary, which is a different statement altogether.
+    public const string XmlIndexes = """
+        SELECT
+            s.name                              AS [SchemaName],
+            t.name                              AS [TableName],
+            i.name                              AS [IndexName],
+            xi.xml_index_type_description        AS [XmlKind],
+            xi.secondary_type_desc               AS [SecondaryType],
+            p.name                               AS [PrimaryIndexName]
+        FROM sys.xml_indexes xi
+        JOIN sys.indexes i  ON i.object_id = xi.object_id AND i.index_id = xi.index_id
+        JOIN sys.tables t   ON t.object_id = i.object_id
+        JOIN sys.schemas s  ON s.schema_id = t.schema_id
+        LEFT JOIN sys.xml_indexes p
+            ON p.object_id = xi.object_id AND p.index_id = xi.using_xml_index_id
+        WHERE t.is_ms_shipped = 0
+        ORDER BY s.name, t.name, i.name;
+        """;
 }

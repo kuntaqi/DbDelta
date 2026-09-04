@@ -123,6 +123,16 @@ export function PlanScreen({
               </div>
             ))}
 
+            {script.notEmitted.map((message) => (
+              <div className="warnline warn" key={message}>
+                <span className="g">!</span>
+                <div>
+                  {message} The rest of this script still applies — the target will simply not have it, so
+                  the next comparison will keep reporting it.
+                </div>
+              </div>
+            ))}
+
             {script.narrowings.length > 0 && (
               <div className="warnline info">
                 <span className="g same">◇</span>

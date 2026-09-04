@@ -168,6 +168,11 @@ public sealed class SchemaComparer
             }
 
             var properties = new List<PropertyDiff>();
+
+            // The kind has to be compared, and not because two kinds are likely to be confused: it decides
+            // which statement recreates the index, so an index that changed kind must come down and go back
+            // up rather than be left as the target has it.
+            AddEnum(properties, "Kind", src.Kind, tgt.Kind);
             Add(properties, "Columns", Join(src.Columns), Join(tgt.Columns));
             Add(properties, "Included", string.Join(", ", src.IncludedColumns), string.Join(", ", tgt.IncludedColumns));
             Add(properties, "Unique", src.IsUnique, tgt.IsUnique);

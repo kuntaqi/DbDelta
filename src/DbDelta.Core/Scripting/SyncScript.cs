@@ -8,6 +8,13 @@ public sealed class SyncScript
 
     public required string Header { get; init; }
 
+    // What the emitter would not write, and why. A plan that quietly does less than it shows is the
+    // failure this exists to prevent: before it, an index kind with no DDL this tool can produce was
+    // either emitted wrongly or skipped in silence, and both left the caller believing the target now
+    // matched. These are not steps — nothing runs — so they are carried beside the script rather than in
+    // it, and the caller reports them alongside the ones closure could not satisfy.
+    public IReadOnlyList<string> Refusals { get; init; } = [];
+
     public bool IsEmpty => Steps.Count == 0;
 
     public int Count => Steps.Count;
@@ -25,8 +32,21 @@ public sealed class SyncScript
     {
         var sql = new StringBuilder();
         sql.AppendLine(Header);
+
+        foreach (var refusal in Refusals)
+        {
+            sql.AppendLine($"-- not emitted: {refusal}");
+        }
+
         sql.AppendLine("SET XACT_ABORT ON;");
         sql.AppendLine("SET NOCOUNT ON;");
+
+        // Spatial and XML index DDL is refused outright unless QUOTED_IDENTIFIER is ON — msg 1934, which
+        // says the SET options are wrong and not what is wrong with them. SqlClient connects with it ON, so
+        // the apply path never needed it, but this script is meant to be runnable by hand and sqlcmd
+        // defaults it OFF. Verified to take effect in the same batch as the CREATE, which matters because
+        // this script has no GO in it.
+        sql.AppendLine("SET QUOTED_IDENTIFIER ON;");
         sql.AppendLine("BEGIN TRANSACTION;");
         sql.AppendLine();
 

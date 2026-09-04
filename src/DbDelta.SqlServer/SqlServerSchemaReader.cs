@@ -1,3 +1,4 @@
+using System.Globalization;
 using DbDelta.Core.Model;
 using DbDelta.Core.Providers;
 using Microsoft.Data.SqlClient;
@@ -158,7 +159,11 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         Dictionary<ObjectIdentity, TableAccumulator> tables,
         CancellationToken cancellationToken)
     {
-        var indexes = new Dictionary<(ObjectIdentity Table, string Name), (bool Unique, bool Clustered, string? Filter, int FillFactor, List<IndexColumn> Key, List<string> Included)>();
+        var indexes = new Dictionary<(ObjectIdentity Table, string Name), (IndexKind Kind, bool Unique, bool Clustered, string? Filter, int FillFactor, List<IndexColumn> Key, List<string> Included)>();
+
+        var spatial = await ReadSpatialTessellationsAsync(connection, cancellationToken).ConfigureAwait(false);
+        var xml = await ReadXmlIndexShapesAsync(connection, cancellationToken).ConfigureAwait(false);
+        var order = await ReadColumnstoreOrderAsync(connection, cancellationToken).ConfigureAwait(false);
 
         await using (var reader = await ExecuteAsync(connection, CatalogQueries.Indexes, cancellationToken)
             .ConfigureAwait(false))
@@ -167,17 +172,39 @@ public sealed class SqlServerSchemaReader : ISchemaReader
             {
                 var identity = TableId(Str(reader, "SchemaName"), Str(reader, "TableName"));
                 var key = (identity, Str(reader, "IndexName"));
+                var type = Str(reader, "IndexType");
 
                 if (!indexes.TryGetValue(key, out var entry))
                 {
                     entry = (
+                        KindOf(type),
                         reader.GetBoolean(reader.GetOrdinal("IsUnique")),
-                        Str(reader, "IndexType").StartsWith("CLUSTERED", StringComparison.OrdinalIgnoreCase),
+                        type.StartsWith("CLUSTERED", StringComparison.OrdinalIgnoreCase),
                         NullableStr(reader, "FilterDefinition"),
                         reader.GetByte(reader.GetOrdinal("FillFactor")),
                         [],
                         []);
                     indexes[key] = entry;
+                }
+
+                // A columnstore reports every one of its columns as an included column with key ordinal
+                // zero — measured, not assumed — so the reader used to give it no key columns at all and
+                // the emitter wrote CREATE INDEX with an empty column list. For a nonclustered columnstore
+                // that list is what the DDL states, so it belongs in Columns.
+                //
+                // A clustered columnstore is different again: it covers the whole table, so its DDL names
+                // no columns at all — except the ORDER columns of an ordered one, which are the only
+                // columns it does state. Those are filled in below from the one query that can tell them
+                // apart. Its own column rows are dropped either way, which also stops adding a column to
+                // the table from looking like a change to the index.
+                if (entry.Kind == IndexKind.Columnstore)
+                {
+                    if (!entry.Clustered)
+                    {
+                        entry.Key.Add(new IndexColumn(Str(reader, "ColumnName"), false));
+                    }
+
+                    continue;
                 }
 
                 if (reader.GetBoolean(reader.GetOrdinal("IsIncluded")))
@@ -195,21 +222,164 @@ public sealed class SqlServerSchemaReader : ISchemaReader
 
         foreach (var ((identity, name), entry) in indexes)
         {
+            var extras = new Dictionary<string, string?>
+            {
+                ["FillFactor"] = entry.FillFactor.ToString()
+            };
+
+            if (spatial.TryGetValue((identity, name), out var tessellation))
+            {
+                foreach (var (k, v) in tessellation)
+                {
+                    extras[k] = v;
+                }
+            }
+
+            if (xml.TryGetValue((identity, name), out var shape))
+            {
+                foreach (var (k, v) in shape)
+                {
+                    extras[k] = v;
+                }
+            }
+
+            var columns = entry.Kind == IndexKind.Columnstore && entry.Clustered
+                && order.TryGetValue((identity, name), out var ordered)
+                    ? ordered
+                    : entry.Key;
+
             Accumulator(tables, identity).Indexes.Add(new IndexDefinition
             {
                 Name = name,
-                Columns = entry.Key,
+                Kind = entry.Kind,
+                Columns = columns,
                 IncludedColumns = entry.Included,
                 IsUnique = entry.Unique,
                 IsClustered = entry.Clustered,
                 FilterExpression = entry.Filter,
-                Extras = new ProviderExtras(new Dictionary<string, string?>
-                {
-                    ["FillFactor"] = entry.FillFactor.ToString()
-                })
+                Extras = new ProviderExtras(extras)
             });
         }
     }
+
+    // sys.indexes.type_desc, which used to be collapsed to the single boolean IsClustered here. HEAP never
+    // arrives (the query filters type 0) and an unrecognised value is left as rowstore rather than guessed
+    // at — the emitter is what refuses a kind it cannot write, and it needs to see a kind to do that.
+    private static IndexKind KindOf(string typeDescription) => typeDescription.ToUpperInvariant() switch
+    {
+        "XML" => IndexKind.Xml,
+        "SPATIAL" => IndexKind.Spatial,
+        "CLUSTERED COLUMNSTORE" or "NONCLUSTERED COLUMNSTORE" => IndexKind.Columnstore,
+        "NONCLUSTERED HASH" => IndexKind.Hash,
+        _ => IndexKind.Rowstore
+    };
+
+    private static async Task<Dictionary<(ObjectIdentity Table, string Name), List<IndexColumn>>>
+        ReadColumnstoreOrderAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<(ObjectIdentity, string), List<IndexColumn>>();
+
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.ColumnstoreOrder, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var key = (TableId(Str(reader, "SchemaName"), Str(reader, "TableName")), Str(reader, "IndexName"));
+
+            if (!result.TryGetValue(key, out var columns))
+            {
+                columns = [];
+                result[key] = columns;
+            }
+
+            columns.Add(new IndexColumn(Str(reader, "ColumnName"), false));
+        }
+
+        return result;
+    }
+
+    private static async Task<Dictionary<(ObjectIdentity Table, string Name), Dictionary<string, string?>>>
+        ReadSpatialTessellationsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<(ObjectIdentity, string), Dictionary<string, string?>>();
+
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.SpatialIndexes, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var values = new Dictionary<string, string?>
+            {
+                [SpatialExtras.Scheme] = Str(reader, "Scheme")
+            };
+
+            // The bounding box is mandatory DDL for a GEOMETRY_GRID and absent for every other scheme, so
+            // it is carried only when all four bounds are there rather than defaulted to something.
+            var bounds = new[] { "XMin", "YMin", "XMax", "YMax" }
+                .Select(c => Double(reader, c))
+                .ToList();
+
+            if (bounds.All(b => b is not null))
+            {
+                values[SpatialExtras.BoundingBox] = string.Join(", ", bounds.Select(Number));
+            }
+
+            var grids = new[] { "Level1", "Level2", "Level3", "Level4" }
+                .Select(c => NullableStr(reader, c))
+                .ToList();
+
+            if (grids.All(g => g is not null))
+            {
+                values[SpatialExtras.Grids] = string.Join(", ", grids);
+            }
+
+            if (Int(reader, "CellsPerObject") is { } cells)
+            {
+                values[SpatialExtras.CellsPerObject] = cells.ToString(CultureInfo.InvariantCulture);
+            }
+
+            result[(TableId(Str(reader, "SchemaName"), Str(reader, "TableName")), Str(reader, "IndexName"))] = values;
+        }
+
+        return result;
+    }
+
+    private static async Task<Dictionary<(ObjectIdentity Table, string Name), Dictionary<string, string?>>>
+        ReadXmlIndexShapesAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<(ObjectIdentity, string), Dictionary<string, string?>>();
+
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.XmlIndexes, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            result[(TableId(Str(reader, "SchemaName"), Str(reader, "TableName")), Str(reader, "IndexName"))] =
+                new Dictionary<string, string?>
+                {
+                    [XmlExtras.Kind] = NullableStr(reader, "XmlKind"),
+                    [XmlExtras.SecondaryType] = NullableStr(reader, "SecondaryType"),
+                    [XmlExtras.PrimaryIndex] = NullableStr(reader, "PrimaryIndexName")
+                };
+        }
+
+        return result;
+    }
+
+    private static double? Double(SqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
+    }
+
+    private static int? Int(SqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
+    private static string Number(double? value) =>
+        value!.Value.ToString("0.################", CultureInfo.InvariantCulture);
 
     private static async Task ReadForeignKeysAsync(
         SqlConnection connection,
