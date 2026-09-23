@@ -45,14 +45,16 @@ public sealed class TSqlEmitter : IScriptEmitter
             .ToHashSet();
 
         var refusals = new List<string>();
+        var context = new EmitContext(source, target, changes, deferred, steps, refusals);
 
         EmitSchemas(steps, changes);
         EmitDrops(steps, changes, target);
         EmitTypes(steps, changes, source, target);
         EmitSequences(steps, changes, source);
         EmitTableCreations(steps, changes, sourceTables, newTypes, target.Collation, refusals);
-        EmitTableAlterations(steps, changes, sourceTables, targetTables, deferred, target.Collation, refusals);
+        EmitTableAlterations(context, changes, sourceTables, targetTables);
         EmitProgrammables(steps, changes, source);
+        steps.AddRange(context.Trailing);
 
         return new SyncScript
         {
@@ -67,7 +69,7 @@ public sealed class TSqlEmitter : IScriptEmitter
     // paths reached it: creating a table, rebuilding the indexes a changed column depended on, or a
     // changed index. A refusal is carried out of the script rather than emitted as a comment, because a
     // step that runs and does nothing would count as committed.
-    private static void AddIndexStep(
+    internal static void AddIndexStep(
         List<ScriptStep> steps,
         List<string> refusals,
         ObjectIdentity table,
@@ -396,74 +398,262 @@ public sealed class TSqlEmitter : IScriptEmitter
     }
 
     private static void EmitTableAlterations(
-        List<ScriptStep> steps,
+        EmitContext context,
         List<ObjectDiff> changes,
         Dictionary<ObjectIdentity, TableDefinition> sourceTables,
-        Dictionary<ObjectIdentity, TableDefinition> targetTables,
-        HashSet<ObjectIdentity> deferred,
-        string? databaseCollation,
-        List<string> refusals)
+        Dictionary<ObjectIdentity, TableDefinition> targetTables)
     {
-        foreach (var change in changes.Where(c => c.Kind == DiffKind.Different && c.Identity.Type == ObjectType.Table))
+        var tables = changes
+            .Where(c => c.Kind == DiffKind.Different && c.Identity.Type == ObjectType.Table)
+            .Where(c => sourceTables.ContainsKey(c.Identity) && targetTables.ContainsKey(c.Identity))
+            .Select(c => (
+                Change: c,
+                Source: sourceTables[c.Identity],
+                Target: targetTables[c.Identity],
+                Columns: ColumnChange.From(c, sourceTables[c.Identity], targetTables[c.Identity])))
+            .ToList();
+
+        // Which tables are rebuilt is settled before anything is emitted, because it changes what every
+        // other table may do with the foreign keys it shares with them.
+        var blocked = new Dictionary<ObjectIdentity, string>();
+
+        foreach (var table in tables.Where(t => t.Columns.Any(c => c.NeedsRebuild)))
         {
-            if (!sourceTables.TryGetValue(change.Identity, out var source)
-                || !targetTables.TryGetValue(change.Identity, out var target))
+            if (TableRebuild.Blocker(table.Target) is { } reason)
             {
+                blocked[table.Change.Identity] = reason;
                 continue;
             }
 
-            var table = change.Identity;
-            var rebuilt = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var defer = deferred.Contains(table);
+            context.Rebuilt.Add(table.Change.Identity);
+            context.Deferred.Add(table.Change.Identity);
+        }
 
-            foreach (var child in change.DifferingChildren)
+        foreach (var (change, source, target, columns) in tables)
+        {
+            if (context.Rebuilt.Contains(change.Identity))
             {
-                switch (child.Identity.Type)
-                {
-                    case ObjectType.Column:
-                        EmitColumnChange(steps, child, table, source, target, rebuilt, defer, databaseCollation, refusals);
-                        break;
+                TableRebuild.Emit(context, source, target, columns);
+                continue;
+            }
 
-                    case ObjectType.Index:
-                        EmitIndexChange(steps, child, table, source, rebuilt, defer, refusals);
-                        break;
+            EmitInPlace(context, change, source, target, columns, blocked.GetValueOrDefault(change.Identity));
+        }
+    }
 
-                    case ObjectType.CheckConstraint:
-                        EmitCheckChange(steps, child, table, source, defer);
-                        break;
+    // Everything that can be done to the table where it stands. The shape of it is a bracket: whatever
+    // holds a changing column comes down first, the columns change, and what came down goes back up —
+    // from the source when it is part of this table, from the target when it belongs to another table.
+    private static void EmitInPlace(
+        EmitContext context,
+        ObjectDiff change,
+        TableDefinition source,
+        TableDefinition target,
+        IReadOnlyList<ColumnChange> columns,
+        string? rebuildBlocker)
+    {
+        var table = change.Identity;
+        var defer = context.Defers(table);
+        var handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var refused = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                    case ObjectType.ForeignKey:
-                        EmitForeignKeyChange(steps, child, table, source, defer);
-                        break;
+        foreach (var column in columns.Where(c => c.NeedsRebuild))
+        {
+            context.Refusals.Add(
+                $"{table.QualifiedName}.{column.Name}: {column.DescribeRebuildNeed()}. No ALTER can make that change — "
+                + $"it takes rebuilding the table, which is not done here because {rebuildBlocker}. "
+                + "Nothing is emitted for that part of the difference.");
 
-                    case ObjectType.PrimaryKey:
-                    case ObjectType.UniqueConstraint:
-                        EmitKeyChange(steps, child, table, source, defer);
-                        break;
+            if (column.ComputedKindDiffers)
+            {
+                refused.Add(column.Name);
+            }
+        }
 
-                    default:
-                        break;
-                }
+        foreach (var column in columns.Where(c => c.OrdinalOnly))
+        {
+            context.Refusals.Add(
+                $"{table.QualifiedName}.{column.Name} is in a different position. Column order can only be changed "
+                + "by rebuilding the table, which is not done for order alone, so nothing is emitted for it.");
+        }
+
+        // A schema-bound module holds the columns it reads, and dropping it is not this table's business:
+        // it is an object of its own that the plan may not even include.
+        foreach (var column in columns.Where(c => c.TouchesColumn && !refused.Contains(c.Name)))
+        {
+            var holders = target.SchemaBoundReferences
+                .Where(r => r.Columns.Contains(column.Name, StringComparer.OrdinalIgnoreCase))
+                .Select(r => r.Module.QualifiedName)
+                .Order()
+                .ToList();
+
+            if (holders.Count > 0)
+            {
+                refused.Add(column.Name);
+                context.Refusals.Add(
+                    $"{table.QualifiedName}.{column.Name} cannot be {(column.IsDrop ? "dropped" : "altered")} while "
+                    + $"{string.Join(", ", holders)} {(holders.Count == 1 ? "is" : "are")} schema-bound to it. "
+                    + "Nothing is emitted for that column.");
+            }
+        }
+
+        var touched = columns
+            .Where(c => c.TouchesColumn && !refused.Contains(c.Name))
+            .Select(c => c.Name)
+            .ToList();
+
+        // Keys this table's own changes drop, which take the foreign keys that reference them down too.
+        var droppedKeys = change.DifferingChildren
+            .Where(c => c.Kind is DiffKind.TargetOnly or DiffKind.Different)
+            .Select(c => KeyColumns(target, c))
+            .OfType<IReadOnlyList<string>>()
+            .ToList();
+
+        var dependents = ColumnDependents.Find(context.Target, target, touched, droppedKeys);
+
+        EmitDependentDrops(context, table, source, dependents, columns, handled);
+
+        foreach (var column in columns.Where(c => !refused.Contains(c.Name)))
+        {
+            EmitColumn(context, table, column, handled);
+        }
+
+        EmitDependentRestores(context, table, source, dependents, columns, defer);
+
+        foreach (var child in change.DifferingChildren)
+        {
+            switch (child.Identity.Type)
+            {
+                case ObjectType.Index:
+                    EmitIndexChange(context.Steps, child, table, source, handled, defer, context.Refusals);
+                    break;
+
+                case ObjectType.CheckConstraint:
+                    EmitCheckChange(context.Steps, child, table, source, handled, defer);
+                    break;
+
+                case ObjectType.ForeignKey:
+                    EmitForeignKeyChange(context.Steps, child, table, source, handled, defer);
+                    break;
+
+                case ObjectType.PrimaryKey:
+                case ObjectType.UniqueConstraint:
+                    EmitKeyChange(context.Steps, child, table, source, handled, defer);
+                    break;
+
+                default:
+                    break;
             }
         }
     }
 
-    private static void EmitColumnChange(
-        List<ScriptStep> steps,
-        ObjectDiff child,
-        ObjectIdentity table,
-        TableDefinition source,
-        TableDefinition target,
-        HashSet<string> rebuilt,
-        bool defer,
-        string? databaseCollation,
-        List<string> refusals)
+    // The column list of a key or unique index that a child difference is about to drop, or null when
+    // the child is something else. Only unique ones matter: nothing can reference any other index.
+    private static IReadOnlyList<string>? KeyColumns(TableDefinition target, ObjectDiff child)
     {
         var name = child.Identity.Name;
 
-        if (child.Kind == DiffKind.TargetOnly)
+        return child.Identity.Type switch
         {
-            steps.Add(new ScriptStep(
+            // A table has one primary key whatever it is called, and the child is named from the source side.
+            ObjectType.PrimaryKey when target.PrimaryKey is { } pk => pk.Columns.Select(c => c.Name).ToList(),
+            ObjectType.UniqueConstraint =>
+                target.UniqueConstraints.FirstOrDefault(u => Same(u.Name, name))?.Columns.Select(c => c.Name).ToList(),
+            ObjectType.Index =>
+                target.Indexes.FirstOrDefault(i => i.IsUnique && Same(i.Name, name))?.Columns.Select(c => c.Name).ToList(),
+            _ => null
+        };
+    }
+
+    // Order matters twice over. Statistics and nonclustered structures go before the clustered one, so
+    // dropping the clustered index does not rebuild them first only to see them dropped; and a computed
+    // column goes last, because the indexes on it had to come down before it could.
+    private static void EmitDependentDrops(
+        EmitContext context,
+        ObjectIdentity table,
+        TableDefinition source,
+        ColumnDependents dependents,
+        IReadOnlyList<ColumnChange> columns,
+        HashSet<string> handled)
+    {
+        var reason = $"it holds a column of {table.QualifiedName} that changes";
+
+        foreach (var inbound in dependents.InboundKeys)
+        {
+            context.BracketInbound(inbound, $"it references a key or column of {table.QualifiedName} that changes");
+        }
+
+        // This table's own keys come back as the source has them. One its own difference changes is left to
+        // that difference, which drops it and adds the source's by itself.
+        foreach (var key in dependents.OutboundKeys)
+        {
+            context.BracketForeignKey(
+                table,
+                key.Name,
+                source.ForeignKeys.FirstOrDefault(f => Same(f.Name, key.Name)),
+                reason);
+        }
+
+        foreach (var statistics in dependents.Statistics.Where(s => handled.Add($"stats:{s.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop statistics {statistics.Name} — {reason}",
+                TSqlWriter.DropStatistics(table, statistics.Name)));
+        }
+
+        foreach (var index in dependents.Indexes.OrderBy(i => i.IsClustered).Where(i => handled.Add($"index:{i.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop index {index.Name} — {reason}",
+                TSqlWriter.DropIndex(table, index.Name)));
+        }
+
+        foreach (var check in dependents.Checks.Where(c => handled.Add($"check:{c.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop check {check.Name} — {reason}",
+                TSqlWriter.DropConstraint(table, check.Name)));
+        }
+
+        foreach (var column in dependents.Defaults.Where(c => handled.Add($"default:{c.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop default {column.DefaultConstraintName} — {reason}",
+                TSqlWriter.DropConstraint(table, column.DefaultConstraintName!)));
+        }
+
+        var keys = dependents.Uniques.Select(u => (u.Name, u.IsClustered)).ToList();
+
+        if (dependents.PrimaryKey is { } pk)
+        {
+            keys.Add((pk.Name, pk.IsClustered));
+        }
+
+        foreach (var (name, _) in keys.OrderBy(k => k.IsClustered).Where(k => handled.Add($"key:{k.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop constraint {name} — {reason}",
+                TSqlWriter.DropConstraint(table, name)));
+        }
+
+        // The source may call its primary key something else, and the difference is named from that side.
+        if (dependents.PrimaryKey is not null && source.PrimaryKey is { } renamed)
+        {
+            handled.Add($"key:{renamed.Name}");
+        }
+
+        // A computed column the plan drops for good is dropped by its own step; this is for the ones that
+        // come back.
+        foreach (var column in dependents.ComputedColumns.Where(c =>
+            !columns.Any(ch => ch.IsDrop && Same(ch.Name, c.Name)) && handled.Add($"computed:{c.Name}")))
+        {
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop computed column {table.QualifiedName}.{column.Name} — it is rebuilt",
+                TSqlWriter.DropColumn(table, column.Name)));
+        }
+    }
+
+    private static void EmitColumn(EmitContext context, ObjectIdentity table, ColumnChange column, HashSet<string> handled)
+    {
+        var name = column.Name;
+
+        if (column.IsDrop)
+        {
+            context.Steps.Add(new ScriptStep(
                 ScriptPhase.AlterColumns,
                 $"drop column {table.QualifiedName}.{name}",
                 TSqlWriter.DropColumn(table, name),
@@ -471,59 +661,123 @@ public sealed class TSqlEmitter : IScriptEmitter
             return;
         }
 
-        var column = source.Columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-        if (column is null)
+        if (column.Source is null)
         {
             return;
         }
 
-        if (child.Kind == DiffKind.SourceOnly)
+        if (column.IsAdd)
         {
-            steps.Add(new ScriptStep(
-                ScriptPhase.AlterColumns,
-                $"add column {table.QualifiedName}.{name}",
-                TSqlWriter.AddColumn(table, column, databaseCollation)));
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"add column {table.QualifiedName}.{name}",
+                TSqlWriter.AddColumn(table, column.Source, context.Collation)));
             return;
         }
 
-        // SQL Server refuses to alter a column an index depends on, so dependent indexes come down
-        // first and go back up in the index phase. Discovered against a filtered unique index.
-        foreach (var dependent in DependentIndexes(target, name))
+        // A default can change with nothing else about the column, and no ALTER COLUMN says anything about
+        // defaults — so a default-only difference used to emit an ALTER that changed nothing at all.
+        if (column.DefaultDiffers
+            && column.Target?.DefaultConstraintName is { } old
+            && handled.Add($"default:{name}"))
         {
-            if (!rebuilt.Add(dependent.Name))
-            {
-                continue;
-            }
+            context.Steps.Add(Step(ScriptPhase.AlterColumns, $"drop default {old} on {table.QualifiedName}.{name}",
+                TSqlWriter.DropConstraint(table, old)));
+        }
 
-            steps.Add(new ScriptStep(
-                ScriptPhase.AlterColumns,
-                $"drop index {dependent.Name} — depends on {name}",
-                TSqlWriter.DropIndex(table, dependent.Name)));
-
-            var replacement = source.Indexes
-                .FirstOrDefault(i => string.Equals(i.Name, dependent.Name, StringComparison.OrdinalIgnoreCase));
-
-            if (replacement is not null)
-            {
-                AddIndexStep(steps, refusals, table, replacement, $"recreate index {replacement.Name}", defer);
-            }
+        if (!column.NeedsAlter)
+        {
+            return;
         }
 
         // A narrowing change is destructive even though it drops nothing: the server rounds DECIMAL scale
         // and DATETIME2 precision without complaint, so left unflagged it would rewrite existing rows and
         // report success. The verdict is type arithmetic over both sides, already known here.
-        var existing = target.Columns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-        var narrowing = existing is null
+        var narrowing = column.Target is null
             ? ColumnNarrowing.None
-            : NarrowingAnalyzer.Analyse(existing, column);
+            : NarrowingAnalyzer.Analyse(column.Target, column.Source);
 
-        steps.Add(new ScriptStep(
+        context.Steps.Add(new ScriptStep(
             ScriptPhase.AlterColumns,
             narrowing.LosesData
                 ? $"alter column {table.QualifiedName}.{name} — {narrowing.Reason}"
                 : $"alter column {table.QualifiedName}.{name}",
-            TSqlWriter.AlterColumn(table, column, databaseCollation),
+            TSqlWriter.AlterColumn(table, column.Source, context.Collation),
             Destructive: narrowing.LosesData));
+    }
+
+    // What this table owns comes back as the source has it, since that is what the plan is making the table
+    // into; what came down and has no counterpart on the source stays down, which is what its own
+    // difference was asking for anyway. Statistics are the exception — they are not compared, so the
+    // target's own are put back.
+    private static void EmitDependentRestores(
+        EmitContext context,
+        ObjectIdentity table,
+        TableDefinition source,
+        ColumnDependents dependents,
+        IReadOnlyList<ColumnChange> columns,
+        bool defer)
+    {
+        foreach (var column in dependents.ComputedColumns.Concat(
+            columns.Where(c => c.RecreatesComputed).Select(c => c.Target!)).DistinctBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (Find(source.Columns, column.Name) is { ComputedExpression: not null } replacement
+                && !columns.Any(c => c.IsDrop && Same(c.Name, column.Name)))
+            {
+                context.Steps.Add(Step(ScriptPhase.AlterColumns, $"add computed column {table.QualifiedName}.{column.Name}",
+                    Batch(TSqlWriter.AddColumn(table, replacement, context.Collation), defer)));
+            }
+        }
+
+        var defaults = dependents.Defaults.Select(c => c.Name)
+            .Concat(columns.Where(c => c.DefaultDiffers && !c.IsAdd && !c.IsDrop).Select(c => c.Name))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in defaults)
+        {
+            if (Find(source.Columns, name) is { DefaultExpression: not null, DefaultConstraintName: not null } column
+                && !columns.Any(c => c.IsDrop && Same(c.Name, name)))
+            {
+                context.Steps.Add(Step(ScriptPhase.AlterColumns, $"default {column.DefaultConstraintName} on {table.QualifiedName}.{name}",
+                    Batch(TSqlWriter.AddDefault(table, column), defer)));
+            }
+        }
+
+        foreach (var statistics in dependents.Statistics.Where(s => s.Columns.All(c => Find(source.Columns, c) is not null)))
+        {
+            context.Steps.Add(Step(ScriptPhase.Indexes, $"restore statistics {statistics.Name}",
+                Batch(TSqlWriter.CreateStatistics(table, statistics), defer)));
+        }
+
+        foreach (var index in dependents.Indexes)
+        {
+            if (source.Indexes.FirstOrDefault(i => Same(i.Name, index.Name)) is { } replacement)
+            {
+                AddIndexStep(context.Steps, context.Refusals, table, replacement, $"recreate index {replacement.Name}", defer);
+            }
+        }
+
+        foreach (var check in dependents.Checks)
+        {
+            if (source.CheckConstraints.FirstOrDefault(c => Same(c.Name, check.Name)) is { } replacement)
+            {
+                context.Steps.Add(Step(ScriptPhase.CheckConstraints, $"recreate check {replacement.Name}",
+                    Batch(TSqlWriter.AddCheckConstraint(table, replacement), defer)));
+            }
+        }
+
+        if (dependents.PrimaryKey is not null && source.PrimaryKey is { } pk)
+        {
+            context.Steps.Add(Step(ScriptPhase.Keys, $"recreate primary key {pk.Name}",
+                Batch(TSqlWriter.AddPrimaryKey(table, pk), defer)));
+        }
+
+        foreach (var unique in dependents.Uniques)
+        {
+            if (source.UniqueConstraints.FirstOrDefault(u => Same(u.Name, unique.Name)) is { } replacement)
+            {
+                context.Steps.Add(Step(ScriptPhase.Keys, $"recreate unique constraint {replacement.Name}",
+                    Batch(TSqlWriter.AddUniqueConstraint(table, replacement), defer)));
+            }
+        }
     }
 
     private static void EmitIndexChange(
@@ -531,13 +785,13 @@ public sealed class TSqlEmitter : IScriptEmitter
         ObjectDiff child,
         ObjectIdentity table,
         TableDefinition source,
-        HashSet<string> rebuilt,
+        HashSet<string> handled,
         bool defer,
         List<string> refusals)
     {
         var name = child.Identity.Name;
 
-        if (!rebuilt.Add(name))
+        if (!handled.Add($"index:{name}"))
         {
             return;
         }
@@ -565,9 +819,15 @@ public sealed class TSqlEmitter : IScriptEmitter
         ObjectDiff child,
         ObjectIdentity table,
         TableDefinition source,
+        HashSet<string> handled,
         bool defer)
     {
         var name = child.Identity.Name;
+
+        if (!handled.Add($"check:{name}"))
+        {
+            return;
+        }
 
         if (child.Kind is DiffKind.TargetOnly or DiffKind.Different)
         {
@@ -595,9 +855,15 @@ public sealed class TSqlEmitter : IScriptEmitter
         ObjectDiff child,
         ObjectIdentity table,
         TableDefinition source,
+        HashSet<string> handled,
         bool defer)
     {
         var name = child.Identity.Name;
+
+        if (!handled.Add($"fk:{name}"))
+        {
+            return;
+        }
 
         if (child.Kind is DiffKind.TargetOnly or DiffKind.Different)
         {
@@ -625,9 +891,15 @@ public sealed class TSqlEmitter : IScriptEmitter
         ObjectDiff child,
         ObjectIdentity table,
         TableDefinition source,
+        HashSet<string> handled,
         bool defer)
     {
         var name = child.Identity.Name;
+
+        if (!handled.Add($"key:{name}"))
+        {
+            return;
+        }
 
         if (child.Kind is DiffKind.TargetOnly or DiffKind.Different)
         {
@@ -661,6 +933,13 @@ public sealed class TSqlEmitter : IScriptEmitter
             }
         }
     }
+
+    private static ScriptStep Step(ScriptPhase phase, string description, string sql) => new(phase, description, sql);
+
+    private static ColumnDefinition? Find(IEnumerable<ColumnDefinition> columns, string name) =>
+        columns.FirstOrDefault(c => Same(c.Name, name));
+
+    private static bool Same(string left, string right) => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     private static void EmitProgrammables(
         List<ScriptStep> steps,
@@ -726,7 +1005,7 @@ public sealed class TSqlEmitter : IScriptEmitter
     // RAISERROR, a recursive EXEC — and those are deliberately left alone: the aim is a target object
     // identical to the source object, and the source carries exactly the same stale text. A recursive call
     // to the old name is already broken on the source, since nothing answers to that name there either.
-    private static (string Body, string? Note) WithCatalogName(string definition, ObjectIdentity identity)
+    internal static (string Body, string? Note) WithCatalogName(string definition, ObjectIdentity identity)
     {
         var header = ProgrammableHeaderReader.Read(definition);
 
@@ -756,11 +1035,6 @@ public sealed class TSqlEmitter : IScriptEmitter
 
     private static string Batch(string sql, bool defer) =>
         defer ? TSqlWriter.ExecuteAsBatch(sql) : sql;
-
-    private static IEnumerable<IndexDefinition> DependentIndexes(TableDefinition table, string column) =>
-        table.Indexes.Where(i =>
-            i.Columns.Any(c => string.Equals(c.Name, column, StringComparison.OrdinalIgnoreCase))
-            || i.IncludedColumns.Any(c => string.Equals(c, column, StringComparison.OrdinalIgnoreCase)));
 
     private static string RoutineKeyword(DatabaseSchema target, ObjectIdentity identity)
     {

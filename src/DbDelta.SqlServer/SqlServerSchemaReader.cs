@@ -16,6 +16,8 @@ public sealed class SqlServerSchemaReader : ISchemaReader
     // silently presenting a partially informed result as complete.
     public string? DependencyWarning { get; private set; }
 
+    public string? ColumnReferenceWarning { get; private set; }
+
     public SqlServerSchemaReader(string connectionString)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -30,11 +32,24 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         var info = await SqlServerProvider.ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
         var tables = new Dictionary<ObjectIdentity, TableAccumulator>();
 
-        await ReadColumnsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+        var references = await ReadColumnReferencesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        await ReadColumnsAsync(connection, tables, references, cancellationToken).ConfigureAwait(false);
         await ReadKeyConstraintsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
         await ReadIndexesAsync(connection, tables, cancellationToken).ConfigureAwait(false);
         await ReadForeignKeysAsync(connection, tables, cancellationToken).ConfigureAwait(false);
-        await ReadCheckConstraintsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+        await ReadCheckConstraintsAsync(connection, tables, references, cancellationToken).ConfigureAwait(false);
+        await ReadStatisticsAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+        await ReadTableStorageAsync(connection, tables, cancellationToken).ConfigureAwait(false);
+
+        // Only onto tables already known: a reference to a table with no columns read cannot exist.
+        foreach (var (table, reference) in references.SchemaBound())
+        {
+            if (tables.TryGetValue(table, out var accumulator))
+            {
+                accumulator.SchemaBoundReferences.Add(reference);
+            }
+        }
 
         var dependencies = await ReadDependenciesAsync(connection, cancellationToken).ConfigureAwait(false);
         var views = await ReadViewsAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -44,7 +59,7 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         {
             DatabaseName = info.DatabaseName,
             Collation = info.Collation,
-            ReadWarnings = DependencyWarning is null ? [] : [DependencyWarning],
+            ReadWarnings = new[] { DependencyWarning, ColumnReferenceWarning }.OfType<string>().ToList(),
             Tables = tables.Values.Select(t => t.Build()).ToList(),
             Views = views.Select(v => new ViewDefinition
             {
@@ -67,9 +82,152 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         };
     }
 
+    private async Task<ColumnReferenceMap> ReadColumnReferencesAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var map = new ColumnReferenceMap();
+
+        try
+        {
+            await using var reader = await ExecuteAsync(connection, CatalogQueries.ColumnReferences, cancellationToken)
+                .ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var table = TableId(Str(reader, "SchemaName"), Str(reader, "TableName"));
+                var column = NullableStr(reader, "ColumnName");
+                var name = Str(reader, "ReferencingName");
+
+                switch (Str(reader, "ReferencingType").Trim())
+                {
+                    case "C" when column is not null:
+                        map.AddCheck(table, name, column);
+                        break;
+
+                    case "U" when column is not null && NullableStr(reader, "ReferencingColumn") is { } computed:
+                        map.AddComputed(table, computed, column);
+                        break;
+
+                    case "V":
+                        map.AddModule(table, new ObjectIdentity(ObjectType.View, Str(reader, "ReferencingSchema"), name), column);
+                        break;
+
+                    case "FN" or "IF" or "TF":
+                        map.AddModule(table, new ObjectIdentity(ObjectType.Routine, Str(reader, "ReferencingSchema"), name), column);
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        }
+        catch (SqlException ex) when (ex.Number is PermissionDenied or ObjectNotFound)
+        {
+            ColumnReferenceWarning =
+                "Column dependencies could not be read (VIEW DEFINITION permission is missing), so a column change "
+                + "may be emitted without dropping the check constraints, computed columns or schema-bound views "
+                + "that hold the column. The server will refuse such a change and the script will roll back.";
+        }
+
+        return map;
+    }
+
+    private static async Task ReadStatisticsAsync(
+        SqlConnection connection,
+        Dictionary<ObjectIdentity, TableAccumulator> tables,
+        CancellationToken cancellationToken)
+    {
+        var statistics = new Dictionary<(ObjectIdentity Table, string Name), (string? Filter, bool NoRecompute, List<string> Columns)>();
+
+        await using (var reader = await ExecuteAsync(connection, CatalogQueries.Statistics, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var key = (TableId(Str(reader, "SchemaName"), Str(reader, "TableName")), Str(reader, "StatisticsName"));
+
+                if (!statistics.TryGetValue(key, out var entry))
+                {
+                    entry = (
+                        NullableStr(reader, "FilterDefinition"),
+                        reader.GetBoolean(reader.GetOrdinal("NoRecompute")),
+                        []);
+                    statistics[key] = entry;
+                }
+
+                entry.Columns.Add(Str(reader, "ColumnName"));
+            }
+        }
+
+        foreach (var ((identity, name), entry) in statistics)
+        {
+            if (tables.TryGetValue(identity, out var table))
+            {
+                table.Statistics.Add(new StatisticsDefinition
+                {
+                    Name = name,
+                    Columns = entry.Columns,
+                    FilterExpression = entry.Filter,
+                    NoRecompute = entry.NoRecompute
+                });
+            }
+        }
+    }
+
+    private static async Task ReadTableStorageAsync(
+        SqlConnection connection,
+        Dictionary<ObjectIdentity, TableAccumulator> tables,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await ExecuteAsync(connection, CatalogQueries.TableStorage, cancellationToken)
+            .ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!tables.TryGetValue(TableId(Str(reader, "SchemaName"), Str(reader, "TableName")), out var table))
+            {
+                continue;
+            }
+
+            var blockers = new List<string>();
+
+            if (Int(reader, "TemporalType") is > 0)
+            {
+                blockers.Add("it is part of a system-versioned temporal pair");
+            }
+
+            if (Int(reader, "MemoryOptimized") is > 0)
+            {
+                blockers.Add("it is memory-optimized");
+            }
+
+            if (reader.GetBoolean(reader.GetOrdinal("IsPartitioned")))
+            {
+                blockers.Add("it is partitioned, and the rebuilt table would not be");
+            }
+
+            if (reader.GetBoolean(reader.GetOrdinal("IsReplicated")))
+            {
+                blockers.Add("it is published for replication");
+            }
+
+            if (reader.GetBoolean(reader.GetOrdinal("IsTrackedByCdc")))
+            {
+                blockers.Add("change data capture is tracking it");
+            }
+
+            if (blockers.Count > 0)
+            {
+                table.Extras[TableExtras.RebuildBlockers] = string.Join("; ", blockers);
+            }
+        }
+    }
+
     private static async Task ReadColumnsAsync(
         SqlConnection connection,
         Dictionary<ObjectIdentity, TableAccumulator> tables,
+        ColumnReferenceMap references,
         CancellationToken cancellationToken)
     {
         await using var reader = await ExecuteAsync(connection, CatalogQueries.Columns, cancellationToken)
@@ -78,10 +236,12 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var table = Accumulator(tables, Str(reader, "SchemaName"), Str(reader, "TableName"));
+            var name = Str(reader, "ColumnName");
 
             table.Columns.Add(new ColumnDefinition
             {
-                Name = Str(reader, "ColumnName"),
+                Name = name,
+                ComputedFrom = references.ComputedFrom(table.Identity, name),
                 OrdinalPosition = reader.GetInt32(reader.GetOrdinal("OrdinalPosition")),
                 DataType = SqlTypeMapper.Map(
                     Str(reader, "TypeName"),
@@ -431,6 +591,7 @@ public sealed class SqlServerSchemaReader : ISchemaReader
     private static async Task ReadCheckConstraintsAsync(
         SqlConnection connection,
         Dictionary<ObjectIdentity, TableAccumulator> tables,
+        ColumnReferenceMap references,
         CancellationToken cancellationToken)
     {
         await using var reader = await ExecuteAsync(connection, CatalogQueries.CheckConstraints, cancellationToken)
@@ -439,12 +600,14 @@ public sealed class SqlServerSchemaReader : ISchemaReader
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var table = Accumulator(tables, Str(reader, "SchemaName"), Str(reader, "TableName"));
+            var name = Str(reader, "ConstraintName");
 
             table.CheckConstraints.Add(new CheckConstraintDefinition
             {
-                Name = Str(reader, "ConstraintName"),
+                Name = name,
                 Expression = Str(reader, "Definition"),
-                IsDisabled = reader.GetBoolean(reader.GetOrdinal("IsDisabled"))
+                IsDisabled = reader.GetBoolean(reader.GetOrdinal("IsDisabled")),
+                Columns = references.CheckColumns(table.Identity, name)
             });
         }
     }

@@ -130,6 +130,77 @@ internal static class CatalogQueries
         ORDER BY s.name, t.name, cc.name;
         """;
 
+    // Everything that holds a column in place, as the server itself records it: a check constraint reading
+    // the column, a computed column built from it, or a schema-bound module selecting it. Each blocks
+    // ALTER COLUMN with error 5074, and a module blocks dropping the table too. Only schema-bound rows are
+    // taken — a plain view is re-read by name at run time and holds nothing.
+    //
+    // A module that names the table and none of its columns — SELECT COUNT(*) — has a row with
+    // referenced_minor_id zero, so ColumnName is null there and the reference is to the table alone. A
+    // computed column is reported as its own table referencing itself, with referencing_minor_id naming it.
+    public const string ColumnReferences = """
+        SELECT
+            s.name      AS [SchemaName],
+            t.name      AS [TableName],
+            c.name      AS [ColumnName],
+            o.type      AS [ReferencingType],
+            os.name     AS [ReferencingSchema],
+            o.name      AS [ReferencingName],
+            rc.name     AS [ReferencingColumn]
+        FROM sys.sql_expression_dependencies d
+        JOIN sys.tables t    ON t.object_id = d.referenced_id
+        JOIN sys.schemas s   ON s.schema_id = t.schema_id
+        JOIN sys.objects o   ON o.object_id = d.referencing_id
+        JOIN sys.schemas os  ON os.schema_id = o.schema_id
+        LEFT JOIN sys.columns c
+               ON c.object_id = d.referenced_id AND c.column_id = d.referenced_minor_id
+        LEFT JOIN sys.columns rc
+               ON rc.object_id = d.referencing_id AND rc.column_id = d.referencing_minor_id
+        WHERE d.referenced_class = 1
+          AND d.is_schema_bound_reference = 1
+          AND t.is_ms_shipped = 0
+          AND o.type IN ('C', 'U', 'V', 'FN', 'IF', 'TF');
+        """;
+
+    // Hand-made statistics only. Auto-created ones do not block ALTER COLUMN — measured — and the server
+    // recreates them on demand.
+    public const string Statistics = """
+        SELECT
+            s.name                  AS [SchemaName],
+            t.name                  AS [TableName],
+            st.name                 AS [StatisticsName],
+            st.filter_definition    AS [FilterDefinition],
+            st.no_recompute         AS [NoRecompute],
+            c.name                  AS [ColumnName]
+        FROM sys.stats st
+        JOIN sys.tables t         ON t.object_id = st.object_id
+        JOIN sys.schemas s        ON s.schema_id = t.schema_id
+        JOIN sys.stats_columns sc ON sc.object_id = st.object_id AND sc.stats_id = st.stats_id
+        JOIN sys.columns c        ON c.object_id = sc.object_id AND c.column_id = sc.column_id
+        WHERE t.is_ms_shipped = 0 AND st.user_created = 1
+        ORDER BY s.name, t.name, st.name, sc.stats_column_id;
+        """;
+
+    // What a table rebuild cannot carry over, for the emitter to refuse on. OBJECTPROPERTY answers NULL for
+    // a property the server is too old to know rather than failing, which keeps this one query valid on
+    // every version: a server without temporal tables has none to report.
+    public const string TableStorage = """
+        SELECT
+            s.name                                                  AS [SchemaName],
+            t.name                                                  AS [TableName],
+            OBJECTPROPERTY(t.object_id, 'TableTemporalType')        AS [TemporalType],
+            OBJECTPROPERTY(t.object_id, 'TableIsMemoryOptimized')   AS [MemoryOptimized],
+            t.is_replicated                                         AS [IsReplicated],
+            t.is_tracked_by_cdc                                     AS [IsTrackedByCdc],
+            CAST(CASE WHEN EXISTS (
+                SELECT 1 FROM sys.indexes i
+                JOIN sys.partition_schemes ps ON ps.data_space_id = i.data_space_id
+                WHERE i.object_id = t.object_id) THEN 1 ELSE 0 END AS bit) AS [IsPartitioned]
+        FROM sys.tables t
+        JOIN sys.schemas s ON s.schema_id = t.schema_id
+        WHERE t.is_ms_shipped = 0;
+        """;
+
     public const string Views = """
         SELECT s.name AS [SchemaName], v.name AS [ViewName], m.definition AS [Definition]
         FROM sys.views v
