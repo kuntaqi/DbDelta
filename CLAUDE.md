@@ -111,7 +111,7 @@ tests/DbDelta.SqlServer.Tests/  integration against LocalDB, skipped when it is 
 `Core` never references a provider package. The API is the only thing that touches a database — the SPA
 holds no credentials and issues no SQL.
 
-## The six ideas worth understanding before touching the design
+## The seven ideas worth understanding before touching the design
 
 These are covered fully in `docs/PLAN.md`; they are listed here so their existence is not missed.
 
@@ -157,6 +157,13 @@ These are covered fully in `docs/PLAN.md`; they are listed here so their existen
    The list also holds only functions whose arguments are ordinary expressions, which is why `DATEADD`,
    `DATEPART` and `CAST` are out — each takes a bare word that is not a column, and admitting one would mean
    widening the alphabet. Don't add a name without checking it against both rules.
+7. **A column difference is not always an `ALTER COLUMN`.** `ALTER COLUMN` changes a type, a nullability or
+   a collation and nothing else, and never takes `IDENTITY`. A default-only difference moves the default, a
+   computed one drops and re-adds the column, and identity or stored-to-computed rebuilds the table
+   (`TableRebuild`) or is refused. Around any change, everything the server says holds the column comes
+   down and goes back up — `ColumnDependents` is that list, and each entry on it was an error 5074 first. A
+   foreign key between two changing tables is reached from both ends, so every such drop goes through
+   `EmitContext.BracketForeignKey`. A schema-bound module is refused against, never dropped.
 
 ## Build order
 
