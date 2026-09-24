@@ -976,8 +976,8 @@ None open. The four that were here are closed, each with its design written up b
 
 ### A column difference is one of four statements, and ALTER COLUMN is only one of them
 
-Reported from another application and written up in `docs/issues/alter-column-identity-and-dependent-defaults.md`;
-not yet filed on GitHub. A table copied through a linked server on the legacy ODBC driver loses its identity,
+Closes [#6](https://github.com/kuntaqi/DbDelta/issues/6), reported from another application; the report as
+filed is also kept in `docs/issues/alter-column-identity-and-dependent-defaults.md`. A table copied through a linked server on the legacy ODBC driver loses its identity,
 widens `datetime` to `datetime2` and turns `nvarchar(max)` into `ntext`. Syncing it back produced a script
 that could not run twice over: `ALTER COLUMN … INT IDENTITY(1,2)` is not T-SQL (error 156, a compile error,
 so the whole script was refused), and with that removed the `datetime2` → `datetime` alter failed on the
