@@ -972,7 +972,79 @@ both hypotheses formed before measuring were wrong.** The suspect was the digest
 out to cost 43ms, and then the LOB type, which turned out to be a distant second to the predicate shape.
 ## Known defects
 
-None open. The three that were here are closed, each with its design written up below.
+None open. The four that were here are closed, each with its design written up below.
+
+### A column difference is one of four statements, and ALTER COLUMN is only one of them
+
+Closes [#6](https://github.com/kuntaqi/DbDelta/issues/6), reported from another application; the report as
+filed is also kept in `docs/issues/alter-column-identity-and-dependent-defaults.md`. A table copied through a linked server on the legacy ODBC driver loses its identity,
+widens `datetime` to `datetime2` and turns `nvarchar(max)` into `ntext`. Syncing it back produced a script
+that could not run twice over: `ALTER COLUMN … INT IDENTITY(1,2)` is not T-SQL (error 156, a compile error,
+so the whole script was refused), and with that removed the `datetime2` → `datetime` alter failed on the
+default holding the column (5074 + 4922). Both reproduced end to end against LocalDB before anything changed.
+
+The cause was one assumption: that every column difference is an `ALTER COLUMN`. It is not. `ColumnChange`
+reads the properties the comparer reported and sorts them into what each one takes:
+
+| difference | statement |
+|---|---|
+| type, nullability, collation | `ALTER COLUMN` — never with `IDENTITY`, which is now `CREATE`-only like the default clause already was |
+| default only | drop the target's default, add the source's; no `ALTER` at all (it used to emit one that changed nothing) |
+| computed expression | drop the computed column, add it back — it holds no data |
+| identity, or stored ↔ computed | a table rebuild, or a refusal when the table cannot be rebuilt |
+| column order alone | a refusal: only a rebuild could do it, and a rebuild is not worth it for order |
+
+**Everything that holds a column comes down around its change, not only indexes.** Measured one by one on
+LocalDB, each of these blocks `ALTER COLUMN` and `DROP COLUMN` with 5074: an index on the column, a
+*filtered* index whose `WHERE` names it, the primary key, a unique constraint, a check constraint, a
+default, a computed column built from it, a hand-made statistics object, and a foreign key in either
+direction. Auto-created statistics do not. `ColumnDependents` walks all of them, and a dropped key has a
+second ring — every foreign key that references it — whether it was dropped as a dependent or by its own
+difference. What belongs to the table comes back from the source; a foreign key on another table comes back
+as the target had it; statistics are not compared, so the target's own go back.
+
+The columns come from the catalog, not from parsing: `sys.sql_expression_dependencies` records a check
+constraint's columns, a computed column's inputs and a schema-bound module's reads, all as schema-bound
+references with `referenced_minor_id` naming the column. Where that query is refused, the stored expression
+is searched for the bracketed name instead, which is reliable only because the server writes every column
+reference in a stored expression bracketed.
+
+**A schema-bound module refuses; it is never dropped for you.** It is an object of its own that the plan
+may not include, so a column one reads is refused with the module named, and a table one reads is not
+rebuilt.
+
+**One key between two changing tables is reached twice** — as the child's outbound key and the parent's
+inbound one — and dropping it twice is the first thing a two-table test did. Every such drop goes through
+`EmitContext.BracketForeignKey`, which drops and restores once, and skips a key the plan itself changes or
+whose table the plan drops.
+
+**The rebuild** (`TableRebuild`) creates a copy from the source definition under a temporary name with no
+constraints — default, key and check names are unique per schema and the original still holds them —
+copies every row under `IDENTITY_INSERT`, asserts the counts inside the transaction, drops the original and
+renames the copy onto it, then puts back defaults, keys, indexes, checks and foreign keys from the source.
+Three things it carries that an ALTER would never have lost, and a first version would have:
+
+- **Grants** are re-issued from `sys.database_permissions` as the script runs — the one thing on the table
+  object DbDelta never reads. A column grant survives only if the column does.
+- **The identity counter** is carried forward. `IDENTITY_INSERT` leaves the copy at the highest value
+  inserted, which is behind the original wherever the top rows were deleted; left alone the next insert
+  reissues a key that was already handed out once.
+- **Triggers and views.** Triggers go down with the table and come back as the target had them, disabled
+  if they were, unless the plan creates, alters or drops them itself. A view that is not schema-bound keeps
+  the column list it was created with, so every one reading the table is refreshed.
+
+Every rebuild statement runs as its own batch: the object a name resolves to changes halfway through. It
+refuses, rather than quietly losing something, on a system-versioned, memory-optimized, partitioned,
+replicated or CDC-tracked table — read with `OBJECTPROPERTY`, which answers NULL on a server too old to know
+the property instead of failing. What it does not carry and says nothing about: extended properties, data
+compression and a non-default filegroup, none of which DbDelta reads for any table.
+
+The script's drop of the original is marked destructive, and so is the copy when a column is narrowed or
+not on the source, so the apply guard asks for the same acknowledgement a `DROP TABLE` would. Honouring a
+disabled foreign key or check constraint on creation (`WITH NOCHECK`, then `NOCHECK CONSTRAINT`) came in
+with this, because restoring one enabled would test existing rows against a rule the target was not
+enforcing — and it also fixes a disabled source constraint never converging, since the comparer compares
+`Disabled`.
 
 ### An index has a kind, and it decides the statement
 

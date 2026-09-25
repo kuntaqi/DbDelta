@@ -16,6 +16,9 @@ public sealed class ColumnDefinition
 
     public string? ComputedExpression { get; init; }
 
+    // The columns a computed expression reads. Derived from ComputedExpression, so not compared.
+    public IReadOnlyList<string> ComputedFrom { get; init; } = [];
+
     public string? DefaultExpression { get; init; }
 
     public string? DefaultConstraintName { get; init; }

@@ -10,7 +10,8 @@ internal static class TSqlWriter
     public static string ColumnDefinition(
         ColumnDefinition column,
         bool includeDefault,
-        string? databaseCollation = null)
+        string? databaseCollation = null,
+        bool includeIdentity = true)
     {
         if (column.ComputedExpression is not null)
         {
@@ -22,7 +23,7 @@ internal static class TSqlWriter
         var text = $"{Q.Quote(column.Name)} {SqlTypeText.Declare(column.DataType)}"
             + CollationClause(column, databaseCollation);
 
-        if (column.Identity is not null)
+        if (includeIdentity && column.Identity is not null)
         {
             text += $" IDENTITY({column.Identity.Seed},{column.Identity.Increment})";
         }
@@ -37,13 +38,22 @@ internal static class TSqlWriter
         return text;
     }
 
-    public static string CreateTable(TableDefinition table, string? databaseCollation = null)
+    public static string CreateTable(TableDefinition table, string? databaseCollation = null) =>
+        CreateTable(table.Identity, table, includeDefaults: true, databaseCollation);
+
+    // Under another name, and optionally without its defaults: a rebuild creates the copy while the original
+    // still holds the default constraint names, which are unique per schema rather than per table.
+    public static string CreateTable(
+        ObjectIdentity name,
+        TableDefinition table,
+        bool includeDefaults,
+        string? databaseCollation = null)
     {
         var columns = table.Columns
             .OrderBy(c => c.OrdinalPosition)
-            .Select(c => "    " + ColumnDefinition(c, includeDefault: true, databaseCollation));
+            .Select(c => "    " + ColumnDefinition(c, includeDefaults, databaseCollation));
 
-        return $"CREATE TABLE {Q.Qualify(table.Identity)} (\n{string.Join(",\n", columns)}\n);";
+        return $"CREATE TABLE {Q.Qualify(name)} (\n{string.Join(",\n", columns)}\n);";
     }
 
     // A column takes the collation of the database it is created in unless the statement says otherwise,
@@ -201,19 +211,31 @@ internal static class TSqlWriter
     public static string DropColumn(ObjectIdentity table, string name) =>
         $"ALTER TABLE {Q.Qualify(table)} DROP COLUMN {Q.Quote(name)};";
 
+    // Never IDENTITY: ALTER COLUMN has no syntax for it, and error 156 is a compile error, so the clause
+    // used to reject the whole script before a single step ran. Identity changes are a rebuild.
     public static string AlterColumn(
         ObjectIdentity table,
         ColumnDefinition column,
         string? databaseCollation = null) =>
         $"ALTER TABLE {Q.Qualify(table)} ALTER COLUMN "
-        + $"{ColumnDefinition(column, includeDefault: false, databaseCollation)};";
+        + $"{ColumnDefinition(column, includeDefault: false, databaseCollation, includeIdentity: false)};";
 
+    public static string AddDefault(ObjectIdentity table, ColumnDefinition column) =>
+        $"ALTER TABLE {Q.Qualify(table)} ADD CONSTRAINT {Q.Quote(column.DefaultConstraintName!)} "
+        + $"DEFAULT {column.DefaultExpression} FOR {Q.Quote(column.Name)};";
+
+    // A disabled constraint is added unchecked and then disabled, so the existing rows are not tested
+    // against a rule the source itself does not enforce.
     public static string AddCheckConstraint(ObjectIdentity table, CheckConstraintDefinition check) =>
-        $"ALTER TABLE {Q.Qualify(table)} ADD CONSTRAINT {Q.Quote(check.Name)} CHECK {check.Expression};";
+        check.IsDisabled
+            ? $"ALTER TABLE {Q.Qualify(table)} WITH NOCHECK ADD CONSTRAINT {Q.Quote(check.Name)} CHECK {check.Expression};\n"
+                + $"ALTER TABLE {Q.Qualify(table)} NOCHECK CONSTRAINT {Q.Quote(check.Name)};"
+            : $"ALTER TABLE {Q.Qualify(table)} ADD CONSTRAINT {Q.Quote(check.Name)} CHECK {check.Expression};";
 
     public static string AddForeignKey(ObjectIdentity table, ForeignKeyDefinition key)
     {
-        var text = $"ALTER TABLE {Q.Qualify(table)} ADD CONSTRAINT {Q.Quote(key.Name)} FOREIGN KEY "
+        var text = $"ALTER TABLE {Q.Qualify(table)}{(key.IsDisabled ? " WITH NOCHECK" : string.Empty)} "
+            + $"ADD CONSTRAINT {Q.Quote(key.Name)} FOREIGN KEY "
             + $"({string.Join(", ", key.Columns.Select(Q.Quote))}) REFERENCES {Q.Qualify(key.ReferencedTable)} "
             + $"({string.Join(", ", key.ReferencedColumns.Select(Q.Quote))})";
 
@@ -227,8 +249,34 @@ internal static class TSqlWriter
             text += $" ON UPDATE {Action(key.OnUpdate)}";
         }
 
-        return text + ";";
+        return key.IsDisabled
+            ? $"{text};\nALTER TABLE {Q.Qualify(table)} NOCHECK CONSTRAINT {Q.Quote(key.Name)};"
+            : text + ";";
     }
+
+    public static string CreateStatistics(ObjectIdentity table, StatisticsDefinition statistics)
+    {
+        var text = $"CREATE STATISTICS {Q.Quote(statistics.Name)} ON {Q.Qualify(table)} "
+            + $"({string.Join(", ", statistics.Columns.Select(Q.Quote))})";
+
+        if (statistics.FilterExpression is not null)
+        {
+            text += $" WHERE {statistics.FilterExpression}";
+        }
+
+        return statistics.NoRecompute ? text + " WITH NORECOMPUTE;" : text + ";";
+    }
+
+    public static string DropStatistics(ObjectIdentity table, string name) =>
+        $"DROP STATISTICS {Q.Qualify(table)}.{Q.Quote(name)};";
+
+    public static string DisableTrigger(ObjectIdentity trigger, ObjectIdentity table) =>
+        $"DISABLE TRIGGER {Q.Qualify(trigger)} ON {Q.Qualify(table)};";
+
+    // A module that is not schema-bound keeps the column list it was created with — SELECT * most of all —
+    // until it is refreshed, and a rebuilt table is a new object with possibly different columns.
+    public static string RefreshModule(ObjectIdentity module) =>
+        $"EXEC sp_refreshsqlmodule N'{Q.Qualify(module).Replace("'", "''", StringComparison.Ordinal)}';";
 
     public static string DropTable(ObjectIdentity table) =>
         $"DROP TABLE {Q.Qualify(table)};";

@@ -16,6 +16,10 @@ public sealed class TableDefinition
 
     public IReadOnlyList<CheckConstraintDefinition> CheckConstraints { get; init; } = [];
 
+    public IReadOnlyList<StatisticsDefinition> Statistics { get; init; } = [];
+
+    public IReadOnlyList<SchemaBoundReference> SchemaBoundReferences { get; init; } = [];
+
     public ProviderExtras Extras { get; init; } = ProviderExtras.Empty;
 
     public override string ToString() => Identity.QualifiedName;

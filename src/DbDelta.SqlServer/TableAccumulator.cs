@@ -20,6 +20,12 @@ internal sealed class TableAccumulator
 
     public List<CheckConstraintDefinition> CheckConstraints { get; } = [];
 
+    public List<StatisticsDefinition> Statistics { get; } = [];
+
+    public List<SchemaBoundReference> SchemaBoundReferences { get; } = [];
+
+    public Dictionary<string, string?> Extras { get; } = [];
+
     public TableDefinition Build() => new()
     {
         Identity = Identity,
@@ -28,6 +34,9 @@ internal sealed class TableAccumulator
         UniqueConstraints = UniqueConstraints,
         Indexes = Indexes,
         ForeignKeys = ForeignKeys,
-        CheckConstraints = CheckConstraints
+        CheckConstraints = CheckConstraints,
+        Statistics = Statistics,
+        SchemaBoundReferences = SchemaBoundReferences,
+        Extras = Extras.Count == 0 ? ProviderExtras.Empty : new ProviderExtras(Extras)
     };
 }
