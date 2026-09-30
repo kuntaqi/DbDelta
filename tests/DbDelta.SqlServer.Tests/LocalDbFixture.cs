@@ -93,6 +93,11 @@ public sealed class LocalDbFixture : IAsyncLifetime
         {
             return ex.Message;
         }
+        // SqlClient's managed SNI, used off Windows, throws this rather than a SqlException for LocalDB.
+        catch (PlatformNotSupportedException ex)
+        {
+            return ex.Message;
+        }
 
         await DropAsync(SourceDatabase);
         await DropAsync(TargetDatabase);
