@@ -1,6 +1,11 @@
 # DbDelta
 
+[![build](https://github.com/kuntaqi/DbDelta/actions/workflows/build.yml/badge.svg)](https://github.com/kuntaqi/DbDelta/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Compare two databases — structure and data — then sync one direction.
+
+![Schema compare: one table's difference open inline, with the exact statements it will run on the target](docs/image/schema-compare.png)
 
 Schema compare for SQL Server is already solved for free by `sqlpackage`/DacFx. What isn't: free **data**
 compare with per-table selective sync and guardrails that stop you writing to the wrong database. That's
