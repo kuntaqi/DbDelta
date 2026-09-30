@@ -198,3 +198,12 @@ ideas the first mockup drew as real that were never implemented, so don't read a
 screenshot of one, as evidence that a feature exists.
 
 If you are an AI assistant working in this repo, read `CLAUDE.md` first.
+
+## Contributing
+
+Contributions are welcome. Read `CONTRIBUTING.md` first; `CLAUDE.md` holds the conventions and the design
+ideas a change has to respect. To report a security issue, see `SECURITY.md`.
+
+## License
+
+MIT. See `LICENSE`.

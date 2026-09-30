@@ -1,6 +1,6 @@
 # ALTER COLUMN is emitted for changes it cannot make: identity, and columns a default depends on
 
-Status: filed as [#6](https://github.com/kuntaqi/DbDelta/issues/6); fixed on branch
+Status: filed as #6; fixed on branch
 `fix/alter-column-dependencies`. The design of the fix is in `docs/PLAN.md`, *A column difference is one of
 four statements*.
 

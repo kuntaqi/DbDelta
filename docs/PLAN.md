@@ -903,7 +903,7 @@ would get error 1205 and a survey that failed with an unhelpful message. `ListDa
 permission error and not a deadlock. That is a genuine gap this exercise turned up and did not fix.
 
 **Twelve clean runs were not twelve hundred, and the retry turned out to cover only half the hazard.**
-Closes [#5](https://github.com/kuntaqi/DbDelta/issues/5). A later full run failed on
+Closes #5. A later full run failed on
 `System_databases_are_left_out` with a different exception:
 
 > Cannot continue the execution because the session is in the kill state.
@@ -976,7 +976,7 @@ None open. The four that were here are closed, each with its design written up b
 
 ### A column difference is one of four statements, and ALTER COLUMN is only one of them
 
-Closes [#6](https://github.com/kuntaqi/DbDelta/issues/6), reported from another application; the report as
+Closes #6, reported from another application; the report as
 filed is also kept in `docs/issues/alter-column-identity-and-dependent-defaults.md`. A table copied through a linked server on the legacy ODBC driver loses its identity,
 widens `datetime` to `datetime2` and turns `nvarchar(max)` into `ntext`. Syncing it back produced a script
 that could not run twice over: `ALTER COLUMN … INT IDENTITY(1,2)` is not T-SQL (error 156, a compile error,
@@ -1048,7 +1048,7 @@ enforcing — and it also fixes a disabled source constraint never converging, s
 
 ### An index has a kind, and it decides the statement
 
-Closes [#1](https://github.com/kuntaqi/DbDelta/issues/1).
+Closes #1.
 
 `sys.indexes.type_desc` was read and then collapsed to the single boolean `IsClustered`, so everything that
 was not `CLUSTERED` became a plain non-clustered rowstore index. A spatial index was emitted as
@@ -1132,7 +1132,7 @@ the report's exact wrong output, whose 1978 was measured directly.
 
 ### An object's name comes from the catalog, not from the body that says it
 
-Closes [#3](https://github.com/kuntaqi/DbDelta/issues/3).
+Closes #3.
 
 `sp_rename` updates `sys.objects.name` and does not touch `sys.sql_modules.definition`, so a renamed view
 or routine says `CREATE ... <old name>` inside itself for the rest of its life. There is no flag for it —
@@ -1186,7 +1186,7 @@ mechanism — `BINARY_CHECKSUM` over a table's rows — and no fingerprint cover
 
 ### A narrowing column change is destructive, even though it drops nothing
 
-Closes [#4](https://github.com/kuntaqi/DbDelta/issues/4).
+Closes #4.
 
 The apply had four guards and none of them covered this: `ALTER COLUMN` from `DECIMAL(18,4)` to
 `DECIMAL(18,2)` rounds every value in the column, `DATETIME2(7)` to `(0)` drops the fractional seconds
@@ -1630,28 +1630,17 @@ the two stores land under the same root, since the point is that one mounted vol
 
 ### Publishing the repository is not the same as publishing the code
 
-Three things are in the way, and the first is the only urgent one.
+Publishing the code is one decision; publishing its history is another, because a history keeps what the
+working tree has since dropped. So the history was rewritten before the repository went public: every
+commit now uses only the generic stand-in names from the naming constraint in `CLAUDE.md`, and every
+commit carries a no-reply author address. No credentials were ever in it — the only password-shaped strings
+are the deliberate `hunter2` fixture and the generic examples. Issue numbers in this plan refer to the
+tracker as it stood before publishing.
 
-**The git history still contains what the working tree does not.** The naming constraint in `CLAUDE.md`
-records that real internal server hostnames were scrubbed before publishing — and they
-were, from the *tree*. Searching all 46 commits finds a real server-name prefix in **two**: the one
-that introduced it and the one that removed it, both on the same day. Publishing this repository as-is
-publishes that. Since it has never been pushed anywhere, rewriting is free, and the choice is between
-`git filter-repo --replace-text` across the two commits and starting the public repository from a single
-squashed commit. No credentials are in the history — the only password-shaped strings are the deliberate
-`hunter2` fixture and the generic examples.
-
-**There is no LICENSE, and the README is not yet a public one.** The licence is the owner's decision; MIT
-and Apache-2.0 are the usual two, and Apache-2.0's explicit patent grant is the reason to prefer it for a
-tool a company might adopt. `README.md` exists — 38 lines covering what the tool does, status, stack and
-safety — but it predates all of this: it mentions neither setup path, says nothing about Docker, and does
-not mention that there is no authentication. A newcomer's first file has to carry the two ways in, the
-no-login warning, and the fact that the apply path writes to databases.
-
-**`CLAUDE.md` ships with the repository.** It is currently the best description of the project's conventions
-and would be genuinely useful to a contributor, but it is written to an audience of one and refers to one developer's
-machine setup in places. It needs a read-through as a public document, or splitting into the part that is project
-convention and the part that is personal setup.
+The licence is MIT. `README.md` carries what a newcomer needs first: the two ways in, the warning that
+there is no authentication, and the fact that the apply path writes to databases. `CLAUDE.md` ships as the
+contributor guide, because it is the fullest statement of the project's conventions; `CONTRIBUTING.md`
+points there, and `SECURITY.md` says how to report a weakness privately.
 
 ### Docker on the machine this was written on: not possible, and worth recording why
 

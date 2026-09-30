@@ -5,7 +5,7 @@ every change follows.
 
 ## What this is
 
-A personal tool (not a company project) that compares two databases — structure *and* data — and syncs one
+A tool that compares two databases — structure *and* data — and syncs one
 direction. Three granularities: schema only, one table's data, or the whole database. Its reason to exist:
 Microsoft's `sqlpackage`/DacFx already does schema compare for free, but free **data** compare with selective
 per-table sync and real guardrails does not exist (Redgate Data Compare is paid).
@@ -63,7 +63,7 @@ What exists:
 | 5 | Grid/diagram libs | None. The grids are plain tables and the FK map is hand-authored inline SVG. TanStack and React Flow were planned, then dropped as unneeded at these sizes |
 
 Angular was considered and rejected: React was expected to need TanStack for virtualized diff grids, and
-commercial component libraries are not an option for a personal tool. The virtualization never
+the commercial component libraries that would have covered it are not an option for an open-source tool. The virtualization never
 turned out to be necessary — row detail is capped at 200 rows because the two-pass design fetches only
 what is shown.
 
@@ -75,13 +75,13 @@ Every example in `docs/` uses **generic stand-in names**, and that is intentiona
 - `AppProd` / `AppUat` / `AppDev` for databases
 - `sales.vCompanySegment`, `dbo.Category`, `Segment` for schema objects
 
-An earlier draft used real internal server hostnames and database names because it made the mockup concrete
-during review. Those were scrubbed before publishing — production database hostnames and
-per-environment database names in one public-facing file is infrastructure topology, not documentation.
+Production database hostnames and per-environment database names in a public repository are infrastructure
+topology, not documentation, so no example here uses real ones.
 
-**Never reintroduce real server names, database names, or internal object names here** — not in
-prose, sample SQL, screenshots, or test fixtures. The docs now *look* generic, so this constraint is
-invisible from reading them, which is exactly why it is written down.
+**Never introduce real server names, database names, or internal object names from any organisation's
+environment** — not in prose, sample SQL, screenshots, or test fixtures. Your own environment's patterns go
+in the gitignored `appsettings.Local.json`. The docs look generic by design, so this constraint is invisible
+from reading them, which is exactly why it is written down.
 
 ## Code conventions
 

@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Real server-name patterns belong here, not in the committed defaults: the naming scheme of a real
-// environment is not something this repo should carry. Gitignored.
+// Real server-name patterns belong here, not in the committed defaults: a real environment's naming
+// scheme is not something this repo should carry. Gitignored.
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 builder.Services.Configure<SafetyOptions>(builder.Configuration.GetSection(SafetyOptions.SectionName));
