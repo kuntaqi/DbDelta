@@ -75,4 +75,14 @@ public sealed class PgTypeMapperTests
     {
         Assert.Equal(expected, PgTypeMapper.MapIndexKind(accessMethod));
     }
+
+    [Theory]
+    [InlineData("p", false, RoutineKind.Procedure)]
+    [InlineData("p", true, RoutineKind.Procedure)]
+    [InlineData("f", true, RoutineKind.TableValuedFunction)]
+    [InlineData("f", false, RoutineKind.ScalarFunction)]
+    public void Routine_kinds_map_from_prokind_and_set_return(string prokind, bool returnsSet, RoutineKind expected)
+    {
+        Assert.Equal(expected, PgTypeMapper.MapRoutineKind(prokind, returnsSet));
+    }
 }

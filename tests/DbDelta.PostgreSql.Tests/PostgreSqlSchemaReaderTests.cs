@@ -42,6 +42,26 @@ public sealed class PostgreSqlSchemaReaderTests
 
         create index ix_child_name on {Schema}.child (name desc);
         create index ix_child_active on {Schema}.child (parent_id) where is_active;
+
+        create view {Schema}.active_children as
+            select child_id, name from {Schema}.child where is_active;
+
+        create function {Schema}.combine(a integer, b integer) returns integer language sql
+            as $$ select a + b $$;
+
+        create function {Schema}.combine(a text, b text) returns text language sql
+            as $$ select a || b $$;
+
+        create function {Schema}.all_children() returns setof {Schema}.child language sql
+            as $$ select * from {Schema}.child $$;
+
+        create procedure {Schema}.noop() language plpgsql as $$ begin end $$;
+
+        create function {Schema}.stamp_name() returns trigger language plpgsql as
+            $$ begin new.name := new.name; return new; end $$;
+
+        create trigger trg_before_update before update on {Schema}.child
+            for each row execute function {Schema}.stamp_name();
         """;
 
     private readonly PgFixture _fixture;
@@ -122,6 +142,23 @@ public sealed class PostgreSqlSchemaReaderTests
 
         var partial = child.Indexes.Single(i => i.Name == "ix_child_active");
         Assert.False(string.IsNullOrEmpty(partial.FilterExpression));
+
+        var view = schema.Views.Single(v => v.Identity.Schema == Schema && v.Identity.Name == "active_children");
+        Assert.Contains("child_id", view.Definition, StringComparison.Ordinal);
+
+        var routines = schema.Routines.Where(r => r.Identity.Schema == Schema).ToList();
+        Assert.Equal(2, routines.Count(r => r.Identity.Name.StartsWith("combine(", StringComparison.Ordinal)));
+        Assert.Contains(routines, r => r.Identity.Name == "combine(a integer, b integer)");
+        Assert.Contains(routines, r => r.Identity.Name == "combine(a text, b text)");
+        Assert.Equal(RoutineKind.TableValuedFunction, routines.Single(r => r.Identity.Name == "all_children()").Kind);
+        Assert.Equal(RoutineKind.Procedure, routines.Single(r => r.Identity.Name == "noop()").Kind);
+        Assert.Equal(RoutineKind.ScalarFunction, routines.Single(r => r.Identity.Name == "stamp_name()").Kind);
+
+        var trigger = Assert.Single(schema.Triggers, t => t.Identity.Schema == Schema);
+        Assert.Equal("child.trg_before_update", trigger.Identity.Name);
+        Assert.Equal("child", trigger.Table.Name);
+        Assert.False(trigger.IsDisabled);
+        Assert.Contains("BEFORE UPDATE", trigger.Definition, StringComparison.Ordinal);
 
         await _fixture.ExecuteAsync($"drop schema if exists {Schema} cascade;");
     }

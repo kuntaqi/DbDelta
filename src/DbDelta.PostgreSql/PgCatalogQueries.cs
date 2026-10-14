@@ -117,4 +117,39 @@ internal static class PgCatalogQueries
                           where con.conindid = i.indexrelid and con.contype in ('p', 'u', 'x'))
         order by n.nspname, c.relname, ix.relname, k.ord
         """;
+
+    public const string Views = $"""
+        select n.nspname as schema_name, c.relname as view_name, pg_get_viewdef(c.oid, true) as definition
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where c.relkind = 'v' and {NonSystemSchema}
+        order by n.nspname, c.relname
+        """;
+
+    // Overloaded functions share a name, so the identity carries the argument signature the way PostgreSQL
+    // itself disambiguates. prokind is filtered to plain functions and procedures; aggregates and window
+    // functions are out of scope and pg_get_functiondef does not support them anyway.
+    public const string Routines = $"""
+        select n.nspname as schema_name,
+               p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as routine_name,
+               p.prokind::text as kind, p.proretset as returns_set,
+               pg_get_functiondef(p.oid) as definition
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where p.prokind in ('f', 'p') and {NonSystemSchema}
+        order by n.nspname, p.proname
+        """;
+
+    // tgisinternal excludes the triggers PostgreSQL creates to enforce foreign keys and constraints. A
+    // trigger name is unique per table, not per schema, so the table qualifies it below.
+    public const string Triggers = $"""
+        select n.nspname as schema_name, c.relname as table_name, t.tgname as trigger_name,
+               t.tgenabled::text as enabled,
+               pg_get_triggerdef(t.oid, true) as definition
+        from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where not t.tgisinternal and {NonSystemSchema}
+        order by n.nspname, c.relname, t.tgname
+        """;
 }

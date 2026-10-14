@@ -1,13 +1,13 @@
 # PostgreSQL schema reader — the stub's first real member
 
-Status: **first increment done and verified** (2026-10-14), on branch `feature/postgresql-schema-reader`.
-Follows `docs/TASK-postgresql-provider-stub.md` (the compile-proof stub, merged in #3). `PostgreSqlSchemaReader`
-is now a working `ISchemaReader` that reads a live PostgreSQL database into a `DatabaseSchema` for the
-structural core (tables, columns, keys, constraints, indexes). It pulled in the first real dependency (Npgsql
-10.0.3) and the first real verification. Verified against **PostgreSQL 16.4** installed on this machine
-(portable binaries, local-only, trust auth) — `tests/DbDelta.PostgreSql.Tests` runs 27 tests, the integration
-one against the live server, all green; the suite skips the integration test when `DBDELTA_PG_TEST` is unset.
-What remains is in *Gaps to full parity* below.
+Status: **increments 1 and 2 done and verified** (2026-10-14). Follows `docs/TASK-postgresql-provider-stub.md`
+(the compile-proof stub, merged in #3). `PostgreSqlSchemaReader` is a working `ISchemaReader` that reads a live
+PostgreSQL database into a `DatabaseSchema` for the structural core (tables, columns, keys, constraints,
+indexes — merged in #6) and now also **views, routines and triggers** (increment 2). It pulled in the first
+real dependency (Npgsql 10.0.3) and the first real verification. Verified against **PostgreSQL 16.4** installed
+on this machine (portable binaries, local-only, trust auth) — `tests/DbDelta.PostgreSql.Tests` runs 31 tests,
+the integration one against the live server, all green; the suite skips the integration test when
+`DBDELTA_PG_TEST` is unset. What remains is in *Gaps to full parity* below.
 
 ## The hard constraint, stated first
 
@@ -112,13 +112,19 @@ equally — but each is a thing a sync would not reproduce.
 
 **Object kinds not read at all** (surfaced at runtime through `DatabaseSchema.ReadWarnings`):
 
-- **Views** — definition, columns, dependency order.
-- **Routines** — functions and procedures. Reading their bodies then needs `SqlBodyNormalizer` to understand PG
-  dollar-quoting (`$$...$$`) and `E'...'` escapes, or function-body diffs will be false positives.
-- **Triggers**.
 - **Sequences** as standalone objects (identity-owned sequences are already read via the column's identity).
 - **User-defined types** — domains (≈ `Alias`), composite types, and enums (no exact `UserDefinedTypeKind`
   slot — map to `Alias` or extend the enum).
+
+Read as of increment 2, with these smaller gaps inside them:
+
+- **Views**: materialised views (`relkind = 'm'`) are not read; a view's `Definition` is the `SELECT` body
+  (`pg_get_viewdef`), not a full `CREATE`, unlike routines/triggers.
+- **Routines**: aggregate and window functions (`prokind 'a'`/`'w'`) are skipped; `DependsOn` is left empty
+  (no emitter consumes it yet).
+- **Routine/view bodies** still need `SqlBodyNormalizer` to understand PG dollar-quoting (`$$...$$`) and
+  `E'...'` escapes before they can be compared without false diffs — a compare-side follow-up with no consumer
+  until PG sync is wired.
 
 **Within the objects that are read:**
 
@@ -145,10 +151,41 @@ equally — but each is a thing a sync would not reproduce.
 
 ## Next increments (build order from here)
 
-1. Views + routines (with `SqlBodyNormalizer` taught PG quoting) + triggers.
+1. **Done — views + routines + triggers.** See *Increment 2* below.
 2. Sequences + user-defined types (domains/composite/enums).
 3. The within-object gaps above, each with a fixture case.
 4. The cross-engine follow-ups — only once a PG *emitter* exists and sync is on the table.
+
+## Increment 2 — views, routines, triggers (design)
+
+Fills `DatabaseSchema.Views`, `.Routines` and `.Triggers`, which the first increment left empty behind a
+`ReadWarning`. Still reader-only; still no PG compare path wired, so the compare-side follow-ups below have no
+live consumer yet and stay deferred.
+
+Catalog sources (deterministic, so two reads of the same object produce identical text):
+
+- **Views** — `pg_class` where `relkind = 'v'`, definition from `pg_get_viewdef(oid, true)`. This is the
+  `SELECT` body, not a full `CREATE` — a documented inconsistency with routines/triggers below, cheap to
+  revisit when an emitter needs a full statement. Materialised views (`relkind = 'm'`) are a gap.
+- **Routines** — `pg_proc` where `prokind in ('f','p')`, definition from `pg_get_functiondef(oid)` (a full
+  `CREATE OR REPLACE`). Aggregates and window functions (`'a'`,`'w'`) are a gap.
+- **Triggers** — `pg_trigger` where `not tgisinternal` (excludes FK/constraint triggers), definition from
+  `pg_get_triggerdef(oid, true)`. `IsDisabled` from `tgenabled = 'D'`.
+
+Two PG-specific identity choices, because the model's `(schema, name)` key is unique in SQL Server but not in
+PostgreSQL:
+
+- **Triggers** are named per *table*, not per schema (`set_updated_at` on many tables is normal), so a bare
+  `(schema, trigger)` key would collide and silently drop triggers. Identity name is `"{table}.{trigger}"`.
+- **Routines** can be overloaded (`foo(int)` vs `foo(text)`), so the identity name is
+  `"{name}({identity-args})"` via `pg_get_function_identity_arguments` — how PostgreSQL itself disambiguates.
+
+`RoutineKind`: `'p'` → `Procedure`; `'f'` with `proretset` → `TableValuedFunction`; otherwise `ScalarFunction`.
+`DependsOn` is left empty — it drives emission order, which has no consumer until an emitter exists.
+
+Compare-side follow-ups (deferred, no consumer yet; needed before PG *sync*): `SqlBodyNormalizer` does not
+understand dollar-quoting (`$$...$$`) or `E'...'`, and `ProgrammableHeaderReader` parses T-SQL `CREATE`
+headers, not PG ones. Both only matter once two PostgreSQL schemas are actually compared.
 
 ## Workflow note
 
