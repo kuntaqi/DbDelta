@@ -65,4 +65,12 @@ internal static class PgTypeMapper
     // spgist all collapse to Rowstore, losing method fidelity until the enum grows PG values.
     public static IndexKind MapIndexKind(string accessMethod) =>
         string.Equals(accessMethod, "hash", StringComparison.Ordinal) ? IndexKind.Hash : IndexKind.Rowstore;
+
+    // pg_proc.prokind. A procedure is 'p'; a function returning a set is table-valued, otherwise scalar.
+    // Aggregate ('a') and window ('w') functions are filtered out before they reach here.
+    public static RoutineKind MapRoutineKind(string prokind, bool returnsSet) => prokind switch
+    {
+        "p" => RoutineKind.Procedure,
+        _ => returnsSet ? RoutineKind.TableValuedFunction : RoutineKind.ScalarFunction,
+    };
 }

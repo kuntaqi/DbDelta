@@ -1235,12 +1235,13 @@ uses the shape the reader actually produces.
    - *Done — compile-proof stub.* `src/DbDelta.PostgreSql/` carries a second `IDatabaseProvider` that
      satisfies every member of the provider surface against an unchanged `Core`, proving the abstraction
      holds. See `docs/TASK-postgresql-provider-stub.md`.
-   - *Done — schema reader (first increment).* `PostgreSqlSchemaReader` now reads a live PostgreSQL database
-     into a `DatabaseSchema` for the structural core — tables, columns (types, nullability, identity,
-     generated, defaults, collation), primary keys, unique constraints, foreign keys, indexes and check
-     constraints — via `pg_catalog`/`information_schema` with Npgsql. Verified against PostgreSQL 16.4;
-     the integration tests skip when no server is configured. `docs/TASK-postgresql-schema-reader.md` carries
-     the gaps to full parity (views/routines/triggers/sequences/UDTs, and the cross-engine follow-ups).
+   - *Done — schema reader.* `PostgreSqlSchemaReader` reads a live PostgreSQL database into a `DatabaseSchema`:
+     the structural core — tables, columns (types, nullability, identity, generated, defaults, collation),
+     primary keys, unique constraints, foreign keys, indexes and check constraints (increment 1) — and views,
+     routines and triggers (increment 2), via `pg_catalog`/`information_schema` with Npgsql. Verified against
+     PostgreSQL 16.4; the integration tests skip when no server is configured.
+     `docs/TASK-postgresql-schema-reader.md` carries the gaps to full parity (sequences and user-defined types
+     not yet read, plus the cross-engine follow-ups).
    - *Absent.* The T-SQL-equivalent emitter, the data path, the apply executor, and runtime provider
      selection in the API (which still hard-wires one provider).
 

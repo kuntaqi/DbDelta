@@ -13,8 +13,8 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
     private const string InsufficientPrivilege = "42501";
 
     private const string DeferredObjectsWarning =
-        "Views, routines, triggers, sequences and user-defined types are not read by the PostgreSQL provider "
-        + "yet; this schema reader is a first increment covering tables and their constraints and indexes.";
+        "Sequences and user-defined types are not read by the PostgreSQL provider yet; this schema reader "
+        + "covers tables, views, routines and triggers but not those two object kinds.";
 
     private readonly string _connectionString;
 
@@ -35,6 +35,10 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         await ReadConstraintsAsync(connection, tables, warnings, cancellationToken).ConfigureAwait(false);
         await ReadIndexesAsync(connection, tables, warnings, cancellationToken).ConfigureAwait(false);
 
+        var views = await ReadViewsAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
+        var routines = await ReadRoutinesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
+        var triggers = await ReadTriggersAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
+
         warnings.Add(DeferredObjectsWarning);
 
         var built = tables.Values
@@ -48,6 +52,9 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
             DatabaseName = databaseName,
             Collation = collation,
             Tables = built,
+            Views = views,
+            Routines = routines,
+            Triggers = triggers,
             ReadWarnings = warnings,
         };
     }
@@ -262,6 +269,97 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         {
             warnings.Add("Indexes could not be read in full: " + ex.MessageText);
         }
+    }
+
+    private async Task<List<ViewDefinition>> ReadViewsAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var views = new List<ViewDefinition>();
+
+        try
+        {
+            await using var command = new NpgsqlCommand(PgCatalogQueries.Views, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                views.Add(new ViewDefinition
+                {
+                    Identity = new ObjectIdentity(
+                        ObjectType.View, Str(reader, "schema_name"), Str(reader, "view_name")),
+                    Definition = Str(reader, "definition"),
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("Views could not be read in full: " + ex.MessageText);
+        }
+
+        return views;
+    }
+
+    private async Task<List<RoutineDefinition>> ReadRoutinesAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var routines = new List<RoutineDefinition>();
+
+        try
+        {
+            await using var command = new NpgsqlCommand(PgCatalogQueries.Routines, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                routines.Add(new RoutineDefinition
+                {
+                    Identity = new ObjectIdentity(
+                        ObjectType.Routine, Str(reader, "schema_name"), Str(reader, "routine_name")),
+                    Kind = PgTypeMapper.MapRoutineKind(Str(reader, "kind"), Bool(reader, "returns_set")),
+                    Definition = Str(reader, "definition"),
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("Routines could not be read in full: " + ex.MessageText);
+        }
+
+        return routines;
+    }
+
+    private async Task<List<TriggerDefinition>> ReadTriggersAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var triggers = new List<TriggerDefinition>();
+
+        try
+        {
+            await using var command = new NpgsqlCommand(PgCatalogQueries.Triggers, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var schema = Str(reader, "schema_name");
+                var table = Str(reader, "table_name");
+                var name = Str(reader, "trigger_name");
+
+                triggers.Add(new TriggerDefinition
+                {
+                    // A PostgreSQL trigger name is unique per table, not per schema, so the table qualifies it.
+                    Identity = new ObjectIdentity(ObjectType.Trigger, schema, $"{table}.{name}"),
+                    Table = new ObjectIdentity(ObjectType.Table, schema, table),
+                    Definition = Str(reader, "definition"),
+                    IsDisabled = Str(reader, "enabled") == "D",
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("Triggers could not be read in full: " + ex.MessageText);
+        }
+
+        return triggers;
     }
 
     private static bool TryTable(
