@@ -40,7 +40,7 @@ holds on its own terms; the choice still stands, for the ecosystem rather than f
 DbDelta.sln
   src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
   src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-  src/DbDelta.PostgreSql/    provider: working schema reader + schema emitter/executor; data path still stubbed
+  src/DbDelta.PostgreSql/    provider: schema reader + emitter/executor + data-compare readers; data sync still stubbed
   src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
   src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
   tests/DbDelta.Core.Tests/       diff engine + planning unit tests (no DB needed)
@@ -1255,8 +1255,12 @@ uses the shape the reader actually produces.
      `SyncScript.Refusals`. One engine-neutral Core change came with it: `SyncScript.SessionSettings`, so the
      reviewable script's prologue is not hard-wired to T-SQL. Verified end to end against PostgreSQL 16.4 — emit,
      apply, re-read, converge. `docs/TASK-postgresql-write-path.md` carries the detail.
-   - *Absent.* The data path (data-compare readers + data-script emitter + `COPY` staging), and runtime provider
-     selection in the API (which still hard-wires one provider and its executor).
+   - *Done — data-compare read path.* The row hash reader (streaming the merge-join feed under `COLLATE "C"`),
+     row detail, row-by-value (parent closure), fingerprint, key uniqueness and volume readers all work against a
+     live server. The digest uses `md5` over a `::text` rendering per column — self-consistent is all a PG-vs-PG
+     compare needs. `docs/TASK-postgresql-data-path.md` carries the detail.
+   - *Absent.* Data sync (the data-script emitter + `COPY` staging + the executor's `COPY` branch), the collation
+     fact reader, and runtime provider selection in the API (which still hard-wires one provider and its executor).
 
 ## Open questions
 
@@ -1693,7 +1697,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
-| PostgreSQL provider | The provider interfaces, a second implementation of them, a working schema reader and a working schema emitter | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database for real across every object kind the model holds, and its `IScriptEmitter` + `IScriptExecutor` now emit and apply schema DDL, verified end to end against 16.4 (emit, apply, re-read, converge). Still absent: the data path and runtime provider selection in the API — the abstraction has met a second *engine* for reading and for writing schema, not yet for writing data or for being reachable from the app |
+| PostgreSQL provider | The provider interfaces, a second implementation of them, a working schema reader, schema emitter and data-compare read path | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database across every object kind the model holds, its `IScriptEmitter` + `IScriptExecutor` emit and apply schema DDL (verified end to end against 16.4), and the data-compare readers (hash/detail/by-value/fingerprint/uniqueness/volume) compare live table data. Still absent: data *sync* (data-script emitter + `COPY`), the collation reader, and runtime provider selection in the API — the abstraction reads and writes schema and compares data, but does not yet sync data or reach the app |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,

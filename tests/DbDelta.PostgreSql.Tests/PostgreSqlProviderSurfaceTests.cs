@@ -54,19 +54,12 @@ public sealed class PostgreSqlProviderSurfaceTests
     }
 
     [Fact]
-    public void Reader_and_emitter_members_refuse()
+    public void The_remaining_stub_members_refuse()
     {
-        // CreateSchemaReader and CreateScriptEmitter are no longer stubs — the reader is exercised against a
-        // live server by PostgreSqlSchemaReaderTests and the emitter by PostgreSqlScriptEmitterTests — so
-        // neither is asserted to refuse here. The data-compare readers and data-script emitter remain stubs.
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateVolumeReader(AnyConnectionString).ReadAsync(); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateRowHashReader(AnyConnectionString).StreamAsync(null!, null!, null!, default); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateRowDetailReader(AnyConnectionString).FetchAsync(null!, null!, null!, null!); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateRowByValueReader(AnyConnectionString).FetchAsync(null!, null!, null!, null!); });
+        // Real now and exercised elsewhere: the schema reader, the script emitter, and the data-compare read
+        // path (hash/detail/by-value/fingerprint/uniqueness/volume). Still stubbed: the data-script emitter
+        // (data sync) and the collation fact reader.
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateDataScriptEmitter().Emit(null!, 0); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateFingerprintReader(AnyConnectionString).ReadAsync(null!); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateKeyUniquenessChecker(AnyConnectionString).ProfileAsync(null!, null!); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateKeyUniquenessChecker(AnyConnectionString).CheckAsync(null!, null!); });
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateCollationFactReader(AnyConnectionString).ReadAsync(null!); });
     }
 }
