@@ -100,7 +100,7 @@ from reading them, which is exactly why it is written down.
 ```
 src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
 src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-src/DbDelta.PostgreSql/    provider: later
+src/DbDelta.PostgreSql/    provider: compile-proof stub (real quoter, rest refuses); working engine later
 src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
 src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
 tests/DbDelta.Core.Tests/       diff engine + planning unit tests, no database needed

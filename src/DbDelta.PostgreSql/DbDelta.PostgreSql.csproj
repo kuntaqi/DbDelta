@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DbDelta.Core\DbDelta.Core.csproj" />
+  </ItemGroup>
+
+  <!-- No client package. This is a compile proof of the provider abstraction, not a working engine, so it
+       deliberately has no Npgsql reference: a second class satisfies every Core interface without Core
+       bending, and that is the whole claim being tested. See docs/TASK-postgresql-provider-stub.md. -->
+
+</Project>

@@ -40,7 +40,7 @@ holds on its own terms; the choice still stands, for the ecosystem rather than f
 DbDelta.sln
   src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
   src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-  src/DbDelta.PostgreSql/    provider: later, information_schema/pg_catalog
+  src/DbDelta.PostgreSql/    provider: compile-proof stub (real quoter, rest refuses); working engine later
   src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
   src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
   tests/DbDelta.Core.Tests/       diff engine + planning unit tests (no DB needed)
@@ -1231,9 +1231,14 @@ uses the shape the reader actually produces.
    screens 3–4. All four modes have controls, including `Filter`.
 6. **Done.** Apply path + safety guards + screen 5, with a drift check over both schema and rows.
 7. **Done.** FK map (screen 6), as hand-authored inline SVG.
-8. **Not started.** PostgreSQL provider stub proving the abstraction holds. `src/DbDelta.PostgreSql/` does not
-   exist yet, so decision 1's "provider-abstracted" claim rests on the shape of the interfaces and has never
-   been tested by a second implementation.
+8. **Done, as a compile proof.** PostgreSQL provider stub proving the abstraction holds. `src/DbDelta.PostgreSql/`
+   now carries a second `IDatabaseProvider` that satisfies every member of the provider surface against an
+   unchanged `Core` — the quoter is real (`"ident"`, doubled embedded quote), everything else refuses with
+   `NotSupportedException`. No Npgsql, no catalog reads, no emitted SQL: the claim being tested is that a
+   second class can implement the interfaces without `Core` bending, and it can. `tests/DbDelta.PostgreSql.Tests`
+   asserts the surface is covered and each stub member refuses; the build itself, warnings-as-errors, is the
+   primary proof. What the stub does **not** settle — a working Postgres engine, and runtime provider
+   selection in the API (which still hard-wires one provider) — is recorded in `docs/TASK-postgresql-provider-stub.md`.
 
 ## Open questions
 
@@ -1670,7 +1675,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
-| PostgreSQL provider | The provider interfaces | `src/DbDelta.PostgreSql/` does not exist; the abstraction has never met a second engine |
+| PostgreSQL provider | The provider interfaces, and now a second implementation of them | `src/DbDelta.PostgreSql/` exists as a compile-proof stub; a working engine and runtime provider selection do not. The abstraction has met a second implementation, not a second *engine* |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,
@@ -1680,14 +1685,16 @@ built, and every one of those was here because it could make the tool do the wro
 
 What is left is no longer only absences, which is a change from how this section read a week ago.
 
-Of the four rows, two are now decisions rather than gaps and one is an absence. Data deliberately does not
-follow the schema scope. `api.ts` stays hand-written: the case for generating it was that six contract
-changes had to be mirrored by hand, and the case against is that `tsc --noEmit` caught every one of them
-immediately — the failure mode is a compile error, not a wrong answer, which makes it the least valuable
-thing in this table by the standard the rest of it is held to. It would also add a generator and a build
-step to a toolchain that is currently npm and dotnet and nothing else, which counts for more once other
-people have to build this. The provider abstraction has never met a second engine, and that one is a real
-absence. None of the three can produce a wrong answer or a wrong write.
+Of the four rows, two are now decisions rather than gaps and one has narrowed from an absence to a partial.
+Data deliberately does not follow the schema scope. `api.ts` stays hand-written: the case for generating it
+was that six contract changes had to be mirrored by hand, and the case against is that `tsc --noEmit` caught
+every one of them immediately — the failure mode is a compile error, not a wrong answer, which makes it the
+least valuable thing in this table by the standard the rest of it is held to. It would also add a generator
+and a build step to a toolchain that is currently npm and dotnet and nothing else, which counts for more once
+other people have to build this. The provider abstraction has now met a second *implementation* — a
+compile-proof stub — which settles that `Core` is genuinely engine-neutral; what it has not met is a second
+*engine*, and a working Postgres reader plus runtime provider selection remain the real absence. None of the
+three can produce a wrong answer or a wrong write.
 
 The fourth is different, and it is the exact failure mode this ledger exists to catch: the Docker files are
 written, plausible, and have never been executed. They are labelled that way in the files themselves rather
