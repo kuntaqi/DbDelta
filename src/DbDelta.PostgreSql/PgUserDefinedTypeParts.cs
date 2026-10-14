@@ -18,6 +18,8 @@ internal sealed class PgUserDefinedTypeParts
 
     public List<string> EnumLabels { get; } = [];
 
+    public List<CheckConstraintDefinition> CheckConstraints { get; } = [];
+
     public UserDefinedTypeDefinition Build() => new()
     {
         Identity = Identity,
@@ -26,5 +28,6 @@ internal sealed class PgUserDefinedTypeParts
         IsNullable = IsNullable,
         Columns = Columns,
         EnumLabels = EnumLabels,
+        CheckConstraints = CheckConstraints,
     };
 }
