@@ -1237,11 +1237,14 @@ uses the shape the reader actually produces.
      holds. See `docs/TASK-postgresql-provider-stub.md`.
    - *Done — schema reader.* `PostgreSqlSchemaReader` reads a live PostgreSQL database into a `DatabaseSchema`:
      the structural core — tables, columns (types, nullability, identity, generated, defaults, collation),
-     primary keys, unique constraints, foreign keys, indexes and check constraints (increment 1) — and views,
-     routines and triggers (increment 2), via `pg_catalog`/`information_schema` with Npgsql. Verified against
+     primary keys, unique constraints, foreign keys, indexes and check constraints (increment 1) — views,
+     routines and triggers (increment 2), and sequences and user-defined types (domains, composite types,
+     enums — increment 3), via `pg_catalog`/`information_schema` with Npgsql. Increment 3 added one
+     engine-neutral value and field to `Core` — `UserDefinedTypeKind.Enum` and `EnumLabels` — because an enum
+     has no other slot and, mapped onto an existing kind, would compare blind to its labels. Verified against
      PostgreSQL 16.4; the integration tests skip when no server is configured.
-     `docs/TASK-postgresql-schema-reader.md` carries the gaps to full parity (sequences and user-defined types
-     not yet read, plus the cross-engine follow-ups).
+     `docs/TASK-postgresql-schema-reader.md` carries the gaps to full parity (range/multirange types and the
+     within-object gaps, plus the cross-engine follow-ups).
    - *Absent.* The T-SQL-equivalent emitter, the data path, the apply executor, and runtime provider
      selection in the API (which still hard-wires one provider).
 
@@ -1680,7 +1683,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
-| PostgreSQL provider | The provider interfaces, a second implementation of them, and a working schema reader | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database for real (verified against 16.4). The emitter, data path, apply, the remaining object kinds and runtime provider selection are still absent — the abstraction has met a second *engine* for reading, not yet for writing |
+| PostgreSQL provider | The provider interfaces, a second implementation of them, and a working schema reader | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database for real (verified against 16.4) across every object kind the model holds. The emitter, data path, apply and runtime provider selection are still absent — the abstraction has met a second *engine* for reading, not yet for writing |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,

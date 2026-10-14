@@ -62,6 +62,13 @@ public sealed class PostgreSqlSchemaReaderTests
 
         create trigger trg_before_update before update on {Schema}.child
             for each row execute function {Schema}.stamp_name();
+
+        create sequence {Schema}.order_no start with 1000 increment by 10 minvalue 100 maxvalue 999999 cycle;
+
+        create type {Schema}.mood as enum ('sad', 'ok', 'happy');
+        create domain {Schema}.us_postal as varchar(10) not null;
+        create type {Schema}.full_name as (first text, last text);
+        create type {Schema}.int_range as range (subtype = integer);
         """;
 
     private readonly PgFixture _fixture;
@@ -78,7 +85,9 @@ public sealed class PostgreSqlSchemaReaderTests
         var schema = await new PostgreSqlSchemaReader(_fixture.ConnectionString!).ReadAsync();
 
         Assert.False(string.IsNullOrEmpty(schema.DatabaseName));
-        Assert.Contains(schema.ReadWarnings, w => w.Contains("not read", StringComparison.Ordinal));
+
+        // The only standing gap left is range/multirange types, named in a warning rather than dropped silently.
+        Assert.Contains(schema.ReadWarnings, w => w.Contains("int_range", StringComparison.Ordinal));
 
         var parent = Table(schema, "parent");
         var id = Column(parent, "id");
@@ -159,6 +168,37 @@ public sealed class PostgreSqlSchemaReaderTests
         Assert.Equal("child", trigger.Table.Name);
         Assert.False(trigger.IsDisabled);
         Assert.Contains("BEFORE UPDATE", trigger.Definition, StringComparison.Ordinal);
+
+        // The identity sequences behind parent.id / child.child_id are read through the columns, not here;
+        // only the standalone CREATE SEQUENCE shows up.
+        var sequence = Assert.Single(schema.Sequences, s => s.Identity.Schema == Schema);
+        Assert.Equal("order_no", sequence.Identity.Name);
+        Assert.Equal("bigint", sequence.DataType.ToString());
+        Assert.Equal(1000L, sequence.StartValue);
+        Assert.Equal(10L, sequence.Increment);
+        Assert.Equal(100L, sequence.MinValue);
+        Assert.Equal(999999L, sequence.MaxValue);
+        Assert.True(sequence.IsCycling);
+
+        var types = schema.UserDefinedTypes.Where(t => t.Identity.Schema == Schema).ToList();
+
+        var mood = types.Single(t => t.Identity.Name == "mood");
+        Assert.Equal(UserDefinedTypeKind.Enum, mood.Kind);
+        Assert.Equal(new[] { "sad", "ok", "happy" }, mood.EnumLabels.ToArray());
+
+        var postal = types.Single(t => t.Identity.Name == "us_postal");
+        Assert.Equal(UserDefinedTypeKind.Alias, postal.Kind);
+        Assert.Equal("character varying(10)", postal.BaseType!.ToString());
+        Assert.False(postal.IsNullable);
+
+        var fullName = types.Single(t => t.Identity.Name == "full_name");
+        Assert.Equal(UserDefinedTypeKind.Table, fullName.Kind);
+        Assert.Equal(new[] { "first", "last" }, fullName.Columns.OrderBy(c => c.OrdinalPosition).Select(c => c.Name).ToArray());
+        Assert.Equal("text", fullName.Columns.First(c => c.Name == "first").DataType.ToString());
+
+        // The range type (and the multirange PostgreSQL derives from it) are not modelled, so they stay out of
+        // UserDefinedTypes and surface only in the warning asserted above.
+        Assert.DoesNotContain(types, t => t.Identity.Name == "int_range");
 
         await _fixture.ExecuteAsync($"drop schema if exists {Schema} cascade;");
     }

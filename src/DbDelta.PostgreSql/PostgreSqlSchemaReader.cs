@@ -4,17 +4,13 @@ using Npgsql;
 
 namespace DbDelta.PostgreSql;
 
-// First increment: tables, columns, primary keys, unique constraints, foreign keys, indexes and check
-// constraints — the structural heart a schema compare turns on. Views, routines, triggers, sequences and
-// user-defined types are not read yet and are surfaced through ReadWarnings rather than left to look absent.
-// See docs/TASK-postgresql-schema-reader.md for the deferred part and the cross-engine caveats.
+// Reads tables, columns, keys, constraints, indexes, views, routines, triggers, sequences and user-defined
+// types (domains, composite types, enums) — the whole of what the model holds for PostgreSQL today. Range and
+// multirange types have no model slot and are surfaced through ReadWarnings rather than left to look absent.
+// See docs/TASK-postgresql-schema-reader.md for the within-object gaps and the cross-engine caveats.
 public sealed class PostgreSqlSchemaReader : ISchemaReader
 {
     private const string InsufficientPrivilege = "42501";
-
-    private const string DeferredObjectsWarning =
-        "Sequences and user-defined types are not read by the PostgreSQL provider yet; this schema reader "
-        + "covers tables, views, routines and triggers but not those two object kinds.";
 
     private readonly string _connectionString;
 
@@ -38,8 +34,8 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         var views = await ReadViewsAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
         var routines = await ReadRoutinesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
         var triggers = await ReadTriggersAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
-
-        warnings.Add(DeferredObjectsWarning);
+        var sequences = await ReadSequencesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
+        var userDefinedTypes = await ReadUserDefinedTypesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
 
         var built = tables.Values
             .OrderBy(t => t.Identity.Schema, StringComparer.Ordinal)
@@ -55,6 +51,8 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
             Views = views,
             Routines = routines,
             Triggers = triggers,
+            Sequences = sequences,
+            UserDefinedTypes = userDefinedTypes,
             ReadWarnings = warnings,
         };
     }
@@ -362,6 +360,146 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         return triggers;
     }
 
+    private async Task<List<SequenceDefinition>> ReadSequencesAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var sequences = new List<SequenceDefinition>();
+
+        try
+        {
+            await using var command = new NpgsqlCommand(PgCatalogQueries.Sequences, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                sequences.Add(new SequenceDefinition
+                {
+                    Identity = new ObjectIdentity(
+                        ObjectType.Sequence, Str(reader, "schema_name"), Str(reader, "sequence_name")),
+                    DataType = new DataTypeSpec(Str(reader, "type_name")),
+                    StartValue = Long(reader, "start_value"),
+                    Increment = Long(reader, "increment"),
+                    MinValue = NLong(reader, "min_value"),
+                    MaxValue = NLong(reader, "max_value"),
+                    IsCycling = Bool(reader, "is_cycling"),
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("Sequences could not be read in full: " + ex.MessageText);
+        }
+
+        return sequences;
+    }
+
+    private async Task<List<UserDefinedTypeDefinition>> ReadUserDefinedTypesAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var types = new Dictionary<ObjectIdentity, PgUserDefinedTypeParts>();
+
+        try
+        {
+            await using (var command = new NpgsqlCommand(PgCatalogQueries.UserDefinedTypes, connection))
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var baseType = NStr(reader, "base_type");
+                    var identity = new ObjectIdentity(
+                        ObjectType.UserDefinedType, Str(reader, "schema_name"), Str(reader, "type_name"));
+                    types[identity] = new PgUserDefinedTypeParts
+                    {
+                        Identity = identity,
+                        Kind = PgTypeMapper.MapUserDefinedTypeKind(Str(reader, "kind")),
+                        BaseType = baseType is null ? null : new DataTypeSpec(baseType),
+                        IsNullable = !reader.IsDBNull(reader.GetOrdinal("is_nullable")) && Bool(reader, "is_nullable"),
+                    };
+                }
+            }
+
+            await FoldCompositeColumnsAsync(connection, types, cancellationToken).ConfigureAwait(false);
+            await FoldEnumLabelsAsync(connection, types, cancellationToken).ConfigureAwait(false);
+            await WarnOnRangeTypesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("User-defined types could not be read in full: " + ex.MessageText);
+        }
+
+        return types.Values
+            .OrderBy(t => t.Identity.Schema, StringComparer.Ordinal)
+            .ThenBy(t => t.Identity.Name, StringComparer.Ordinal)
+            .Select(t => t.Build())
+            .ToList();
+    }
+
+    private static async Task FoldCompositeColumnsAsync(
+        NpgsqlConnection connection, Dictionary<ObjectIdentity, PgUserDefinedTypeParts> types,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(PgCatalogQueries.CompositeTypeColumns, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var identity = new ObjectIdentity(
+                ObjectType.UserDefinedType, Str(reader, "schema_name"), Str(reader, "type_name"));
+            if (!types.TryGetValue(identity, out var parts))
+            {
+                continue;
+            }
+
+            parts.Columns.Add(new ColumnDefinition
+            {
+                Name = Str(reader, "column_name"),
+                DataType = new DataTypeSpec(Str(reader, "column_type")),
+                IsNullable = Bool(reader, "is_nullable"),
+                OrdinalPosition = Int(reader, "ordinal"),
+            });
+        }
+    }
+
+    private static async Task FoldEnumLabelsAsync(
+        NpgsqlConnection connection, Dictionary<ObjectIdentity, PgUserDefinedTypeParts> types,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(PgCatalogQueries.EnumLabels, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var identity = new ObjectIdentity(
+                ObjectType.UserDefinedType, Str(reader, "schema_name"), Str(reader, "type_name"));
+            if (types.TryGetValue(identity, out var parts))
+            {
+                parts.EnumLabels.Add(Str(reader, "label"));
+            }
+        }
+    }
+
+    private static async Task WarnOnRangeTypesAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var names = new List<string>();
+
+        await using (var command = new NpgsqlCommand(PgCatalogQueries.RangeTypes, connection))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                names.Add($"{Str(reader, "schema_name")}.{Str(reader, "type_name")}");
+            }
+        }
+
+        if (names.Count > 0)
+        {
+            warnings.Add(
+                "Range and multirange types are not represented in the model and were not read: "
+                + string.Join(", ", names) + ".");
+        }
+    }
+
     private static bool TryTable(
         Dictionary<ObjectIdentity, PgTableParts> tables, NpgsqlDataReader reader, out PgTableParts parts)
     {
@@ -406,6 +544,8 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
     }
+
+    private static long Long(NpgsqlDataReader reader, string column) => reader.GetInt64(reader.GetOrdinal(column));
 
     private static long? NLong(NpgsqlDataReader reader, string column)
     {

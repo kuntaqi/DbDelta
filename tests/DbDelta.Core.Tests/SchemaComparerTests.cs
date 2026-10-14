@@ -182,4 +182,43 @@ public sealed class SchemaComparerTests
         Assert.Equal(ObjectType.ForeignKey, fk.Identity.Type);
         Assert.Contains(fk.Properties, p => p.Property == "References");
     }
+
+    [Fact]
+    public void Enum_with_the_same_labels_reports_no_change()
+    {
+        var source = WithEnum("Src", Enum("mood", "sad", "ok", "happy"));
+        var target = WithEnum("Tgt", Enum("mood", "sad", "ok", "happy"));
+
+        var diff = _comparer.Compare(source, target);
+
+        var udt = diff.Find(new ObjectIdentity(ObjectType.UserDefinedType, "dbo", "mood"));
+        Assert.NotNull(udt);
+        Assert.Equal(DiffKind.Same, udt.Kind);
+    }
+
+    [Fact]
+    public void Enum_label_change_is_reported()
+    {
+        var source = WithEnum("Src", Enum("mood", "sad", "ok", "glad"));
+        var target = WithEnum("Tgt", Enum("mood", "sad", "ok", "happy"));
+
+        var diff = _comparer.Compare(source, target);
+
+        var udt = diff.Find(new ObjectIdentity(ObjectType.UserDefinedType, "dbo", "mood"));
+        Assert.NotNull(udt);
+        Assert.Equal(DiffKind.Different, udt.Kind);
+        var property = Assert.Single(udt.Properties);
+        Assert.Equal("Labels", property.Property);
+    }
+
+    private static DatabaseSchema WithEnum(string name, UserDefinedTypeDefinition type) =>
+        new() { DatabaseName = name, UserDefinedTypes = [type] };
+
+    private static UserDefinedTypeDefinition Enum(string name, params string[] labels) =>
+        new()
+        {
+            Identity = new ObjectIdentity(ObjectType.UserDefinedType, "dbo", name),
+            Kind = UserDefinedTypeKind.Enum,
+            EnumLabels = labels,
+        };
 }

@@ -343,6 +343,9 @@ public sealed class SchemaComparer
             Add(properties, "BaseType", src.BaseType?.ToString(), tgt.BaseType?.ToString());
             Add(properties, "Nullable", src.IsNullable, tgt.IsNullable);
 
+            // An enum's labels are the whole of it, and their order is significant, so they compare in order.
+            Add(properties, "Labels", string.Join(", ", src.EnumLabels), string.Join(", ", tgt.EnumLabels));
+
             // A table type's shape is its columns, compared as one string rather than as children:
             // there is no statement that could alter one of them on its own.
             Add(properties, "Columns", Shape(src), Shape(tgt));
