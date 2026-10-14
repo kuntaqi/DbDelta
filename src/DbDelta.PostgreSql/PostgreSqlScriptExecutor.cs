@@ -2,16 +2,14 @@ using System.Diagnostics;
 using DbDelta.Core.Apply;
 using DbDelta.Core.Scripting;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace DbDelta.PostgreSql;
 
 // Applies a PostgreSQL sync script under one connection and one transaction, so a failure anywhere rolls the
 // whole plan back and leaves the target unchanged. DDL is transactional in PostgreSQL, which is what makes
-// all-or-nothing schema apply possible at all.
-//
-// Scope note: this increment emits schema DDL only, which carries no BulkLoad steps. A step with rows (the
-// data path) is refused here rather than half-applied — that executor half arrives with the data increment,
-// where it will use COPY the way the SQL Server side uses SqlBulkCopy.
+// all-or-nothing apply possible at all; the same single connection is also what a temp staging table and its
+// COPY need, since both are session-scoped.
 public sealed class PostgreSqlScriptExecutor : IScriptExecutor
 {
     public async Task<ApplyResult> ExecuteAsync(
@@ -21,13 +19,6 @@ public sealed class PostgreSqlScriptExecutor : IScriptExecutor
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(script);
-
-        if (script.HasLoads)
-        {
-            return ApplyResult.Blocked(
-                "The PostgreSQL executor applies schema scripts only; data-row steps are not supported yet.",
-                ["This script carries bulk-loaded rows, which the PostgreSQL data path does not emit yet."]);
-        }
 
         var stopwatch = Stopwatch.StartNew();
 
@@ -41,6 +32,12 @@ public sealed class PostgreSqlScriptExecutor : IScriptExecutor
         {
             foreach (var step in script.Steps)
             {
+                if (step.Load is { } load)
+                {
+                    await CopyAsync(connection, load, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 await using var command = new NpgsqlCommand(step.Sql, connection, transaction) { CommandTimeout = 0 };
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -71,6 +68,34 @@ public sealed class PostgreSqlScriptExecutor : IScriptExecutor
                 ErrorNumber = int.TryParse(ex.SqlState, out var code) ? code : null,
             };
         }
+    }
+
+    // A staged step's rows travel beside the script. COPY FROM STDIN streams them into the staging table on the
+    // same connection and inside the same transaction, the PostgreSQL counterpart of SqlBulkCopy. Every staging
+    // column is text, so each value is written as text (or NULL), exactly as it was read.
+    private static async Task CopyAsync(NpgsqlConnection connection, BulkLoad load, CancellationToken cancellationToken)
+    {
+        var columns = string.Join(", ", load.Columns.Select(PostgreSqlQuoter.Instance.Quote));
+        var copy = $"COPY {PostgreSqlQuoter.Instance.Quote(load.StagingTable)} ({columns}) FROM STDIN (FORMAT BINARY)";
+
+        await using var importer = await connection.BeginBinaryImportAsync(copy, cancellationToken).ConfigureAwait(false);
+        foreach (var row in load.Rows)
+        {
+            await importer.StartRowAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var value in row)
+            {
+                if (value is null)
+                {
+                    await importer.WriteNullAsync(cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await importer.WriteAsync(value, NpgsqlDbType.Text, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        await importer.CompleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // The transaction may already be aborted, in which case rolling back throws and there is nothing left to

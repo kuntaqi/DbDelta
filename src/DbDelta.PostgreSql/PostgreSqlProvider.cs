@@ -5,11 +5,11 @@ using DbDelta.Core.Scripting;
 
 namespace DbDelta.PostgreSql;
 
-// A second IDatabaseProvider, filled in incrementally. Real so far: the quoter, the schema reader, the DDL
-// script emitter (schema write path), and the data-compare read path (row hash/detail/by-value, fingerprint,
-// key uniqueness, volume). Still stubbed: the data-script emitter (data sync), the collation fact reader, and
-// the three server-level probe/list/describe methods. The script executor is wired apart from the provider
-// (see IDatabaseProvider), so the API does not reach the PostgreSQL executor yet.
+// A second IDatabaseProvider, filled in incrementally. Real so far: the quoter, the schema reader, the schema
+// and data script emitters, and the data-compare read path (row hash/detail/by-value, fingerprint, key
+// uniqueness, volume). Still stubbed: the collation fact reader and the three server-level probe/list/describe
+// methods. The script executor is wired apart from the provider (see IDatabaseProvider), so the API does not
+// reach the PostgreSQL executor yet.
 // See docs/TASK-postgresql-schema-reader.md, docs/TASK-postgresql-write-path.md and docs/TASK-postgresql-data-path.md.
 public sealed class PostgreSqlProvider : IDatabaseProvider
 {

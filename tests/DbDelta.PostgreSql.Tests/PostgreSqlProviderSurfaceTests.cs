@@ -54,12 +54,11 @@ public sealed class PostgreSqlProviderSurfaceTests
     }
 
     [Fact]
-    public void The_remaining_stub_members_refuse()
+    public void The_remaining_stub_member_refuses()
     {
-        // Real now and exercised elsewhere: the schema reader, the script emitter, and the data-compare read
-        // path (hash/detail/by-value/fingerprint/uniqueness/volume). Still stubbed: the data-script emitter
-        // (data sync) and the collation fact reader.
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateDataScriptEmitter().Emit(null!, 0); });
+        // Real now and exercised elsewhere: the schema reader, the schema and data script emitters, and the
+        // data-compare read path. The collation fact reader is the last stub — CollationFact is SQL-Server-shaped
+        // and resolving PostgreSQL collation sensitivity faithfully is a modelling task, not a port.
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateCollationFactReader(AnyConnectionString).ReadAsync(null!); });
     }
 }
