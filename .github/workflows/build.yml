@@ -54,12 +54,47 @@ jobs:
         run: SqlLocalDB start MSSQLLocalDB
 
       # A green run with skips proves nothing about the SQL Server provider, so on Windows a skip fails the job.
+      # The PostgreSQL integration tests are excluded here because no PostgreSQL is reachable on this runner —
+      # they are verified by the dedicated 'postgres' job below, which has a Linux service container. Without the
+      # exclusion their skip would trip the guard that exists for LocalDB.
       - name: Test, including LocalDB integration
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $out = dotnet test --configuration Release --no-build 2>&1 | Tee-Object -Variable log
+          $out = dotnet test --configuration Release --no-build --filter "RequiresPostgres!=true" 2>&1 | Tee-Object -Variable log
           $log | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $skipped = $log | Select-String -Pattern 'Skipped:\s+([1-9]\d*)'
           if ($skipped) { Write-Error "Tests were skipped; LocalDB integration did not run fully."; exit 1 }
+
+  # PostgreSQL has no LocalDB equivalent and the matrix's Windows leg cannot run a Linux service container, so
+  # the PostgreSQL provider is verified in its own Linux job against a service container. The integration tests
+  # skip when DBDELTA_PG_TEST is unset, so they run here and nowhere else in CI.
+  postgres:
+    name: postgres (ubuntu)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test the PostgreSQL provider
+        env:
+          DBDELTA_PG_TEST: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+        run: dotnet test tests/DbDelta.PostgreSql.Tests/DbDelta.PostgreSql.Tests.csproj --configuration Release

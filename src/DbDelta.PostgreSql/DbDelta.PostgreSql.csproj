@@ -4,8 +4,16 @@
     <ProjectReference Include="..\DbDelta.Core\DbDelta.Core.csproj" />
   </ItemGroup>
 
-  <!-- No client package. This is a compile proof of the provider abstraction, not a working engine, so it
-       deliberately has no Npgsql reference: a second class satisfies every Core interface without Core
-       bending, and that is the whole claim being tested. See docs/TASK-postgresql-provider-stub.md. -->
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The catalog SQL and the type mapper are how this provider reads a database, not an API for anyone
+         else. They stay internal but are tested directly, because the mapping conventions (canonical type
+         casing, where fractional-seconds precision lands) are exactly the kind of thing a snapshot would not
+         catch. -->
+    <InternalsVisibleTo Include="DbDelta.PostgreSql.Tests" />
+  </ItemGroup>
 
 </Project>
