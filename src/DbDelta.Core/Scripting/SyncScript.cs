@@ -15,6 +15,21 @@ public sealed class SyncScript
     // it, and the caller reports them alongside the ones closure could not satisfy.
     public IReadOnlyList<string> Refusals { get; init; } = [];
 
+    // Session statements the reviewable script runs before the transaction. The default is SQL Server's; a
+    // provider whose dialect rejects these (PostgreSQL) supplies its own, or none. The apply path sets session
+    // state in its executor instead, so this field only shapes the downloadable text.
+    public IReadOnlyList<string> SessionSettings { get; init; } =
+    [
+        "SET XACT_ABORT ON;",
+        "SET NOCOUNT ON;",
+        // Spatial and XML index DDL is refused outright unless QUOTED_IDENTIFIER is ON — msg 1934, which
+        // says the SET options are wrong and not what is wrong with them. SqlClient connects with it ON, so
+        // the apply path never needed it, but this script is meant to be runnable by hand and sqlcmd
+        // defaults it OFF. Verified to take effect in the same batch as the CREATE, which matters because
+        // this script has no GO in it.
+        "SET QUOTED_IDENTIFIER ON;",
+    ];
+
     public bool IsEmpty => Steps.Count == 0;
 
     public int Count => Steps.Count;
@@ -38,15 +53,11 @@ public sealed class SyncScript
             sql.AppendLine($"-- not emitted: {refusal}");
         }
 
-        sql.AppendLine("SET XACT_ABORT ON;");
-        sql.AppendLine("SET NOCOUNT ON;");
+        foreach (var setting in SessionSettings)
+        {
+            sql.AppendLine(setting);
+        }
 
-        // Spatial and XML index DDL is refused outright unless QUOTED_IDENTIFIER is ON — msg 1934, which
-        // says the SET options are wrong and not what is wrong with them. SqlClient connects with it ON, so
-        // the apply path never needed it, but this script is meant to be runnable by hand and sqlcmd
-        // defaults it OFF. Verified to take effect in the same batch as the CREATE, which matters because
-        // this script has no GO in it.
-        sql.AppendLine("SET QUOTED_IDENTIFIER ON;");
         sql.AppendLine("BEGIN TRANSACTION;");
         sql.AppendLine();
 

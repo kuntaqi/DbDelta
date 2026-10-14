@@ -184,7 +184,7 @@ reach it — which is why the compose file brings its own SQL Server.
 ```
 src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
 src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-src/DbDelta.PostgreSql/    provider: working schema reader (pg_catalog); emitter/data/apply still stubbed
+src/DbDelta.PostgreSql/    provider: working schema reader + schema emitter/executor; data path still stubbed
 src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
 src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
 tests/                     Core, Api, PostgreSQL, and LocalDB integration tests
@@ -197,9 +197,11 @@ holds no credentials and issues no SQL.
 
 Working. All seven screens run against real databases. The PostgreSQL provider is partial: its schema reader
 reads a live PostgreSQL database in full for what the model holds — tables, columns, keys, constraints, indexes,
-views, routines, triggers, sequences and user-defined types (domains, composite types, enums) — verified against
-PostgreSQL 16.4. The emitter, the data path, the apply executor and runtime provider selection are not built —
-the API still wires only SQL Server. The Docker setup (above) has never been built either.
+views, routines, triggers, sequences and user-defined types (domains, composite types, enums) — and its schema
+emitter and executor produce and apply DDL, verified end to end against PostgreSQL 16.4 (emit, apply, re-read,
+converge). The data path (data compare and data sync) and runtime provider selection are not built — the API
+still wires only SQL Server, so PostgreSQL is not yet reachable from the UI. The Docker setup (above) has never
+been built either.
 
 `docs/PLAN.md` is the engineering plan and the source of truth for the design.
 `docs/mockup/dbdelta-ux.html` shows the app **as built** — open it in a browser. It ends with a ledger of
