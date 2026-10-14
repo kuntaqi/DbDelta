@@ -152,4 +152,66 @@ internal static class PgCatalogQueries
         where not t.tgisinternal and {NonSystemSchema}
         order by n.nspname, c.relname, t.tgname
         """;
+
+    // Standalone sequences only. A sequence with an internal dependency (deptype 'i') on a column is the one
+    // behind an identity column, already read through the column's IdentitySpec, so it is excluded here.
+    public const string Sequences = $"""
+        select n.nspname as schema_name, c.relname as sequence_name,
+               format_type(s.seqtypid, null) as type_name,
+               s.seqstart as start_value, s.seqincrement as increment,
+               s.seqmin as min_value, s.seqmax as max_value, s.seqcycle as is_cycling
+        from pg_sequence s
+        join pg_class c on c.oid = s.seqrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where {NonSystemSchema}
+          and not exists (select 1 from pg_depend d
+                          where d.objid = s.seqrelid and d.classid = 'pg_class'::regclass and d.deptype = 'i')
+        order by n.nspname, c.relname
+        """;
+
+    // Domains ('d'), enums ('e') and composite types ('c'). A composite's backing relation must be relkind 'c',
+    // which excludes the row type every table and view carries. Domain base type and nullability are read here;
+    // composite columns and enum labels are folded in from the two queries below, keyed by (schema, type).
+    public const string UserDefinedTypes = $"""
+        select n.nspname as schema_name, t.typname as type_name, t.typtype::text as kind,
+               case when t.typtype = 'd' then format_type(t.typbasetype, t.typtypmod) end as base_type,
+               case when t.typtype = 'd' then not t.typnotnull end as is_nullable
+        from pg_type t
+        join pg_namespace n on n.oid = t.typnamespace
+        left join pg_class rel on rel.oid = t.typrelid
+        where t.typtype in ('d', 'e', 'c')
+          and (t.typtype <> 'c' or rel.relkind = 'c')
+          and {NonSystemSchema}
+        order by n.nspname, t.typname
+        """;
+
+    public const string CompositeTypeColumns = $"""
+        select n.nspname as schema_name, t.typname as type_name, a.attname as column_name, a.attnum::int as ordinal,
+               format_type(a.atttypid, a.atttypmod) as column_type, not a.attnotnull as is_nullable
+        from pg_type t
+        join pg_namespace n on n.oid = t.typnamespace
+        join pg_class rel on rel.oid = t.typrelid and rel.relkind = 'c'
+        join pg_attribute a on a.attrelid = rel.oid and a.attnum > 0 and not a.attisdropped
+        where t.typtype = 'c' and {NonSystemSchema}
+        order by n.nspname, t.typname, a.attnum
+        """;
+
+    public const string EnumLabels = $"""
+        select n.nspname as schema_name, t.typname as type_name, e.enumlabel as label
+        from pg_enum e
+        join pg_type t on t.oid = e.enumtypid
+        join pg_namespace n on n.oid = t.typnamespace
+        where {NonSystemSchema}
+        order by n.nspname, t.typname, e.enumsortorder
+        """;
+
+    // Range ('r') and multirange ('m') types have no model slot; they are named in a ReadWarning rather than
+    // dropped silently.
+    public const string RangeTypes = $"""
+        select n.nspname as schema_name, t.typname as type_name
+        from pg_type t
+        join pg_namespace n on n.oid = t.typnamespace
+        where t.typtype in ('r', 'm') and {NonSystemSchema}
+        order by n.nspname, t.typname
+        """;
 }

@@ -85,4 +85,13 @@ public sealed class PgTypeMapperTests
     {
         Assert.Equal(expected, PgTypeMapper.MapRoutineKind(prokind, returnsSet));
     }
+
+    [Theory]
+    [InlineData("d", UserDefinedTypeKind.Alias)]
+    [InlineData("e", UserDefinedTypeKind.Enum)]
+    [InlineData("c", UserDefinedTypeKind.Table)]
+    public void User_defined_type_kinds_map_from_typtype(string typtype, UserDefinedTypeKind expected)
+    {
+        Assert.Equal(expected, PgTypeMapper.MapUserDefinedTypeKind(typtype));
+    }
 }

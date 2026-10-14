@@ -73,4 +73,14 @@ internal static class PgTypeMapper
         "p" => RoutineKind.Procedure,
         _ => returnsSet ? RoutineKind.TableValuedFunction : RoutineKind.ScalarFunction,
     };
+
+    // pg_type.typtype, for the three kinds a CREATE TYPE / CREATE DOMAIN this reader models produces. A domain
+    // is an aliased base type, a composite is a row shape, an enum is its own kind. Range ('r') and multirange
+    // ('m') have no model slot and are filtered to a ReadWarning before they reach here.
+    public static UserDefinedTypeKind MapUserDefinedTypeKind(string typtype) => typtype switch
+    {
+        "d" => UserDefinedTypeKind.Alias,
+        "e" => UserDefinedTypeKind.Enum,
+        _ => UserDefinedTypeKind.Table,
+    };
 }

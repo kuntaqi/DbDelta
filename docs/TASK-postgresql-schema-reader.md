@@ -1,13 +1,13 @@
 # PostgreSQL schema reader — the stub's first real member
 
-Status: **increments 1 and 2 done and verified** (2026-10-14). Follows `docs/TASK-postgresql-provider-stub.md`
+Status: **increments 1, 2 and 3 done and verified** (2026-10-14). Follows `docs/TASK-postgresql-provider-stub.md`
 (the compile-proof stub, merged in #3). `PostgreSqlSchemaReader` is a working `ISchemaReader` that reads a live
 PostgreSQL database into a `DatabaseSchema` for the structural core (tables, columns, keys, constraints,
-indexes — merged in #6) and now also **views, routines and triggers** (increment 2). It pulled in the first
-real dependency (Npgsql 10.0.3) and the first real verification. Verified against **PostgreSQL 16.4** installed
-on this machine (portable binaries, local-only, trust auth) — `tests/DbDelta.PostgreSql.Tests` runs 31 tests,
-the integration one against the live server, all green; the suite skips the integration test when
-`DBDELTA_PG_TEST` is unset. What remains is in *Gaps to full parity* below.
+indexes — merged in #6), **views, routines and triggers** (increment 2), and now **sequences and user-defined
+types** (increment 3). It pulled in the first real dependency (Npgsql 10.0.3) and the first real verification.
+Verified against **PostgreSQL 16.4** installed on this machine (portable binaries, local-only, trust auth) —
+`tests/DbDelta.PostgreSql.Tests` runs against the live server, the integration test among them, all green; the
+suite skips the integration test when `DBDELTA_PG_TEST` is unset. What remains is in *Gaps to full parity* below.
 
 ## The hard constraint, stated first
 
@@ -110,11 +110,17 @@ Tracked here so the path from this increment to a complete PostgreSQL schema rea
 breaks a PostgreSQL-vs-PostgreSQL compare — both sides are read by the same reader, so a gap blinds both
 equally — but each is a thing a sync would not reproduce.
 
-**Object kinds not read at all** (surfaced at runtime through `DatabaseSchema.ReadWarnings`):
+**Object kinds not read at all** (surfaced at runtime through `DatabaseSchema.ReadWarnings` when present):
 
-- **Sequences** as standalone objects (identity-owned sequences are already read via the column's identity).
-- **User-defined types** — domains (≈ `Alias`), composite types, and enums (no exact `UserDefinedTypeKind`
-  slot — map to `Alias` or extend the enum).
+- **Range and multirange types** (`typtype 'r'`/`'m'`) — no model slot and uncommon; a `ReadWarning` names any
+  that exist rather than dropping them silently. Everything else a `CREATE TYPE` can make is read (increment 3).
+
+Read as of increment 3, with these smaller gaps inside them:
+
+- **Domains** map to `UserDefinedTypeKind.Alias` with base type + nullability, mirroring the SQL Server alias
+  reader exactly. A domain's `CHECK` constraints and `DEFAULT` are not read — the same gap the SQL alias reader
+  has (it ignores bound defaults/rules), so a domain differing *only* in a check compares equal. Base-type or
+  nullability changes do diff.
 
 Read as of increment 2, with these smaller gaps inside them:
 
@@ -152,7 +158,7 @@ Read as of increment 2, with these smaller gaps inside them:
 ## Next increments (build order from here)
 
 1. **Done — views + routines + triggers.** See *Increment 2* below.
-2. Sequences + user-defined types (domains/composite/enums).
+2. **Done — sequences + user-defined types (domains/composite/enums).** See *Increment 3* below.
 3. The within-object gaps above, each with a fixture case.
 4. The cross-engine follow-ups — only once a PG *emitter* exists and sync is on the table.
 
@@ -186,6 +192,39 @@ PostgreSQL:
 Compare-side follow-ups (deferred, no consumer yet; needed before PG *sync*): `SqlBodyNormalizer` does not
 understand dollar-quoting (`$$...$$`) or `E'...'`, and `ProgrammableHeaderReader` parses T-SQL `CREATE`
 headers, not PG ones. Both only matter once two PostgreSQL schemas are actually compared.
+
+## Increment 3 — sequences, user-defined types (design)
+
+Fills `DatabaseSchema.Sequences` and `.UserDefinedTypes`, the last two object kinds the earlier increments left
+empty behind the standing `ReadWarning`. That blanket warning is removed; a narrower one fires only for the
+range/multirange types the model cannot hold. Still reader-only — no PG compare path is wired, so the
+compare-side follow-ups stay deferred.
+
+**One Core change, decided deliberately.** PostgreSQL enums have no slot in `UserDefinedTypeKind` (`Alias`,
+`Table`, `Clr`) and no field anywhere to hold their labels, so mapping an enum onto an existing kind would make
+the comparer — which weighs `Kind`/`BaseType`/`Nullable`/`Columns` — blind to label changes and silently report
+two different enums as identical, the exact "incomplete read looks complete" failure the project forbids. So
+Core grows a value and a field: `UserDefinedTypeKind.Enum`, and `UserDefinedTypeDefinition.EnumLabels` (ordered;
+PostgreSQL enum order is significant). `SchemaComparer.CompareUserDefinedTypes` compares the labels. This is
+safe across engines: the SQL Server reader never produces `Enum`, so a PG enum never reaches the T-SQL emitter,
+and the emitter's `== Clr` / `== Table` checks fall through for unknown kinds anyway — no exhaustive switch.
+
+Catalog sources:
+
+- **Sequences** — `pg_sequence` joined to `pg_class` (`relkind = 'S'`), excluding sequences with an internal
+  dependency (`pg_depend.deptype = 'i'`) on a column, which are the identity sequences already read through the
+  column's `IdentitySpec`. Fields: `format_type(seqtypid)` → `DataType`, `seqstart`, `seqincrement`, `seqmin`,
+  `seqmax`, `seqcycle`.
+- **User-defined types** — `pg_type` where `typtype in ('d','e','c')` in non-system schemas; a composite type's
+  backing relation must be `relkind = 'c'` so the per-table/per-view row types are excluded. One query returns
+  the type row (kind, domain base type via `typbasetype`, domain nullability via `not typnotnull`); composite
+  columns and enum labels are folded in from two more queries keyed by type identity, the way index columns are
+  folded. `typtype 'r'`/`'m'` rows are turned into a `ReadWarning`, not a UDT.
+
+Kind mapping lives in `PgTypeMapper.MapUserDefinedTypeKind` (`'d'`→`Alias`, `'e'`→`Enum`, `'c'`→`Table`),
+unit-tested without a database alongside the other dialect maps.
+
+Compare-side follow-ups are unchanged from increment 2 and still have no consumer until a PG emitter exists.
 
 ## Workflow note
 

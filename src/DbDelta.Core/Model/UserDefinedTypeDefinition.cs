@@ -11,6 +11,10 @@ public sealed class UserDefinedTypeDefinition
 
     public bool IsNullable { get; init; }
 
+    // Enum types only: the labels in declaration order. The order is part of the type (PostgreSQL sorts and
+    // compares enum values by it), so it is preserved, not sorted.
+    public IReadOnlyList<string> EnumLabels { get; init; } = [];
+
     // Table types only. A table type is a table shape, so it carries most of what a table does — but never
     // a foreign key, which T-SQL does not allow inside one.
     //
