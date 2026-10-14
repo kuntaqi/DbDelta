@@ -23,7 +23,8 @@ the gap this fills.
   and what it would break
 - Surveys every database on one server, or lines up two servers against each other
 
-SQL Server first; the diff engine is provider-abstracted so PostgreSQL can be added without touching it.
+SQL Server first; the diff engine is provider-abstracted so PostgreSQL can be added without touching it — a
+compile-proof stub provider already proves that abstraction holds.
 
 ## Requirements
 
@@ -183,9 +184,10 @@ reach it — which is why the compose file brings its own SQL Server.
 ```
 src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
 src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
+src/DbDelta.PostgreSql/    provider: compile-proof stub (real quoter, everything else refuses)
 src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
 src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
-tests/                     Core, Api, and LocalDB integration tests
+tests/                     Core, Api, PostgreSQL, and LocalDB integration tests
 ```
 
 `Core` never references a provider package. The API is the only thing that touches a database — the SPA
@@ -193,9 +195,10 @@ holds no credentials and issues no SQL.
 
 ## Status
 
-Working. All seven screens run against real databases. The PostgreSQL provider is not built yet, and one
-designed feature is still outstanding: analysis of whether a column change is safe to `ALTER` in place,
-which today is always written as a plain `ALTER TABLE … ALTER COLUMN`.
+Working. All seven screens run against real databases. The PostgreSQL provider exists only as a
+compile-proof stub — it satisfies the provider interfaces to prove the diff engine is genuinely
+engine-neutral, but reads no catalog and emits no SQL; a working PostgreSQL engine is still to come. The
+Docker setup (above) has never been built either.
 
 `docs/PLAN.md` is the engineering plan and the source of truth for the design.
 `docs/mockup/dbdelta-ux.html` shows the app **as built** — open it in a browser. It ends with a ledger of
