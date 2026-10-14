@@ -42,9 +42,16 @@ public sealed class PgFixture : IAsyncLifetime
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    public async Task ExecuteAsync(string sql)
+    public async Task ExecuteAsync(string sql) => await ExecuteOnAsync(ConnectionString!, sql);
+
+    // A per-database connection string with pooling off, so a scratch database can be dropped straight after
+    // the test without a lingering pooled connection blocking it.
+    public string ConnectionStringFor(string database) =>
+        new NpgsqlConnectionStringBuilder(ConnectionString) { Database = database, Pooling = false }.ConnectionString;
+
+    public static async Task ExecuteOnAsync(string connectionString, string sql)
     {
-        await using var connection = new NpgsqlConnection(ConnectionString);
+        await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();

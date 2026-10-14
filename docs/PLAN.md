@@ -40,7 +40,7 @@ holds on its own terms; the choice still stands, for the ecosystem rather than f
 DbDelta.sln
   src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
   src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-  src/DbDelta.PostgreSql/    provider: working schema reader (pg_catalog); emitter/data/apply still stubbed
+  src/DbDelta.PostgreSql/    provider: working schema reader + schema emitter/executor; data path still stubbed
   src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
   src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
   tests/DbDelta.Core.Tests/       diff engine + planning unit tests (no DB needed)
@@ -1248,8 +1248,15 @@ uses the shape the reader actually produces.
      PostgreSQL 16.4; the integration tests skip when no server is configured.
      `docs/TASK-postgresql-schema-reader.md` carries the remaining gaps (aggregate/window functions, `RESTRICT`,
      range/multirange and full exclusion modelling, plus the cross-engine follow-ups).
-   - *Absent.* The T-SQL-equivalent emitter, the data path, the apply executor, and runtime provider
-     selection in the API (which still hard-wires one provider).
+   - *Done — schema write path.* `PostgreSqlScriptEmitter` turns a schema diff into PostgreSQL DDL (tables,
+     columns, keys, indexes, checks, foreign keys, sequences, types, programmables), mirroring `TSqlEmitter`'s
+     phase model, and `PostgreSqlScriptExecutor` applies it under one transaction. The hard cases
+     (identity/generated column changes, a type's own shape, expression indexes) are refused into
+     `SyncScript.Refusals`. One engine-neutral Core change came with it: `SyncScript.SessionSettings`, so the
+     reviewable script's prologue is not hard-wired to T-SQL. Verified end to end against PostgreSQL 16.4 — emit,
+     apply, re-read, converge. `docs/TASK-postgresql-write-path.md` carries the detail.
+   - *Absent.* The data path (data-compare readers + data-script emitter + `COPY` staging), and runtime provider
+     selection in the API (which still hard-wires one provider and its executor).
 
 ## Open questions
 
@@ -1686,7 +1693,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
-| PostgreSQL provider | The provider interfaces, a second implementation of them, and a working schema reader | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database for real (verified against 16.4) across every object kind the model holds. The emitter, data path, apply and runtime provider selection are still absent — the abstraction has met a second *engine* for reading, not yet for writing |
+| PostgreSQL provider | The provider interfaces, a second implementation of them, a working schema reader and a working schema emitter | `src/DbDelta.PostgreSql/` began as a compile-proof stub; its `ISchemaReader` now reads a live PostgreSQL database for real across every object kind the model holds, and its `IScriptEmitter` + `IScriptExecutor` now emit and apply schema DDL, verified end to end against 16.4 (emit, apply, re-read, converge). Still absent: the data path and runtime provider selection in the API — the abstraction has met a second *engine* for reading and for writing schema, not yet for writing data or for being reachable from the app |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,
