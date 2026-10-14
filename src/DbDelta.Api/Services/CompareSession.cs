@@ -23,6 +23,10 @@ public sealed class CompareSession
 
     public required string TargetConnectionString { get; init; }
 
+    // Which engine built this session. Every body-less GET /compare/{id}/* follow-up resolves its provider
+    // from this, since the request that would carry the engine is only sent on the initial compare.
+    public required string Engine { get; init; }
+
     public required long DurationMs { get; init; }
 
     public DateTimeOffset ComparedAt { get; init; }

@@ -103,7 +103,7 @@ from reading them, which is exactly why it is written down.
 ```
 src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
 src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-src/DbDelta.PostgreSql/    provider: schema read/write + data compare/sync; collation reader + API wiring remain
+src/DbDelta.PostgreSql/    provider: complete (schema + data, read/write/compare/sync); the API selects it per connection
 src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
 src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
 tests/DbDelta.Core.Tests/       diff engine + planning unit tests, no database needed

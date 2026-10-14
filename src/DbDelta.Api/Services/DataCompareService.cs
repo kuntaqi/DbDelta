@@ -11,9 +11,9 @@ public sealed class DataCompareService
 {
     private const int MaxRowsShown = 200;
 
-    private readonly IDatabaseProvider _provider;
+    private readonly IDatabaseProviderFactory _providers;
 
-    public DataCompareService(IDatabaseProvider provider) => _provider = provider;
+    public DataCompareService(IDatabaseProviderFactory providers) => _providers = providers;
 
     // Only the key+hash pass runs here, for every table at once. That is the cheap half of the design —
     // no row data moves — but it is still one pass per table, so it is a deliberate action rather than
@@ -32,10 +32,11 @@ public sealed class DataCompareService
     {
         ArgumentNullException.ThrowIfNull(session);
 
+        var provider = _providers.For(session.Engine);
         var stopwatch = Stopwatch.StartNew();
         var targets = session.Target.Tables.ToDictionary(t => t.Identity);
 
-        var volume = await _provider.CreateVolumeReader(session.SourceConnectionString)
+        var volume = await provider.CreateVolumeReader(session.SourceConnectionString)
             .ReadAsync(cancellationToken).ConfigureAwait(false);
         var sizes = volume.Tables.ToDictionary(t => t.Table, t => t.TotalBytes);
 
@@ -96,8 +97,8 @@ public sealed class DataCompareService
 
         // Both sides in parallel, and inside each side the reader batches tables per round trip. The
         // server still scans, but nothing crosses the wire except three numbers per table.
-        var sourceTask = Fingerprints(session.SourceConnectionString, comparable, cancellationToken);
-        var targetTask = Fingerprints(session.TargetConnectionString, TargetSide(comparable, targets), cancellationToken);
+        var sourceTask = Fingerprints(provider, session.SourceConnectionString, comparable, cancellationToken);
+        var targetTask = Fingerprints(provider, session.TargetConnectionString, TargetSide(comparable, targets), cancellationToken);
         await Task.WhenAll(sourceTask, targetTask).ConfigureAwait(false);
 
         var sourcePrints = await sourceTask.ConfigureAwait(false);
@@ -183,12 +184,13 @@ public sealed class DataCompareService
             .Select(r => new FingerprintRequest(targets[r.Table.Identity], r.KeyColumns, r.Columns))
             .ToList();
 
-    private async Task<Dictionary<ObjectIdentity, TableFingerprint>> Fingerprints(
+    private static async Task<Dictionary<ObjectIdentity, TableFingerprint>> Fingerprints(
+        IDatabaseProvider provider,
         string connectionString,
         IReadOnlyList<FingerprintRequest> requests,
         CancellationToken cancellationToken)
     {
-        var reader = _provider.CreateFingerprintReader(connectionString);
+        var reader = provider.CreateFingerprintReader(connectionString);
         var prints = new Dictionary<ObjectIdentity, TableFingerprint>();
 
         // Batches run concurrently so one slow table does not hold the rest up. A table that cannot be
@@ -204,7 +206,7 @@ public sealed class DataCompareService
                 {
                     results[index] = await reader.ReadAsync(batches[index], token).ConfigureAwait(false);
                 }
-                catch (Microsoft.Data.SqlClient.SqlException)
+                catch (System.Data.Common.DbException)
                 {
                     results[index] = [];
                 }
@@ -226,6 +228,7 @@ public sealed class DataCompareService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
+        var provider = _providers.For(session.Engine);
 
         var source = Find(session.Source, table)
             ?? throw new InvalidOperationException($"{table} is not a table on the source.");
@@ -247,7 +250,7 @@ public sealed class DataCompareService
 
         var profile = declared.Count > 0
             ? new TableUniquenessProfile { RowCount = 0, Columns = [], WasProbed = false }
-            : await _provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
+            : await provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
                 .ProfileAsync(source, usable.Select(c => c.Name).ToList(), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -365,6 +368,7 @@ public sealed class DataCompareService
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
+        var provider = _providers.For(session.Engine);
 
         var source = Find(session.Source, request.Table)
             ?? throw new InvalidOperationException($"{request.Table} is not a table on the source.");
@@ -389,7 +393,7 @@ public sealed class DataCompareService
 
         // Both sides, because a key that is unique on the source and repeated on the target still breaks
         // the merge join — and it is the target that gets written to.
-        var sourceCheck = await _provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
+        var sourceCheck = await provider.CreateKeyUniquenessChecker(session.SourceConnectionString)
             .CheckAsync(source, request.Columns, cancellationToken).ConfigureAwait(false);
 
         if (!sourceCheck.IsUnique)
@@ -397,7 +401,7 @@ public sealed class DataCompareService
             return await Rejected(session, request, sourceCheck.Explain("Source"), cancellationToken).ConfigureAwait(false);
         }
 
-        var targetCheck = await _provider.CreateKeyUniquenessChecker(session.TargetConnectionString)
+        var targetCheck = await provider.CreateKeyUniquenessChecker(session.TargetConnectionString)
             .CheckAsync(target, request.Columns, cancellationToken).ConfigureAwait(false);
 
         if (!targetCheck.IsUnique)
@@ -517,6 +521,7 @@ public sealed class DataCompareService
         DataSelection selection,
         CancellationToken cancellationToken)
     {
+        var provider = _providers.For(session.Engine);
         var source = session.Source.Tables.FirstOrDefault(t => t.Identity == table);
         var target = session.Target.Tables.FirstOrDefault(t => t.Identity == table);
 
@@ -541,9 +546,9 @@ public sealed class DataCompareService
         }
 
         var result = await DataComparer.CompareAsync(
-            _provider.CreateRowHashReader(session.SourceConnectionString)
+            provider.CreateRowHashReader(session.SourceConnectionString)
                 .StreamAsync(source, request, columns.ComparedColumns, RowSetSide.Source, cancellationToken),
-            _provider.CreateRowHashReader(session.TargetConnectionString)
+            provider.CreateRowHashReader(session.TargetConnectionString)
                 .StreamAsync(target, request, columns.ComparedColumns, RowSetSide.Target, cancellationToken),
             new DataCompareSettings { Mode = selection.Mode, ComparedColumns = columns.ComparedColumns },
             cancellationToken).ConfigureAwait(false);
@@ -565,13 +570,13 @@ public sealed class DataCompareService
         var fetched = columns.ComparedColumns.Concat(request.KeyColumns)
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        var sourceRows = (await _provider.CreateRowDetailReader(session.SourceConnectionString)
+        var sourceRows = (await provider.CreateRowDetailReader(session.SourceConnectionString)
             .FetchAsync(source, request, fetched,
                 picks.Kept.Where(d => d.Classification != RowClassification.Delete).Select(d => d.Key).ToList(),
                 cancellationToken).ConfigureAwait(false))
             .ToDictionary(r => r.Key, StringComparer.Ordinal);
 
-        var targetRows = (await _provider.CreateRowDetailReader(session.TargetConnectionString)
+        var targetRows = (await provider.CreateRowDetailReader(session.TargetConnectionString)
             .FetchAsync(target, request, fetched,
                 picks.Kept.Where(d => d.Classification == RowClassification.Delete).Select(d => d.Key).ToList(),
                 cancellationToken).ConfigureAwait(false))
@@ -603,7 +608,7 @@ public sealed class DataCompareService
             .OfType<DataChange>()
             .ToList();
 
-        var volume = await _provider.CreateVolumeReader(session.TargetConnectionString)
+        var volume = await provider.CreateVolumeReader(session.TargetConnectionString)
             .ReadAsync(cancellationToken).ConfigureAwait(false);
 
         return new TableDataChanges
@@ -623,9 +628,10 @@ public sealed class DataCompareService
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        var source = await _provider.CreateVolumeReader(session.SourceConnectionString)
+        var provider = _providers.For(session.Engine);
+        var source = await provider.CreateVolumeReader(session.SourceConnectionString)
             .ReadAsync(cancellationToken).ConfigureAwait(false);
-        var target = await _provider.CreateVolumeReader(session.TargetConnectionString)
+        var target = await provider.CreateVolumeReader(session.TargetConnectionString)
             .ReadAsync(cancellationToken).ConfigureAwait(false);
 
         var targetByTable = target.Tables.ToDictionary(t => t.Table);
@@ -667,6 +673,7 @@ public sealed class DataCompareService
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(request);
+        var provider = _providers.For(session.Engine);
 
         var source = Find(session.Source, request.Table);
         var target = Find(session.Target, request.Table);
@@ -722,9 +729,9 @@ public sealed class DataCompareService
         }
 
         var result = await DataComparer.CompareAsync(
-            _provider.CreateRowHashReader(session.SourceConnectionString)
+            provider.CreateRowHashReader(session.SourceConnectionString)
                 .StreamAsync(source, compareRequest, columns.ComparedColumns, RowSetSide.Source, cancellationToken),
-            _provider.CreateRowHashReader(session.TargetConnectionString)
+            provider.CreateRowHashReader(session.TargetConnectionString)
                 .StreamAsync(target, compareRequest, columns.ComparedColumns, RowSetSide.Target, cancellationToken),
             new DataCompareSettings
             {
@@ -769,6 +776,7 @@ public sealed class DataCompareService
         DataCompareResult result,
         CancellationToken cancellationToken)
     {
+        var provider = _providers.For(session.Engine);
         var shown = result.Differences.Take(MaxRowsShown).ToList();
         if (shown.Count == 0)
         {
@@ -789,11 +797,11 @@ public sealed class DataCompareService
         // too and the row is labelled with values a person recognises.
         var fetched = columns.ComparedColumns.Concat(request.KeyColumns).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
-        var sourceRows = (await _provider.CreateRowDetailReader(session.SourceConnectionString)
+        var sourceRows = (await provider.CreateRowDetailReader(session.SourceConnectionString)
             .FetchAsync(source, request, fetched, sourceKeys, cancellationToken)
             .ConfigureAwait(false)).ToDictionary(r => r.Key, StringComparer.Ordinal);
 
-        var targetRows = (await _provider.CreateRowDetailReader(session.TargetConnectionString)
+        var targetRows = (await provider.CreateRowDetailReader(session.TargetConnectionString)
             .FetchAsync(target, request, fetched, targetKeys, cancellationToken)
             .ConfigureAwait(false)).ToDictionary(r => r.Key, StringComparer.Ordinal);
 
@@ -839,7 +847,8 @@ public sealed class DataCompareService
         ObjectIdentity table,
         CancellationToken cancellationToken)
     {
-        var volume = await _provider.CreateVolumeReader(session.SourceConnectionString)
+        var provider = _providers.For(session.Engine);
+        var volume = await provider.CreateVolumeReader(session.SourceConnectionString)
             .ReadAsync(cancellationToken).ConfigureAwait(false);
 
         return volume.Tables.FirstOrDefault(v => v.Table == table)?.TotalBytes ?? 0;

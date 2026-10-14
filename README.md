@@ -184,7 +184,7 @@ reach it — which is why the compose file brings its own SQL Server.
 ```
 src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
 src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-src/DbDelta.PostgreSql/    provider: schema read/write + data compare/sync; collation reader + API wiring remain
+src/DbDelta.PostgreSql/    provider: complete (schema + data, read/write/compare/sync); the API selects it per connection
 src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
 src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
 tests/                     Core, Api, PostgreSQL, and LocalDB integration tests
@@ -195,13 +195,14 @@ holds no credentials and issues no SQL.
 
 ## Status
 
-Working. All seven screens run against real databases. The PostgreSQL provider is partial: its schema reader
-reads a live PostgreSQL database in full for what the model holds — tables, columns, keys, constraints, indexes,
-views, routines, triggers, sequences and user-defined types (domains, composite types, enums) — and its schema
-emitter and executor produce and apply DDL, and its data path both compares table data and syncs it (emit row
-changes, apply them, re-compare, converge) — all verified end to end against PostgreSQL 16.4. What remains for the
-provider is the collation fact reader and runtime provider selection: the API still wires only SQL Server, so
-PostgreSQL is not yet reachable from the UI. The Docker setup (above) has never been built either.
+Working. All seven screens run against real databases. The PostgreSQL provider is complete — it reads a live
+database in full (tables, columns, keys, constraints, indexes, views, routines, triggers, sequences, user-defined
+types), emits and applies schema DDL, and compares and syncs table data — and the **API selects it per
+connection** from an `engine` field, verified end to end against PostgreSQL 16.4 through the real HTTP API
+(probe, compare and the error path). What remains is the connect-screen **engine selector**: the frontend still
+sends no engine, so the UI always talks to SQL Server until that is added. (PostgreSQL collation sensitivity is
+also not yet modelled — the precondition reads it as "unknown".) The Docker setup (above) has never been built
+either.
 
 `docs/PLAN.md` is the engineering plan and the source of truth for the design.
 `docs/mockup/dbdelta-ux.html` shows the app **as built** — open it in a browser. It ends with a ledger of

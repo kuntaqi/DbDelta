@@ -10,4 +10,7 @@ public sealed record ConnectionRequest(
     string? Authentication = null,
     string? Username = null,
     string? Password = null,
-    bool TrustServerCertificate = true);
+    bool TrustServerCertificate = true,
+    // Which engine this connection speaks. Null means SQL Server, so an older client that never sends it
+    // behaves exactly as before. ConnectionFactory and the provider factory both read it.
+    string? Engine = null);

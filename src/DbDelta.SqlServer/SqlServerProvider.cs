@@ -1,3 +1,4 @@
+using DbDelta.Core.Apply;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
 using DbDelta.Core.Providers;
@@ -16,6 +17,8 @@ public sealed class SqlServerProvider : IDatabaseProvider
         new SqlServerSchemaReader(connectionString);
 
     public IScriptEmitter CreateScriptEmitter() => new TSqlEmitter();
+
+    public IScriptExecutor CreateScriptExecutor() => new SqlServerScriptExecutor();
 
     public IVolumeReader CreateVolumeReader(string connectionString) =>
         new SqlServerVolumeReader(connectionString);

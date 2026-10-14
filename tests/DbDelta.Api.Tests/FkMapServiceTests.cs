@@ -31,6 +31,7 @@ public sealed class FkMapServiceTests
             TargetServer = "TGT",
             SourceConnectionString = "src",
             TargetConnectionString = "tgt",
+            Engine = "sqlserver",
             DurationMs = 1
         };
     }

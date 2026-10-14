@@ -1,3 +1,4 @@
+using DbDelta.Core.Apply;
 using DbDelta.Core.Data;
 using DbDelta.Core.Providers;
 using DbDelta.Core.Scripting;
@@ -5,9 +6,9 @@ using DbDelta.PostgreSql;
 
 namespace DbDelta.PostgreSql.Tests;
 
-// The point of the stub is that a second class covers the whole provider surface against an unchanged Core.
-// These tests prove the surface is covered — every factory hands back the right interface, and every member
-// that is not the quoter refuses with NotSupportedException rather than returning something that reads real.
+// A second class covers the whole provider surface against an unchanged Core. Once a compile-proof whose members
+// threw, now a complete provider: these tests prove every factory hands back the right interface. The behaviour
+// of each implementation is proved against a live server in its own test class.
 public sealed class PostgreSqlProviderSurfaceTests
 {
     private const string AnyConnectionString = "Host=localhost;Database=app";
@@ -40,25 +41,6 @@ public sealed class PostgreSqlProviderSurfaceTests
         Assert.IsAssignableFrom<ITableFingerprintReader>(_provider.CreateFingerprintReader(AnyConnectionString));
         Assert.IsAssignableFrom<IKeyUniquenessChecker>(_provider.CreateKeyUniquenessChecker(AnyConnectionString));
         Assert.IsAssignableFrom<ICollationFactReader>(_provider.CreateCollationFactReader(AnyConnectionString));
-    }
-
-    // The stub members throw synchronously (expression-bodied throw), so the exception surfaces at the call
-    // and a void lambda is the right shape — the discard keeps the returned task/enumerable from binding to
-    // Assert.Throws's async overload.
-    [Fact]
-    public void Server_level_members_refuse()
-    {
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.ProbeAsync(AnyConnectionString); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.ListDatabasesAsync(AnyConnectionString); });
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.DescribeDatabaseAsync(AnyConnectionString); });
-    }
-
-    [Fact]
-    public void The_remaining_stub_member_refuses()
-    {
-        // Real now and exercised elsewhere: the schema reader, the schema and data script emitters, and the
-        // data-compare read path. The collation fact reader is the last stub — CollationFact is SQL-Server-shaped
-        // and resolving PostgreSQL collation sensitivity faithfully is a modelling task, not a port.
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateCollationFactReader(AnyConnectionString).ReadAsync(null!); });
+        Assert.IsAssignableFrom<IScriptExecutor>(_provider.CreateScriptExecutor());
     }
 }

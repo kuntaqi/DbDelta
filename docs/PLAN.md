@@ -40,7 +40,7 @@ holds on its own terms; the choice still stands, for the ecosystem rather than f
 DbDelta.sln
   src/DbDelta.Core/          engine-neutral: model, diff, script assembly, safety
   src/DbDelta.SqlServer/     provider: sys.* catalog reader, T-SQL emitter
-  src/DbDelta.PostgreSql/    provider: schema read/write + data compare/sync; collation reader + API wiring remain
+  src/DbDelta.PostgreSql/    provider: complete (schema + data, read/write/compare/sync); the API selects it per connection
   src/DbDelta.Api/           ASP.NET Core host: endpoints + OpenAPI, serves the built SPA
   src/DbDelta.Web/           React 19 + TypeScript + Vite SPA
   tests/DbDelta.Core.Tests/       diff engine + planning unit tests (no DB needed)
@@ -1261,8 +1261,13 @@ uses the shape the reader actually produces.
      over a `::text` rendering per column — self-consistent is all a PG-vs-PG compare needs. Verified end to end
      against 16.4 — compare, sync, re-compare, converge, both inline and staged. `docs/TASK-postgresql-data-path.md`
      carries the detail.
-   - *Absent.* The collation fact reader, and runtime provider selection in the API (which still hard-wires one
-     provider and its executor) — the last step before PostgreSQL is reachable from the app.
+   - *Done — API provider selection (backend).* The API binds both providers and resolves one per connection from
+     an `engine` field through `IDatabaseProviderFactory`; the executor comes from
+     `IDatabaseProvider.CreateScriptExecutor`; `ConnectionFactory` and the error mapping are engine-neutral; and
+     the provider's server-level methods plus a minimal collation reader are filled in, so nothing stubs. Verified
+     through the real HTTP API against 16.4. `docs/TASK-api-provider-selection.md` carries the detail.
+   - *Absent.* The connect-screen engine selector — the frontend still sends no engine, so the UI talks only to
+     SQL Server — and a faithful model of PostgreSQL collation sensitivity.
 
 ## Open questions
 
@@ -1699,7 +1704,7 @@ the call site is missing — which is what makes them cheap and also what makes 
 |---|---|---|
 | Data under `Database` scope | The scope control is built and covers schema change units | Deliberate: escalating the schema scope must not start comparing every table's data. Row selection is built, per table, on the data screen |
 | Generated TypeScript from OpenAPI | The API serves an OpenAPI document | Decided against: `api.ts` stays hand-written. A contract change has to be mirrored twice, and `tsc` fails the build every time it is not — friction, never a silent bug |
-| PostgreSQL provider | The provider interfaces, a second implementation of them, and a working schema + data path | `src/DbDelta.PostgreSql/` began as a compile-proof stub; it now reads a live PostgreSQL database across every object kind the model holds, emits and applies schema DDL, compares table data, and syncs it (emit row changes, `COPY`-stage them, apply, re-compare, converge) — all verified end to end against 16.4. Still absent: the collation reader and runtime provider selection in the API — the abstraction reads, writes and syncs both schema and data, but the app does not yet reach the PostgreSQL provider |
+| PostgreSQL provider | The provider interfaces, a complete second implementation, and the API selecting it per connection | `src/DbDelta.PostgreSql/` began as a compile-proof stub; it now reads a live PostgreSQL database across every object kind the model holds, emits and applies schema DDL, and compares and syncs table data — all verified end to end against 16.4 — and the API resolves it per connection from an `engine` field, verified through the real HTTP API. Still absent: the connect-screen engine selector (the frontend sends no engine yet) and a faithful model of PostgreSQL collation sensitivity |
 | Docker setup path | `Dockerfile`, `.dockerignore`, `docker-compose.yml` are written, and the state directory is configurable | None of it has ever been built or run — the dev machine is a VM without nested virtualisation, so no daemon can start there |
 
 Everything that could make the tool quietly write the wrong data is out of this table now: both closures,

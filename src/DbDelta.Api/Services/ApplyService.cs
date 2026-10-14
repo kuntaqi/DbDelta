@@ -9,23 +9,20 @@ namespace DbDelta.Api.Services;
 
 public sealed class ApplyService
 {
-    private readonly IDatabaseProvider _provider;
-    private readonly IScriptExecutor _executor;
+    private readonly IDatabaseProviderFactory _providers;
     private readonly ServerClassifier _classifier;
     private readonly CompareService _compare;
     private readonly DataCompareService _data;
     private readonly RunLogStore _runs;
 
     public ApplyService(
-        IDatabaseProvider provider,
-        IScriptExecutor executor,
+        IDatabaseProviderFactory providers,
         ServerClassifier classifier,
         CompareService compare,
         DataCompareService data,
         RunLogStore runs)
     {
-        _provider = provider;
-        _executor = executor;
+        _providers = providers;
         _classifier = classifier;
         _compare = compare;
         _data = data;
@@ -85,7 +82,7 @@ public sealed class ApplyService
                 destructive);
         }
 
-        var result = await _executor
+        var result = await _providers.For(session.Engine).CreateScriptExecutor()
             .ExecuteAsync(session.TargetConnectionString, built.Script, cancellationToken)
             .ConfigureAwait(false);
 
@@ -136,7 +133,7 @@ public sealed class ApplyService
     {
         var reasons = new List<string>();
 
-        var current = await _provider
+        var current = await _providers.For(session.Engine)
             .CreateSchemaReader(session.TargetConnectionString)
             .ReadAsync(cancellationToken)
             .ConfigureAwait(false);

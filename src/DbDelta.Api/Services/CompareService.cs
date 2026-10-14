@@ -12,7 +12,7 @@ namespace DbDelta.Api.Services;
 
 public sealed class CompareService
 {
-    private readonly IDatabaseProvider _provider;
+    private readonly IDatabaseProviderFactory _providers;
     private readonly ConnectionFactory _connections;
     private readonly ServerClassifier _classifier;
     private readonly CompareSessionStore _sessions;
@@ -20,14 +20,14 @@ public sealed class CompareService
     private readonly SafetyOptions _safety;
 
     public CompareService(
-        IDatabaseProvider provider,
+        IDatabaseProviderFactory providers,
         ConnectionFactory connections,
         ServerClassifier classifier,
         CompareSessionStore sessions,
         RecentPairStore recent,
         IOptions<SafetyOptions> safety)
     {
-        _provider = provider;
+        _providers = providers;
         _connections = connections;
         _classifier = classifier;
         _sessions = sessions;
@@ -37,9 +37,11 @@ public sealed class CompareService
 
     public async Task<ProbeResponse> ProbeAsync(ConnectionRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        var provider = _providers.For(request.Engine);
         var resolved = _connections.Resolve(request);
-        var info = await _provider.ProbeAsync(resolved.ConnectionString, cancellationToken).ConfigureAwait(false);
-        var schema = await _provider.CreateSchemaReader(resolved.ConnectionString).ReadAsync(cancellationToken).ConfigureAwait(false);
+        var info = await provider.ProbeAsync(resolved.ConnectionString, cancellationToken).ConfigureAwait(false);
+        var schema = await provider.CreateSchemaReader(resolved.ConnectionString).ReadAsync(cancellationToken).ConfigureAwait(false);
 
         return new ProbeResponse(
             resolved.Server,
@@ -59,14 +61,25 @@ public sealed class CompareService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Compare is per-engine: a session reads, scripts and applies through one provider, so the two sides
+        // must name the same engine. (Cross-engine sync is a locked non-goal.)
+        var engine = DatabaseEngine.Normalize(request.Source.Engine);
+        if (engine != DatabaseEngine.Normalize(request.Target.Engine))
+        {
+            throw new InvalidOperationException(
+                "Source and target must be the same database engine; DbDelta does not compare across engines.");
+        }
+
+        var provider = _providers.For(engine);
+
         var source_ = _connections.Resolve(request.Source);
         var target_ = _connections.Resolve(request.Target);
         var sourceConnection = source_.ConnectionString;
         var targetConnection = target_.ConnectionString;
 
         var stopwatch = Stopwatch.StartNew();
-        var source = await _provider.CreateSchemaReader(sourceConnection).ReadAsync(cancellationToken).ConfigureAwait(false);
-        var target = await _provider.CreateSchemaReader(targetConnection).ReadAsync(cancellationToken).ConfigureAwait(false);
+        var source = await provider.CreateSchemaReader(sourceConnection).ReadAsync(cancellationToken).ConfigureAwait(false);
+        var target = await provider.CreateSchemaReader(targetConnection).ReadAsync(cancellationToken).ConfigureAwait(false);
         var diff = new SchemaComparer().Compare(source, target);
         stopwatch.Stop();
 
@@ -80,6 +93,7 @@ public sealed class CompareService
             TargetServer = target_.Server,
             SourceConnectionString = sourceConnection,
             TargetConnectionString = targetConnection,
+            Engine = engine,
             DurationMs = stopwatch.ElapsedMilliseconds,
             ComparedAt = DateTimeOffset.UtcNow
         };
@@ -88,7 +102,7 @@ public sealed class CompareService
         // of the change: the collation question is answered while the pair is being established, so the
         // data screens can refuse a table outright instead of showing numbers with a caveat above them.
         foreach (var (name, fact) in await CollationFactsAsync(
-            sourceConnection, targetConnection, source, target, cancellationToken).ConfigureAwait(false))
+            provider, sourceConnection, targetConnection, source, target, cancellationToken).ConfigureAwait(false))
         {
             session.CollationFacts[name] = fact;
         }
@@ -112,6 +126,7 @@ public sealed class CompareService
     // name; the target is only asked about what came back unresolved, which happens when the two are
     // different servers and one has a collation the other has never heard of.
     private async Task<IReadOnlyDictionary<string, CollationFact>> CollationFactsAsync(
+        IDatabaseProvider provider,
         string sourceConnection,
         string targetConnection,
         DatabaseSchema source,
@@ -128,7 +143,7 @@ public sealed class CompareService
         }
 
         var facts = new Dictionary<string, CollationFact>(
-            await _provider.CreateCollationFactReader(sourceConnection).ReadAsync(names, cancellationToken)
+            await provider.CreateCollationFactReader(sourceConnection).ReadAsync(names, cancellationToken)
                 .ConfigureAwait(false),
             StringComparer.OrdinalIgnoreCase);
 
@@ -136,7 +151,7 @@ public sealed class CompareService
 
         if (missing.Count > 0)
         {
-            var second = await _provider.CreateCollationFactReader(targetConnection)
+            var second = await provider.CreateCollationFactReader(targetConnection)
                 .ReadAsync(missing, cancellationToken).ConfigureAwait(false);
 
             foreach (var (name, fact) in second.Where(f => f.Value.Resolved))
@@ -184,7 +199,8 @@ public sealed class CompareService
             return null;
         }
 
-        var script = new TSqlEmitterAdapter(_provider).Emit(session, new HashSet<ObjectIdentity> { diff.Identity });
+        var provider = _providers.For(session.Engine);
+        var script = new ScriptEmitterAdapter(provider).Emit(session, new HashSet<ObjectIdentity> { diff.Identity });
 
         return new ObjectDetail(
             Summarise(session, diff),
@@ -210,18 +226,19 @@ public sealed class CompareService
     {
         ArgumentNullException.ThrowIfNull(session);
 
+        var provider = _providers.For(session.Engine);
         var closure = SchemaSelectionService.Closure(session);
         var schemaBytes = System.Text.Encoding.UTF8.GetByteCount(
-            new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection).ToSql());
+            new ScriptEmitterAdapter(provider).Emit(session, closure.Selection).ToSql());
 
         var volume = session.DataSelections.Count == 0
             ? null
-            : await _provider.CreateVolumeReader(session.SourceConnectionString)
+            : await provider.CreateVolumeReader(session.SourceConnectionString)
                 .ReadAsync(cancellationToken).ConfigureAwait(false);
 
         var target = session.DataSelections.Count == 0
             ? null
-            : await _provider.CreateVolumeReader(session.TargetConnectionString)
+            : await provider.CreateVolumeReader(session.TargetConnectionString)
                 .ReadAsync(cancellationToken).ConfigureAwait(false);
 
         var estimate = PlanSizeEstimator.Estimate(
@@ -290,7 +307,7 @@ public sealed class CompareService
         // points at emits an FK to something that does not exist, so the plan is expanded before emission
         // and what the expansion added is reported alongside the script.
         var closure = SchemaSelectionService.Closure(session);
-        var script = new TSqlEmitterAdapter(_provider).Emit(session, closure.Selection);
+        var script = new ScriptEmitterAdapter(_providers.For(session.Engine)).Emit(session, closure.Selection);
         var steps = script.Steps.ToList();
         var rows = await DataStepsAsync(session, data, cancellationToken).ConfigureAwait(false);
         steps.AddRange(rows.Steps);
@@ -342,6 +359,7 @@ public sealed class CompareService
             return DataScriptResult.Empty;
         }
 
+        var provider = _providers.For(session.Engine);
         var order = TableDependencyGraph.Build(session.Source.Tables).OrderForData();
         var ranked = order.Ordered.Concat(order.Cyclic).ToList();
 
@@ -378,8 +396,8 @@ public sealed class CompareService
         // The rows about to be written may point at parents the target does not have, and the plan has to
         // carry those before it carries the rows that need them.
         var closure = await new ParentClosure(
-                _provider.CreateRowByValueReader(session.SourceConnectionString),
-                _provider.CreateRowByValueReader(session.TargetConnectionString),
+                provider.CreateRowByValueReader(session.SourceConnectionString),
+                provider.CreateRowByValueReader(session.TargetConnectionString),
                 _safety.MaxClosureRows)
             .ExpandAsync(session.Source, session.Target, picked, session.KeyFor, cancellationToken)
             .ConfigureAwait(false);
@@ -429,7 +447,7 @@ public sealed class CompareService
                 }
             }
 
-            emitted.Add(_provider.CreateDataScriptEmitter().Emit(changes, _safety.MaxInlineTableBytes));
+            emitted.Add(provider.CreateDataScriptEmitter().Emit(changes, _safety.MaxInlineTableBytes));
         }
 
         var steps = new List<ScriptStep>();

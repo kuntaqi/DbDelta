@@ -1,3 +1,4 @@
+using DbDelta.Core.Apply;
 using DbDelta.Core.Data;
 using DbDelta.Core.Model;
 using DbDelta.Core.Scripting;
@@ -13,6 +14,11 @@ public interface IDatabaseProvider
     ISchemaReader CreateSchemaReader(string connectionString);
 
     IScriptEmitter CreateScriptEmitter();
+
+    // The executor belongs to the provider, like the emitter: applying a script is as engine-specific as
+    // writing it. Kept here rather than resolved separately so a caller that has the provider for an engine
+    // has its executor too, with no second lookup that could disagree about which engine.
+    IScriptExecutor CreateScriptExecutor();
 
     IVolumeReader CreateVolumeReader(string connectionString);
 

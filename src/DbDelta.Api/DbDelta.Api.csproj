@@ -2,10 +2,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DbDelta.SqlServer\DbDelta.SqlServer.csproj" />
+    <ProjectReference Include="..\DbDelta.PostgreSql\DbDelta.PostgreSql.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <!-- Npgsql pulls System.Security.Cryptography.Pkcs 9.0.13 transitively, which has a published advisory
+         (GHSA-846f-f764-76mx). Pinned to the patched 10.0.x so the audit-as-error gate stays on for everything
+         else rather than being suppressed. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <PropertyGroup>

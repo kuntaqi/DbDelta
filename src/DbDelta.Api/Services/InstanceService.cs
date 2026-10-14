@@ -3,7 +3,6 @@ using DbDelta.Api.Contracts;
 using DbDelta.Core.Instances;
 using DbDelta.Core.Model;
 using DbDelta.Core.Providers;
-using Microsoft.Data.SqlClient;
 
 namespace DbDelta.Api.Services;
 
@@ -15,16 +14,16 @@ namespace DbDelta.Api.Services;
 // are a second call the user asks for — the same reasoning that makes the whole-database scan a button.
 public sealed class InstanceService
 {
-    private readonly IDatabaseProvider _provider;
+    private readonly IDatabaseProviderFactory _providers;
     private readonly ConnectionFactory _connections;
     private readonly ServerClassifier _classifier;
 
     public InstanceService(
-        IDatabaseProvider provider,
+        IDatabaseProviderFactory providers,
         ConnectionFactory connections,
         ServerClassifier classifier)
     {
-        _provider = provider;
+        _providers = providers;
         _connections = connections;
         _classifier = classifier;
     }
@@ -33,8 +32,9 @@ public sealed class InstanceService
         ConnectionRequest request,
         CancellationToken cancellationToken)
     {
+        var provider = _providers.For(request.Engine);
         var resolved = _connections.Resolve(request);
-        var databases = await _provider.ListDatabasesAsync(resolved.ConnectionString, cancellationToken)
+        var databases = await provider.ListDatabasesAsync(resolved.ConnectionString, cancellationToken)
             .ConfigureAwait(false);
 
         var rows = databases.Select(Row).ToList();
@@ -64,6 +64,7 @@ public sealed class InstanceService
             ? survey.Databases.Select(d => d.Name).ToList()
             : request.Databases.ToList();
 
+        var provider = _providers.For(request.Connection.Engine);
         var resolved = _connections.Resolve(request.Connection);
         var described = new List<InstanceDatabaseDto>();
 
@@ -87,8 +88,9 @@ public sealed class InstanceService
                 continue;
             }
 
-            var detail = await _provider
-                .DescribeDatabaseAsync(Retarget(resolved.ConnectionString, row.Name), cancellationToken)
+            var detail = await provider
+                .DescribeDatabaseAsync(
+                    _connections.Retarget(resolved.ConnectionString, row.Name, request.Connection.Engine), cancellationToken)
                 .ConfigureAwait(false);
 
             described.Add(row with
@@ -113,14 +115,16 @@ public sealed class InstanceService
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var sourceProvider = _providers.For(request.Source.Engine);
+        var targetProvider = _providers.For(request.Target.Engine);
         var source = _connections.Resolve(request.Source);
         var target = _connections.Resolve(request.Target);
 
         var stopwatch = Stopwatch.StartNew();
 
-        var sourceDatabases = await _provider
+        var sourceDatabases = await sourceProvider
             .ListDatabasesAsync(source.ConnectionString, cancellationToken).ConfigureAwait(false);
-        var targetDatabases = await _provider
+        var targetDatabases = await targetProvider
             .ListDatabasesAsync(target.ConnectionString, cancellationToken).ConfigureAwait(false);
 
         var match = InstanceMatcher.Match(
@@ -137,9 +141,9 @@ public sealed class InstanceService
 
             if (request.Describe && pair.CanBeCompared)
             {
-                left = await DescribedAsync(source.ConnectionString, left!, cancellationToken)
+                left = await DescribedAsync(sourceProvider, request.Source.Engine, source.ConnectionString, left!, cancellationToken)
                     .ConfigureAwait(false);
-                right = await DescribedAsync(target.ConnectionString, right!, cancellationToken)
+                right = await DescribedAsync(targetProvider, request.Target.Engine, target.ConnectionString, right!, cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -262,12 +266,14 @@ public sealed class InstanceService
     }
 
     private async Task<InstanceDatabaseDto> DescribedAsync(
+        IDatabaseProvider provider,
+        string? engine,
         string connectionString,
         InstanceDatabaseDto row,
         CancellationToken cancellationToken)
     {
-        var detail = await _provider
-            .DescribeDatabaseAsync(Retarget(connectionString, row.Name), cancellationToken)
+        var detail = await provider
+            .DescribeDatabaseAsync(_connections.Retarget(connectionString, row.Name, engine ?? string.Empty), cancellationToken)
             .ConfigureAwait(false);
 
         return row with
@@ -283,9 +289,4 @@ public sealed class InstanceService
     private static InstanceDatabaseDto Row(DatabaseSummary d) =>
         new(d.Name, d.State, d.RecoveryModel, d.DataBytes, d.LogBytes, d.IsReadOnly, d.Accessible,
             null, null, null, null, null);
-
-    // The same credentials pointed at a different database. Rebuilding from the resolved string rather than
-    // from the request keeps a pasted connection string working here too.
-    private static string Retarget(string connectionString, string database) =>
-        new SqlConnectionStringBuilder(connectionString) { InitialCatalog = database }.ConnectionString;
 }

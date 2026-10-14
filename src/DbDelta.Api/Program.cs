@@ -1,9 +1,9 @@
+using System.Data.Common;
 using DbDelta.Api.Contracts;
 using DbDelta.Api.Services;
-using DbDelta.Core.Apply;
 using DbDelta.Core.Providers;
+using DbDelta.PostgreSql;
 using DbDelta.SqlServer;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,10 +15,11 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 builder.Services.Configure<SafetyOptions>(builder.Configuration.GetSection(SafetyOptions.SectionName));
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection(StorageOptions.SectionName));
 builder.Services.AddSingleton<IDatabaseProvider, SqlServerProvider>();
+builder.Services.AddSingleton<IDatabaseProvider, PostgreSqlProvider>();
+builder.Services.AddSingleton<IDatabaseProviderFactory, DatabaseProviderFactory>();
 builder.Services.AddSingleton<ConnectionFactory>();
 builder.Services.AddSingleton<ServerClassifier>();
 builder.Services.AddSingleton<CompareSessionStore>();
-builder.Services.AddSingleton<IScriptExecutor, SqlServerScriptExecutor>();
 builder.Services.AddSingleton<RunLogStore>();
 builder.Services.AddSingleton<ProfileStore>();
 builder.Services.AddSingleton<RecentPairStore>();
@@ -91,7 +92,7 @@ api.MapPost("/probe", async (
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
     }
-    catch (SqlException ex)
+    catch (DbException ex)
     {
         var (title, detail) = Explain(ex, request, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
@@ -112,7 +113,7 @@ api.MapPost("/instance", async (
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
     }
-    catch (SqlException ex)
+    catch (DbException ex)
     {
         var (title, detail) = Explain(ex, request, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
@@ -133,7 +134,7 @@ api.MapPost("/instance/describe", async (
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
     }
-    catch (SqlException ex)
+    catch (DbException ex)
     {
         var (title, detail) = Explain(ex, request.Connection, connections);
         return Results.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
@@ -154,7 +155,7 @@ api.MapPost("/instance/compare", async (
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
     }
-    catch (SqlException ex)
+    catch (DbException ex)
     {
         // Which server failed matters more here than usual: the whole point is that there are two of them.
         var side = Blames(ex, request.Target, connections) ? request.Target : request.Source;
@@ -177,7 +178,7 @@ api.MapPost("/compare", async (
     {
         return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "That connection is incomplete");
     }
-    catch (SqlException ex)
+    catch (DbException ex)
     {
         // Which side failed is worth naming: "cannot open database" against the target reads very
         // differently from the same error against the source.
@@ -523,7 +524,7 @@ app.Run();
 return 0;
 
 static (string Title, string Detail) Explain(
-    SqlException exception,
+    DbException exception,
     ConnectionRequest request,
     ConnectionFactory connections)
 {
@@ -538,9 +539,9 @@ static (string Title, string Detail) Explain(
     }
 }
 
-static bool Blames(SqlException exception, ConnectionRequest candidate, ConnectionFactory connections)
+static bool Blames(DbException exception, ConnectionRequest candidate, ConnectionFactory connections)
 {
-    if (exception.Number != 4060)
+    if (!ConnectionProblem.IsMissingDatabase(exception))
     {
         return false;
     }

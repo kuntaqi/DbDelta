@@ -1,6 +1,7 @@
 using DbDelta.Api.Contracts;
 using DbDelta.Api.Services;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 
 namespace DbDelta.Api.Tests;
 
@@ -128,5 +129,44 @@ public sealed class ConnectionFactoryTests
 
         Assert.Equal("FROM-STRING", resolved.Server);
         Assert.Equal("StringDb", resolved.Database);
+    }
+
+    [Fact]
+    public void A_postgres_engine_builds_an_npgsql_connection_string()
+    {
+        var resolved = _factory.Resolve(new ConnectionRequest(
+            Engine: "postgresql",
+            Server: "pg-host",
+            Port: 5432,
+            Database: "appdb",
+            Username: "reader",
+            Password: "secret"));
+
+        var builder = new NpgsqlConnectionStringBuilder(resolved.ConnectionString);
+        Assert.Equal("pg-host", builder.Host);
+        Assert.Equal(5432, builder.Port);
+        Assert.Equal("appdb", builder.Database);
+        Assert.Equal("reader", builder.Username);
+        Assert.Equal("pg-host", resolved.Server);
+        Assert.Equal("appdb", resolved.Database);
+    }
+
+    [Fact]
+    public void A_pasted_postgres_connection_string_is_parsed_as_postgres()
+    {
+        var resolved = _factory.Resolve(new ConnectionRequest(
+            Engine: "postgresql",
+            ConnectionString: "Host=pg-host;Port=5432;Database=appdb;Username=reader"));
+
+        Assert.Equal("pg-host", resolved.Server);
+        Assert.Equal("appdb", resolved.Database);
+    }
+
+    [Fact]
+    public void Retarget_points_a_postgres_connection_at_another_database()
+    {
+        var retargeted = _factory.Retarget("Host=pg-host;Database=one;Username=reader", "two", "postgresql");
+
+        Assert.Equal("two", new NpgsqlConnectionStringBuilder(retargeted).Database);
     }
 }

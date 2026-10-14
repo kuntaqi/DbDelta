@@ -14,6 +14,35 @@ internal static class PgCatalogQueries
                (select datcollate from pg_database where datname = current_database()) as collation
         """;
 
+    public const string ServerProbe = """
+        select current_database() as database_name,
+               current_setting('server_version') as product_version,
+               (select datcollate from pg_database where datname = current_database()) as collation
+        """;
+
+    // Server-level: one query answers for every database. pg_database_size needs CONNECT, so it is only asked
+    // for databases this login may connect to; the rest report size 0 rather than failing the whole list.
+    public const string Databases = """
+        select d.datname as name,
+               case when d.datallowconn then 'ONLINE' else 'OFFLINE' end as state,
+               case when has_database_privilege(d.datname, 'CONNECT')
+                    then pg_database_size(d.datname) else 0 end as data_bytes,
+               (d.datallowconn and has_database_privilege(d.datname, 'CONNECT')) as accessible
+        from pg_database d
+        where not d.datistemplate
+        order by d.datname
+        """;
+
+    public const string DatabaseDetail = $"""
+        select (select datcollate from pg_database where datname = current_database()) as collation,
+               (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                where c.relkind in ('r', 'p') and {NonSystemSchema}) as tables,
+               (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                where c.relkind in ('v', 'm') and {NonSystemSchema}) as views,
+               (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                where p.prokind in ('f', 'p') and {NonSystemSchema}) as routines
+        """;
+
     public const string Tables = $"""
         select n.nspname as schema_name, c.relname as table_name
         from pg_class c

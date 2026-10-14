@@ -45,6 +45,7 @@ public sealed class SchemaSelectionServiceTests
             TargetServer = "TGT",
             SourceConnectionString = "src",
             TargetConnectionString = "tgt",
+            Engine = "sqlserver",
             DurationMs = 1
         };
     }
