@@ -94,6 +94,9 @@ from reading them, which is exactly why it is written down.
   no ticket-reference comments.
 - Commits: one-line messages, no body, no `Co-Authored-By` trailer, no emojis, no AI/tool attribution
   anywhere that leaves the machine.
+- Opening/merging a GitHub PR here (this is `kuntaqi/DbDelta` on GitHub, not Azure DevOps): the working
+  recipe — token via `git credential fill`, JSON body built with Node, and the PowerShell/perl/`gh` gotchas
+  that waste time — is recorded in this machine's Claude memory under `github-pr-workflow`.
 
 ## Architecture at a glance
 
