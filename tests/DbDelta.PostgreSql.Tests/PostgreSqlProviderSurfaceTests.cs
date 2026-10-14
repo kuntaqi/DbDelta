@@ -56,7 +56,8 @@ public sealed class PostgreSqlProviderSurfaceTests
     [Fact]
     public void Reader_and_emitter_members_refuse()
     {
-        Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateSchemaReader(AnyConnectionString).ReadAsync(); });
+        // CreateSchemaReader is no longer a stub — it is exercised by PostgreSqlSchemaReaderTests against a
+        // live server — so it is not asserted to refuse here.
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateScriptEmitter().Emit(null!, null!, null!); });
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateVolumeReader(AnyConnectionString).ReadAsync(); });
         Assert.Throws<NotSupportedException>(() => { _ = _provider.CreateRowHashReader(AnyConnectionString).StreamAsync(null!, null!, null!, default); });
