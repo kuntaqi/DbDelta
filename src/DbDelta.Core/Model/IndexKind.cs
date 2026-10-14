@@ -7,13 +7,20 @@ namespace DbDelta.Core.Model;
 //
 // Clustering is orthogonal and stays on IsClustered: a columnstore index can be either.
 //
-// The values are SQL Server's, since it is the only provider. PostgreSQL names its access methods
-// differently (gist, gin, brin) and would add its own rather than be forced through these.
+// The first values are SQL Server's; PostgreSQL names its access methods differently and adds its own rather
+// than being forced through the SQL ones. A PG btree reads as Rowstore (the ordinary index both engines share)
+// and hash reuses Hash; the remaining PG methods get their own values so two indexes that differ only by
+// method diff instead of both collapsing to Rowstore. These never reach the T-SQL emitter — a PG kind is only
+// compared, never scripted by the SQL provider.
 public enum IndexKind
 {
     Rowstore,
     Columnstore,
     Xml,
     Spatial,
-    Hash
+    Hash,
+    Gin,
+    Gist,
+    Brin,
+    Spgist
 }

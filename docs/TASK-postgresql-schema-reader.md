@@ -1,6 +1,6 @@
 # PostgreSQL schema reader — the stub's first real member
 
-Status: **increments 1, 2 and 3 done and verified** (2026-10-14). Follows `docs/TASK-postgresql-provider-stub.md`
+Status: **increments 1–4 done and verified** (2026-10-14). Follows `docs/TASK-postgresql-provider-stub.md`
 (the compile-proof stub, merged in #3). `PostgreSqlSchemaReader` is a working `ISchemaReader` that reads a live
 PostgreSQL database into a `DatabaseSchema` for the structural core (tables, columns, keys, constraints,
 indexes — merged in #6), **views, routines and triggers** (increment 2), and now **sequences and user-defined
@@ -114,38 +114,36 @@ equally — but each is a thing a sync would not reproduce.
 
 - **Range and multirange types** (`typtype 'r'`/`'m'`) — no model slot and uncommon; a `ReadWarning` names any
   that exist rather than dropping them silently. Everything else a `CREATE TYPE` can make is read (increment 3).
+- **Exclusion constraints** (`EXCLUDE USING …`) are not modelled; their backing indexes are filtered out. As of
+  increment 4 a `ReadWarning` names any that exist rather than letting them vanish silently — full modelling
+  still needs a model decision.
+- **Aggregate and window functions** (`prokind 'a'`/`'w'`) are skipped; `pg_get_functiondef` cannot script them,
+  so reading them means synthesising the `CREATE` from `pg_aggregate` — deferred.
 
 Read as of increment 3, with these smaller gaps inside them:
 
-- **Domains** map to `UserDefinedTypeKind.Alias` with base type + nullability, mirroring the SQL Server alias
-  reader exactly. A domain's `CHECK` constraints and `DEFAULT` are not read — the same gap the SQL alias reader
-  has (it ignores bound defaults/rules), so a domain differing *only* in a check compares equal. Base-type or
-  nullability changes do diff.
+- **Domains** map to `UserDefinedTypeKind.Alias` with base type, nullability and — as of increment 4 — their
+  `CHECK` constraints (so a domain differing only in a check now diffs). A domain's `DEFAULT` is still not read
+  (no model field for it).
 
 Read as of increment 2, with these smaller gaps inside them:
 
-- **Views**: materialised views (`relkind = 'm'`) are not read; a view's `Definition` is the `SELECT` body
-  (`pg_get_viewdef`), not a full `CREATE`, unlike routines/triggers.
-- **Routines**: aggregate and window functions (`prokind 'a'`/`'w'`) are skipped; `DependsOn` is left empty
-  (no emitter consumes it yet).
+- **Views**: materialised views (`relkind = 'm'`) are read as of increment 4, flagged in `Extras`. A view's
+  `Definition` is still the `SELECT` body (`pg_get_viewdef`), not a full `CREATE`, unlike routines/triggers.
+- **Routines**: `DependsOn` is left empty (no emitter consumes it yet).
 - **Routine/view bodies** still need `SqlBodyNormalizer` to understand PG dollar-quoting (`$$...$$`) and
   `E'...'` escapes before they can be compared without false diffs — a compare-side follow-up with no consumer
   until PG sync is wired.
 
 **Within the objects that are read:**
 
-- **Expression indexes and partial-expression columns.** A key at attnum 0 is rendered from
-  `pg_get_indexdef`; this is captured but untested, and complex expressions may format differently between
-  reads. Validate before relying on expression-index compare.
-- **Exclusion constraints** (`EXCLUDE USING …`) are neither modelled nor read; their backing indexes are
-  filtered out, so they vanish silently. Needs a model decision.
-- **`INCLUDE` columns** on indexes are read but untested (the fixture has none yet).
-- **Index access-method fidelity.** `gin`/`gist`/`brin`/`spgist` all collapse to `IndexKind.Rowstore`; only
-  `hash` maps distinctly. Extending `IndexKind` with PG methods (the enum's own comment anticipates this) is the
-  fix.
 - **`RESTRICT` referential action** collapses to `NoAction` (no model counterpart).
 - **Partitioning**, **storage/`reloptions`** beyond `fillfactor`, **comments**, **column `STORAGE`/compression**,
   and **generated-column virtual vs stored** nuance are not represented.
+- **Index access-method fidelity, `INCLUDE` columns and expression indexes** are handled as of increment 4:
+  `gin`/`gist`/`brin`/`spgist` now map to distinct `IndexKind` values, and the `INCLUDE`/expression paths have
+  fixture coverage. Complex expression-index formatting across two databases is validated for the simple case;
+  exotic expressions may still format differently between reads.
 
 **Cross-engine follow-ups outside the reader** (needed before PG *sync*, not PG *read*):
 
@@ -159,7 +157,9 @@ Read as of increment 2, with these smaller gaps inside them:
 
 1. **Done — views + routines + triggers.** See *Increment 2* below.
 2. **Done — sequences + user-defined types (domains/composite/enums).** See *Increment 3* below.
-3. The within-object gaps above, each with a fixture case.
+3. **Done — the high-value within-object gaps** (index access-method fidelity, materialised views, domain
+   checks, exclusion-constraint warning, and fixtures for the untested `INCLUDE`/expression-index paths). See
+   *Increment 4* below. The remaining within-object gaps stay documented above, each with its reason.
 4. The cross-engine follow-ups — only once a PG *emitter* exists and sync is on the table.
 
 ## Increment 2 — views, routines, triggers (design)
@@ -225,6 +225,33 @@ Kind mapping lives in `PgTypeMapper.MapUserDefinedTypeKind` (`'d'`→`Alias`, `'
 unit-tested without a database alongside the other dialect maps.
 
 Compare-side follow-ups are unchanged from increment 2 and still have no consumer until a PG emitter exists.
+
+## Increment 4 — the high-value within-object gaps (design)
+
+Closes the within-object gaps that are pure reader work and testable today, and documents why the rest wait.
+Still reader-only.
+
+- **Index access-method fidelity.** `IndexKind` grows `Gin`, `Gist`, `Brin` and `Spgist` (additive; the enum's
+  own comment anticipated PG values). `PgTypeMapper.MapIndexKind` maps each access method distinctly, so two
+  indexes that differ only by method now diff instead of both reading as `Rowstore`. Safe across engines: the
+  SQL Server reader never produces these, and `IndexEmitSupport`'s switch has a `default`, so an unknown kind
+  falls through rather than throwing — a PG kind never reaches the T-SQL emitter anyway.
+- **Materialised views.** The `Views` query reads `relkind in ('v','m')`; a matview carries `Extras["Materialized"]
+  = "true"`. `pg_get_viewdef` returns its `SELECT` just as for a plain view. A matview and a plain view cannot
+  share a name (both are `pg_class` relations), so there is no identity collision.
+- **Domain CHECK constraints.** A domain's checks live in `pg_constraint` keyed by `contypid` (the type oid), not
+  `conrelid`, and `pg_get_expr(conbin, 0)` renders them (relation oid 0, because a domain check references
+  `VALUE`, not a column). They fold into the UDT's `CheckConstraints`, which `SchemaComparer.Shape` already
+  folds into the compared string — so the gap closes with no comparer change.
+- **Exclusion constraints.** Still not modelled, but a query over `pg_constraint` where `contype = 'x'` turns any
+  that exist into a `ReadWarning` naming them, so they no longer vanish silently. Full modelling needs a model
+  decision and waits.
+- **Untested paths, now covered.** The fixture gains an `INCLUDE` index, an expression index (`lower(name)`), a
+  `gin` index on a `text[]` column, a materialised view, a domain with a check, and a table with an exclusion
+  constraint — so every path above meets a live assertion.
+
+Deferred, each with its reason, in *Gaps to full parity*: aggregate/window functions, `RESTRICT`, domain
+`DEFAULT`, full exclusion modelling, partitioning/storage/comments, and the cross-engine follow-ups.
 
 ## Workflow note
 

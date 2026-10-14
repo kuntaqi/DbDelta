@@ -1241,10 +1241,13 @@ uses the shape the reader actually produces.
      routines and triggers (increment 2), and sequences and user-defined types (domains, composite types,
      enums — increment 3), via `pg_catalog`/`information_schema` with Npgsql. Increment 3 added one
      engine-neutral value and field to `Core` — `UserDefinedTypeKind.Enum` and `EnumLabels` — because an enum
-     has no other slot and, mapped onto an existing kind, would compare blind to its labels. Verified against
+     has no other slot and, mapped onto an existing kind, would compare blind to its labels. Increment 4 closed
+     the high-value within-object gaps: distinct `IndexKind` values for the PG access methods (`Gin`/`Gist`/
+     `Brin`/`Spgist`), materialised views (flagged in `Extras`), domain `CHECK` constraints, a warning for
+     exclusion constraints, and fixture coverage for the `INCLUDE`/expression-index paths. Verified against
      PostgreSQL 16.4; the integration tests skip when no server is configured.
-     `docs/TASK-postgresql-schema-reader.md` carries the gaps to full parity (range/multirange types and the
-     within-object gaps, plus the cross-engine follow-ups).
+     `docs/TASK-postgresql-schema-reader.md` carries the remaining gaps (aggregate/window functions, `RESTRICT`,
+     range/multirange and full exclusion modelling, plus the cross-engine follow-ups).
    - *Absent.* The T-SQL-equivalent emitter, the data path, the apply executor, and runtime provider
      selection in the API (which still hard-wires one provider).
 

@@ -69,8 +69,11 @@ public sealed class PgTypeMapperTests
     [Theory]
     [InlineData("hash", IndexKind.Hash)]
     [InlineData("btree", IndexKind.Rowstore)]
-    [InlineData("gin", IndexKind.Rowstore)]
-    [InlineData("gist", IndexKind.Rowstore)]
+    [InlineData("gin", IndexKind.Gin)]
+    [InlineData("gist", IndexKind.Gist)]
+    [InlineData("brin", IndexKind.Brin)]
+    [InlineData("spgist", IndexKind.Spgist)]
+    [InlineData("something_else", IndexKind.Rowstore)]
     public void Index_access_methods_map_to_a_kind(string accessMethod, IndexKind expected)
     {
         Assert.Equal(expected, PgTypeMapper.MapIndexKind(accessMethod));

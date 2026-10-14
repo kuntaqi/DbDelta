@@ -33,6 +33,7 @@ public sealed class PostgreSqlSchemaReaderTests
             is_active   boolean not null default true,
             full_label  text generated always as (name || ':' || child_id::text) stored,
             parent_id   integer,
+            tags        text[],
             constraint pk_child primary key (child_id),
             constraint uq_child_name unique (name),
             constraint ck_child_price check (price >= 0),
@@ -42,9 +43,15 @@ public sealed class PostgreSqlSchemaReaderTests
 
         create index ix_child_name on {Schema}.child (name desc);
         create index ix_child_active on {Schema}.child (parent_id) where is_active;
+        create index ix_child_incl on {Schema}.child (price) include (name);
+        create index ix_child_lower on {Schema}.child (lower(name));
+        create index ix_child_tags on {Schema}.child using gin (tags);
 
         create view {Schema}.active_children as
             select child_id, name from {Schema}.child where is_active;
+
+        create materialized view {Schema}.child_count as
+            select count(*) as n from {Schema}.child;
 
         create function {Schema}.combine(a integer, b integer) returns integer language sql
             as $$ select a + b $$;
@@ -66,9 +73,15 @@ public sealed class PostgreSqlSchemaReaderTests
         create sequence {Schema}.order_no start with 1000 increment by 10 minvalue 100 maxvalue 999999 cycle;
 
         create type {Schema}.mood as enum ('sad', 'ok', 'happy');
-        create domain {Schema}.us_postal as varchar(10) not null;
+        create domain {Schema}.us_postal as varchar(10) not null check (value ~ '^[0-9]+$');
         create type {Schema}.full_name as (first text, last text);
         create type {Schema}.int_range as range (subtype = integer);
+
+        create table {Schema}.room_booking (
+            id      integer generated always as identity primary key,
+            during  tstzrange,
+            exclude using gist (during with &&)
+        );
         """;
 
     private readonly PgFixture _fixture;
@@ -86,8 +99,10 @@ public sealed class PostgreSqlSchemaReaderTests
 
         Assert.False(string.IsNullOrEmpty(schema.DatabaseName));
 
-        // The only standing gap left is range/multirange types, named in a warning rather than dropped silently.
+        // The remaining gaps — range/multirange types and exclusion constraints — are named in warnings rather
+        // than dropped silently.
         Assert.Contains(schema.ReadWarnings, w => w.Contains("int_range", StringComparison.Ordinal));
+        Assert.Contains(schema.ReadWarnings, w => w.Contains("room_booking", StringComparison.Ordinal));
 
         var parent = Table(schema, "parent");
         var id = Column(parent, "id");
@@ -152,8 +167,22 @@ public sealed class PostgreSqlSchemaReaderTests
         var partial = child.Indexes.Single(i => i.Name == "ix_child_active");
         Assert.False(string.IsNullOrEmpty(partial.FilterExpression));
 
+        var included = child.Indexes.Single(i => i.Name == "ix_child_incl");
+        Assert.Equal(new[] { "price" }, included.Columns.Select(c => c.Name).ToArray());
+        Assert.Equal(new[] { "name" }, included.IncludedColumns.ToArray());
+
+        var expression = child.Indexes.Single(i => i.Name == "ix_child_lower");
+        Assert.Contains(expression.Columns, c => c.Name.Contains("lower", StringComparison.Ordinal));
+
+        var gin = child.Indexes.Single(i => i.Name == "ix_child_tags");
+        Assert.Equal(IndexKind.Gin, gin.Kind);
+
         var view = schema.Views.Single(v => v.Identity.Schema == Schema && v.Identity.Name == "active_children");
         Assert.Contains("child_id", view.Definition, StringComparison.Ordinal);
+        Assert.Null(view.Extras["Materialized"]);
+
+        var matview = schema.Views.Single(v => v.Identity.Schema == Schema && v.Identity.Name == "child_count");
+        Assert.Equal("true", matview.Extras["Materialized"]);
 
         var routines = schema.Routines.Where(r => r.Identity.Schema == Schema).ToList();
         Assert.Equal(2, routines.Count(r => r.Identity.Name.StartsWith("combine(", StringComparison.Ordinal)));
@@ -190,6 +219,8 @@ public sealed class PostgreSqlSchemaReaderTests
         Assert.Equal(UserDefinedTypeKind.Alias, postal.Kind);
         Assert.Equal("character varying(10)", postal.BaseType!.ToString());
         Assert.False(postal.IsNullable);
+        var postalCheck = Assert.Single(postal.CheckConstraints);
+        Assert.Contains("VALUE", postalCheck.Expression, StringComparison.Ordinal);
 
         var fullName = types.Single(t => t.Identity.Name == "full_name");
         Assert.Equal(UserDefinedTypeKind.Table, fullName.Kind);

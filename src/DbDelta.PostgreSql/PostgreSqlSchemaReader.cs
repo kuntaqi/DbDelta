@@ -30,6 +30,7 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         await ReadColumnsAsync(connection, tables, warnings, cancellationToken).ConfigureAwait(false);
         await ReadConstraintsAsync(connection, tables, warnings, cancellationToken).ConfigureAwait(false);
         await ReadIndexesAsync(connection, tables, warnings, cancellationToken).ConfigureAwait(false);
+        await WarnOnExclusionConstraintsAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
 
         var views = await ReadViewsAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
         var routines = await ReadRoutinesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
@@ -281,11 +282,16 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
+                var extras = Bool(reader, "is_materialized")
+                    ? new ProviderExtras(new Dictionary<string, string?> { ["Materialized"] = "true" })
+                    : ProviderExtras.Empty;
+
                 views.Add(new ViewDefinition
                 {
                     Identity = new ObjectIdentity(
                         ObjectType.View, Str(reader, "schema_name"), Str(reader, "view_name")),
                     Definition = Str(reader, "definition"),
+                    Extras = extras,
                 });
             }
         }
@@ -420,6 +426,7 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
 
             await FoldCompositeColumnsAsync(connection, types, cancellationToken).ConfigureAwait(false);
             await FoldEnumLabelsAsync(connection, types, cancellationToken).ConfigureAwait(false);
+            await FoldDomainChecksAsync(connection, types, cancellationToken).ConfigureAwait(false);
             await WarnOnRangeTypesAsync(connection, warnings, cancellationToken).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
@@ -478,6 +485,29 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         }
     }
 
+    private static async Task FoldDomainChecksAsync(
+        NpgsqlConnection connection, Dictionary<ObjectIdentity, PgUserDefinedTypeParts> types,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(PgCatalogQueries.DomainChecks, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var identity = new ObjectIdentity(
+                ObjectType.UserDefinedType, Str(reader, "schema_name"), Str(reader, "type_name"));
+            if (types.TryGetValue(identity, out var parts))
+            {
+                parts.CheckConstraints.Add(new CheckConstraintDefinition
+                {
+                    Name = Str(reader, "name"),
+                    Expression = NStr(reader, "check_expr") ?? string.Empty,
+                    IsDisabled = !Bool(reader, "validated"),
+                });
+            }
+        }
+    }
+
     private static async Task WarnOnRangeTypesAsync(
         NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
     {
@@ -496,6 +526,35 @@ public sealed class PostgreSqlSchemaReader : ISchemaReader
         {
             warnings.Add(
                 "Range and multirange types are not represented in the model and were not read: "
+                + string.Join(", ", names) + ".");
+        }
+    }
+
+    private static async Task WarnOnExclusionConstraintsAsync(
+        NpgsqlConnection connection, List<string> warnings, CancellationToken cancellationToken)
+    {
+        var names = new List<string>();
+
+        try
+        {
+            await using var command = new NpgsqlCommand(PgCatalogQueries.ExclusionConstraints, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                names.Add($"{Str(reader, "schema_name")}.{Str(reader, "table_name")}.{Str(reader, "name")}");
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == InsufficientPrivilege)
+        {
+            warnings.Add("Exclusion constraints could not be checked: " + ex.MessageText);
+            return;
+        }
+
+        if (names.Count > 0)
+        {
+            warnings.Add(
+                "Exclusion constraints are not represented in the model and were not read: "
                 + string.Join(", ", names) + ".");
         }
     }

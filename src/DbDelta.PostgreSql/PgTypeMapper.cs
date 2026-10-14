@@ -61,10 +61,17 @@ internal static class PgTypeMapper
         _ => ReferentialAction.NoAction,
     };
 
-    // IndexKind is SQL-Server-derived and has no PG access methods. 'hash' maps cleanly; btree/gin/gist/brin/
-    // spgist all collapse to Rowstore, losing method fidelity until the enum grows PG values.
-    public static IndexKind MapIndexKind(string accessMethod) =>
-        string.Equals(accessMethod, "hash", StringComparison.Ordinal) ? IndexKind.Hash : IndexKind.Rowstore;
+    // pg_am.amname. btree is the ordinary index both engines share, so it reads as Rowstore; the rest get the
+    // IndexKind value added for them, so indexes differing only by access method diff instead of all collapsing.
+    public static IndexKind MapIndexKind(string accessMethod) => accessMethod switch
+    {
+        "hash" => IndexKind.Hash,
+        "gin" => IndexKind.Gin,
+        "gist" => IndexKind.Gist,
+        "brin" => IndexKind.Brin,
+        "spgist" => IndexKind.Spgist,
+        _ => IndexKind.Rowstore,
+    };
 
     // pg_proc.prokind. A procedure is 'p'; a function returning a set is table-valued, otherwise scalar.
     // Aggregate ('a') and window ('w') functions are filtered out before they reach here.

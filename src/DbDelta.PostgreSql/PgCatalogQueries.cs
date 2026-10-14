@@ -118,11 +118,14 @@ internal static class PgCatalogQueries
         order by n.nspname, c.relname, ix.relname, k.ord
         """;
 
+    // relkind 'm' is a materialised view; pg_get_viewdef returns its SELECT the same as for a plain view, and
+    // the caller flags it from is_materialized.
     public const string Views = $"""
-        select n.nspname as schema_name, c.relname as view_name, pg_get_viewdef(c.oid, true) as definition
+        select n.nspname as schema_name, c.relname as view_name, pg_get_viewdef(c.oid, true) as definition,
+               c.relkind = 'm' as is_materialized
         from pg_class c
         join pg_namespace n on n.oid = c.relnamespace
-        where c.relkind = 'v' and {NonSystemSchema}
+        where c.relkind in ('v', 'm') and {NonSystemSchema}
         order by n.nspname, c.relname
         """;
 
@@ -203,6 +206,29 @@ internal static class PgCatalogQueries
         join pg_namespace n on n.oid = t.typnamespace
         where {NonSystemSchema}
         order by n.nspname, t.typname, e.enumsortorder
+        """;
+
+    // A domain's check constraints are keyed by the type oid (contypid), not a relation. pg_get_expr with
+    // relation oid 0 renders them, since a domain check references VALUE rather than a column.
+    public const string DomainChecks = $"""
+        select n.nspname as schema_name, t.typname as type_name, con.conname as name,
+               pg_get_expr(con.conbin, 0) as check_expr, con.convalidated as validated
+        from pg_constraint con
+        join pg_type t on t.oid = con.contypid
+        join pg_namespace n on n.oid = t.typnamespace
+        where con.contype = 'c' and con.contypid <> 0 and {NonSystemSchema}
+        order by n.nspname, t.typname, con.conname
+        """;
+
+    // Exclusion constraints (contype 'x') are not modelled; their backing indexes are filtered out of Indexes.
+    // This names any that exist so they surface as a ReadWarning instead of vanishing.
+    public const string ExclusionConstraints = $"""
+        select n.nspname as schema_name, c.relname as table_name, con.conname as name
+        from pg_constraint con
+        join pg_class c on c.oid = con.conrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where con.contype = 'x' and {NonSystemSchema}
+        order by n.nspname, c.relname, con.conname
         """;
 
     // Range ('r') and multirange ('m') types have no model slot; they are named in a ReadWarning rather than
